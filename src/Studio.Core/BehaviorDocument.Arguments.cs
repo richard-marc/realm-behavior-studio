@@ -29,6 +29,7 @@ public sealed partial class BehaviorDocument
         if (slots.Count != 1) throw new ArgumentException("Select a typed argument list or phase with one known child slot.");
         var group = node.Children.SingleOrDefault(n => n.Kind == "ArgumentGroup");
         if (group != null) return group;
+        if (SyntaxFactory.ParseExpression(Expression(node)) is ObjectCreationExpressionSyntax { Initializer.Expressions.Count: > 0 }) throw new ArgumentException("This source initializer may add hidden children or references. Open Source to edit this region.");
         if (!slots[0].IsParams && slots[0].IsCollection) throw new ArgumentException("Create an explicit collection for this child parameter first.");
         return node;
     }
@@ -39,8 +40,11 @@ public sealed partial class BehaviorDocument
         CollectionExpressionSyntax collection => collection.Elements.Select(e => e is ExpressionElementSyntax value ? (SyntaxNode)value.Expression : e).ToArray(),
         ArrayCreationExpressionSyntax { Initializer: { } initializer } => initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         ImplicitArrayCreationExpressionSyntax array => array.Initializer.Expressions.Cast<SyntaxNode>().ToArray(),
+        ObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer.Expressions.Cast<SyntaxNode>().ToArray(),
+        ImplicitObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         _ => null
     };
+    static bool SimpleCollectionInitializer(InitializerExpressionSyntax initializer) => (initializer.IsKind(SyntaxKind.CollectionInitializerExpression) || initializer.IsKind(SyntaxKind.ObjectInitializerExpression) && initializer.Expressions.Count == 0) && !initializer.Expressions.Any(e => e.IsKind(SyntaxKind.ComplexElementInitializerExpression));
     bool CollectionContainer(BehaviorNode node) => node.Kind == "ArgumentGroup" && !node.ArgumentFromCall && SyntaxFactory.ParseExpression(Expression(node)) is CollectionExpressionSyntax;
     static string ChildListCount(IReadOnlyList<BehaviorNode> children)
     {
@@ -52,7 +56,9 @@ public sealed partial class BehaviorDocument
     {
         ArrayCreationExpressionSyntax { Initializer: { } initializer } => initializer,
         ImplicitArrayCreationExpressionSyntax implicitArray => implicitArray.Initializer,
-        _ => throw new ArgumentException("This array requires source editing.")
+        ObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer,
+        ImplicitObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer,
+        _ => throw new ArgumentException("This collection requires source editing.")
     };
     ExpressionSyntax NodeExpression(SyntaxNode tree, BehaviorNode node) => tree.DescendantNodes().OfType<ExpressionSyntax>().Single(n => n.SpanStart == node.Start && n.Span.Length == node.Length);
     static ArgumentListSyntax CallArguments(ExpressionSyntax expression) => expression switch
@@ -121,6 +127,8 @@ public sealed partial class BehaviorDocument
                 return collection.WithElements(SyntaxFactory.SeparatedList(children.Select(child => child is RangeExpressionSyntax { LeftOperand: null, RightOperand: { } operand } range ? (CollectionElementSyntax)SyntaxFactory.SpreadElement(range.OperatorToken, operand).WithTriviaFrom(child) : SyntaxFactory.ExpressionElement(child))));
             var initializer = Initializer(current).WithExpressions(SyntaxFactory.SeparatedList(children));
             if (current is ArrayCreationExpressionSyntax array) return array.WithInitializer(initializer);
+            if (current is ObjectCreationExpressionSyntax constructor) return constructor.WithInitializer(initializer);
+            if (current is ImplicitObjectCreationExpressionSyntax implicitConstructor) return implicitConstructor.WithInitializer(initializer);
             var implicitArray = (ImplicitArrayCreationExpressionSyntax)current;
             if (children.Count > 0) return implicitArray.WithInitializer(initializer);
             var element = SchemaAt(parent)?.ArrayElementType(Expression(parent)) ?? throw new ArgumentException("Cannot infer the empty array's native element type.");

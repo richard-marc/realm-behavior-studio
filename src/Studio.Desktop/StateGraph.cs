@@ -103,7 +103,7 @@ public sealed class StateGraph : FrameworkElement
             Text(dc, state.Id == root.Id ? "ENCOUNTER" : "PHASE", new(rect.Left + 14, rect.Top + 11), 10, "#858B95", 180);
             if (initial.Contains(state.Id)) Text(dc, "ENTRY", new(rect.Right - 52, rect.Top + 11), 10, "#91A69D", 40);
             Text(dc, state.Id == root.Id && state.Label == "Root" ? "Root behavior" : state.Label, new(rect.Left + 14, rect.Top + 30), 15, "#E8E9EC", 290);
-            var actions = string.Join(" · ", state.StateChildren.Where(n => n.Kind != "State" && !n.Kind.EndsWith("Transition")).Select(n => n.Kind));
+            var actions = string.Join(" · ", state.StateChildren.Where(n => n.Kind != "State" && !n.Kind.EndsWith("Transition")).Select(n => n.Kind switch { "Factory" => "Source helper", "Reference" => "Shared reference", "Spread" => "Spread input", "Opaque" => n.Label == "Source initializer" ? n.Label : "Source region", _ => n.Kind }));
             if (actions.Length == 0) actions = state.StateChildren.Any(n => n.Kind == "State") ? "Contains nested phases" : "No actions";
             if (collapsed.Contains(state.Id)) actions = $"+ {state.StateChildren.Count} items · collapsed";
             Text(dc, actions, new(rect.Left + 14, rect.Top + 61), 11, "#92969F", 290);

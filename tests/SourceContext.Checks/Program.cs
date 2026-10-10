@@ -47,6 +47,22 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
     static TKR.WorldServer.logic.behaviors.Timed StudioContextUnbuildableInput(StudioContextUnbuildable children = null) => StudioContextEnumerable(children);
+    sealed class StudioContextInitializerChildren : System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> {
+        readonly System.Collections.Generic.List<TKR.WorldServer.logic.Behavior> children;
+        public StudioContextInitializerChildren(int capacity) { children = new System.Collections.Generic.List<TKR.WorldServer.logic.Behavior>(capacity); }
+        public void Add(TKR.WorldServer.logic.Behavior child) => children.Insert(0, child);
+        public System.Collections.Generic.IEnumerator<TKR.WorldServer.logic.Behavior> GetEnumerator() => children.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    sealed class StudioContextKeyedChildren : System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> {
+        readonly System.Collections.Generic.List<TKR.WorldServer.logic.Behavior> children = new System.Collections.Generic.List<TKR.WorldServer.logic.Behavior>();
+        public void Add(int key, TKR.WorldServer.logic.Behavior child) => children.Add(child);
+        public System.Collections.Generic.IEnumerator<TKR.WorldServer.logic.Behavior> GetEnumerator() => children.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    sealed class StudioContextThrowingInitializer : System.Collections.Generic.List<TKR.WorldServer.logic.Behavior> {
+        public StudioContextThrowingInitializer() { throw new System.InvalidOperationException("initializer authoring must not execute this constructor"); }
+    }
     static State StudioContextMessages(params string[] text) => new State(string.Join("-", text));
     static State StudioContextKeyword(int @event = 1) => new State(@event.ToString());
     static State StudioContextAmbiguous(int count, double speed = 1) => new State(count.ToString());
@@ -298,6 +314,42 @@ var constructorCollections = Doc("new State(new State(\"constructor collections\
 Check(constructorCollectionCall.Children.Count == 2 && constructorCollectionCall.Children.All(n => n.Argument is { IsArray: false, IsCollection: true }) && constructorCollections.CanEditChildren(constructorFirst.Id), "Source-defined controller constructors expose their actual non-array collection parameters");
 constructorCollections.AddChild(constructorSecond.Id, "new Shoot(8, count: 2)", d => adapter.Validate(d, "Cave Pirate Brawler"));
 Check(constructorCollections.Find(constructorFirst.Id).Children.Single().Parameters.Single(p => p.Name == "count").Expression == "6" && constructorCollections.Find(constructorSecond.Id).Children.Count == 2, "Editing one custom controller list preserves its other formal input and subtype binding");
+var initializerDoc = Doc("new State(new State(\"initializer inputs\", StudioContextCollections(first: new System.Collections.Generic.List<Behavior>(capacity: StudioContextCount) { StudioContextFan(count: 2), /* initializer note */ new Shoot(8, count: 3) }, second: new System.Collections.Generic.List<Behavior>() { new Shoot(8, count: 5) }, third: new(capacity: StudioContextCount) { new Wander(.2) })))");
+var initializerCall = Root(initializerDoc).StateChildren.Single().Children.Single(); var initializerFirst = initializerCall.Children[0]; var initializerSecond = initializerCall.Children[1]; var initializerThird = initializerCall.Children[2]; var initializerFan = initializerFirst.Children[0]; var initializerShoot = initializerFirst.Children[1];
+Check(initializerCall.Children.All(n => !n.ArgumentFromCall && initializerDoc.CanEditChildren(n.Id)) && initializerThird.Children.Single().Kind == "Wander", "Explicit and target-typed collection initializers expose actual native child lists without constructing their collections");
+initializerDoc.MoveNode(initializerShoot.Id, -1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(initializerDoc.Find(initializerFirst.Id).Children.First().Id == initializerShoot.Id && initializerDoc.Source.Contains("capacity: StudioContextCount") && initializerDoc.Source.Contains("/* initializer note */"), "Initializer reorder retains constructor arguments, source comments and exact child identities");
+var initializerCopy = initializerDoc.DuplicateNode(initializerFan.Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(initializerCopy != initializerFan.Id && initializerDoc.Find(initializerFirst.Id).Children.Count == 3, "Initializer duplication retains source-bound helpers and creates a fresh child identity");
+initializerDoc.MoveNodes([initializerCopy], initializerSecond.Id, 1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(initializerDoc.Find(initializerSecond.Id).Children.Last().Id == initializerCopy && initializerDoc.Find(initializerFirst.Id).Children.Count == 2, "Cross-initializer moves preserve both collection constructors and the moved helper's identity");
+initializerDoc.DeleteNode(initializerThird.Children.Single().Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(initializerDoc.Find(initializerThird.Id).Children.Count == 0 && initializerDoc.Source.Contains("new(capacity: StudioContextCount) {"), "Deleting the last target-typed initializer child preserves the actual constructor and empty braces");
+initializerDoc.AddChild(initializerThird.Id, "new Shoot(8, count: 6)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(initializerDoc.Find(initializerThird.Id).Children.Single().Kind == "Shoot" && initializerDoc.Source.Contains("third: new(capacity: StudioContextCount)"), "Native child creation fills a target-typed initializer without converting it to bracket syntax");
+var initializerNarrow = Doc("new State(StudioContextEnumerable(new System.Collections.Generic.List<Shoot>() { new Shoot(8) }))"); var narrowInitializerList = Root(initializerNarrow).Children.Single().Children.Single();
+Check(!initializerNarrow.AcceptsChild(narrowInitializerList.Id, "new Wander(.2)"), "Initializer preflight uses the concrete collection's narrower element type rather than the helper's wider enumerable type");
+Reject(() => initializerNarrow.AddChild(narrowInitializerList.Id, "new Wander(.2)", d => adapter.Validate(d, "Cave Pirate Brawler")), "Incompatible concrete initializer children reject through actual native element binding");
+var initializerBeforeSpread = initializerDoc.Source;
+Reject(() => initializerDoc.AddChild(initializerThird.Id, "..StudioContextSharedList", d => adapter.Validate(d, "Cave Pirate Brawler")), "Spread syntax cannot enter an ordinary collection initializer");
+Check(initializerDoc.Source == initializerBeforeSpread, "A rejected initializer spread preserves its complete constructor and source");
+initializerDoc.LockedNodes.Add(initializerCall.Id); Reject(() => initializerDoc.DeleteNode(initializerFan.Id), "Ancestor locks protect initializer children and source-bound constructor arguments"); initializerDoc.LockedNodes.Clear();
+Check(initializerDoc.Undo() && initializerDoc.Find(initializerThird.Id).Children.Count == 0 && initializerDoc.Redo() && initializerDoc.Find(initializerThird.Id).Children.Single().Kind == "Shoot", "Initializer edits restore empty braces, constructor arguments and identities through undo/redo");
+var throwingInitializer = Doc("new State(StudioContextEnumerable(new StudioContextThrowingInitializer() { new Shoot(8) }))"); var throwingInitializerList = Root(throwingInitializer).Children.Single().Children.Single(); throwingInitializer.DuplicateNode(throwingInitializerList.Children.Single().Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(throwingInitializer.Find(throwingInitializerList.Id).Children.Count == 2, "Collection initializer authoring and duplication never execute a throwing source constructor");
+var reversedInitializer = Doc("new State(new State(\"reversed initializer\", StudioContextEnumerable(new StudioContextInitializerChildren(capacity: StudioContextCount) { new Shoot(8, count: 2), new Shoot(8, count: 4) })))"); var reverseList = Root(reversedInitializer).StateChildren.Single().Children.Single().Children.Single(); reversedInitializer.AddChild(reverseList.Id, "new Shoot(8, count: 6)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(reversedInitializer.Find(reverseList.Id).Children.Select(n => n.Parameters.Single(p => p.Name == "count").Expression).SequenceEqual(["2", "4", "6"]), "Custom Add-based initializers retain source input order without guessing their runtime enumeration order");
+var keyedInitializer = Doc("new State(new State(\"keyed initializer\", StudioContextEnumerable(new StudioContextKeyedChildren() { { 11, new Shoot(8, count: 7) } })))"); var keyedInitializerList = Root(keyedInitializer).StateChildren.Single().Children.Single().Children.Single();
+Check(keyedInitializerList.ArgumentRequiresSource && !keyedInitializer.CanEditChildren(keyedInitializerList.Id) && keyedInitializer.Source.Contains("{ 11, new Shoot"), "Multi-argument Add initializers retain an explicit source boundary and all original expressions");
+var initializerProjectPath = Path.Combine(output, "initializers.rbs"); BehaviorDocument.Save(initializerProjectPath, new StudioProject { SourceFile = file, Source = initializerDoc.Source, EntityId = "Cave Pirate Brawler", Identities = initializerDoc.Identities }); var initializerSaved = BehaviorDocument.Load(initializerProjectPath); var initializerReopened = new BehaviorDocument(initializerSaved.Source, adapter, initializerSaved.Identities, initializerSaved.SourceFile);
+Check(initializerReopened.Identities.SequenceEqual(initializerDoc.Identities) && initializerReopened.Source == initializerDoc.Source, "Collection initializer constructors, comments and every child identity survive save and reopen");
+var emptyScalarInitializer = Doc("new State(new OnDeathBehavior(new Shoot(8) { }))"); var emptyScalarSlot = Root(emptyScalarInitializer).Children.Single();
+Check(emptyScalarSlot.Children.Single().Kind == "Shoot" && emptyScalarInitializer.IsScalarChildSlot(emptyScalarSlot.Id), "Empty braces on a native scalar behavior remain its object initializer rather than becoming an empty child list");
+var emptyExpandedInitializer = Doc("new State(new Shoot(8) { })");
+Check(Root(emptyExpandedInitializer).Children.Single().Kind == "Shoot", "Expanded native children with empty object initializers retain their genuine behavior identity");
+var initializedState = Doc("new State(\"source initialized\") { Behaviors = { new Shoot(8, count: 7) } }");
+Check(Root(initializedState).Children.Single().Kind == "Opaque" && Root(initializedState).Children.Single().Label == "Source initializer" && !initializedState.CanEditChildren(Root(initializedState).Id) && BehaviorAnalysis.Analyze(Root(initializedState)).Diagnostics.Any(d => d.Message.StartsWith("Reachability analysis is incomplete")), "Native object initializers expose a source region and suppress guessed child editing and phase analysis");
+Check(initializedState.SchemaAt(Root(initializedState))!.DescribeExpression(initializedState.Expression(Root(initializedState)))!.RequiresCompiled && !adapter.Validate(initializedState, "Cave Pirate Brawler").Any(d => d.IsError), "A native State object initializer selects compiled execution instead of silently losing initialized members");
 var slotPath = Path.Combine(output, "multi-slot.rbs"); BehaviorDocument.Save(slotPath, new StudioProject { SourceFile = file, Source = optionalSlots.Source, EntityId = "Cave Pirate Brawler", Identities = optionalSlots.Identities }); var savedSlots = BehaviorDocument.Load(slotPath);
 var reopenedSlots = new BehaviorDocument(savedSlots.Source, adapter, savedSlots.Identities, savedSlots.SourceFile);
 Check(reopenedSlots.Identities.SequenceEqual(optionalSlots.Identities) && Root(reopenedSlots).Descendants().Where(n => n.Kind == "ArgumentGroup").All(n => reopenedSlots.CanEditChildren(n.Id)), "Mixed scalar and array slot layouts reopen with all identities and independent editability intact");
@@ -365,6 +417,29 @@ await using (var native = await CompiledRuntime.StartAsync(server, project with 
     await native.AdvanceAsync(new(Y: 1));
     Check(native.Shots.Select(s => s.Count).SequenceEqual([3, 2, 6]), "A custom collection controller executes its actual reverse-list tick dispatch instead of a guessed authoring order");
     native.ExportTrace(Path.Combine(output, "collection-controller-trace.json"));
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = initializerReopened.Source, Identities = initializerReopened.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Select(s => s.Count).SequenceEqual([3, 2, 5, 2, 6]) && native.Entities.Single().Phase == "initializer inputs", "Reopened explicit and target-typed initializers execute their actual constructors and edited native child order");
+    native.ExportTrace(Path.Combine(output, "initializer-trace.json"));
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = reversedInitializer.Source, Identities = reversedInitializer.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Select(s => s.Count).SequenceEqual([6, 4, 2]), "Custom initializer Add methods run natively and reverse source inputs according to their actual implementation");
+    native.ExportTrace(Path.Combine(output, "initializer-add-trace.json"));
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = keyedInitializer.Source, Identities = keyedInitializer.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Single().Count == 7, "Source-retained multi-argument initializers still execute their actual Add overload in compiled preview");
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = initializedState.Source, Identities = initializedState.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Single().Count == 7 && native.Entities.Single().Phase == "source initialized", "Native State object initializers execute their actual collection-member additions in compiled preview");
+    native.ExportTrace(Path.Combine(output, "state-initializer-trace.json"));
 }
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));

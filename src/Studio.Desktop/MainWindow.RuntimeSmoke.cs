@@ -18,6 +18,7 @@ public partial class MainWindow
 
         namespace TKR.WorldServer.logic { public partial class BehaviorDb {
             const double StudioPreviewSpeed = .3;
+            const int StudioPreviewCapacity = 4;
             static readonly TKR.WorldServer.logic.behaviors.Shoot StudioPreviewShared = new TKR.WorldServer.logic.behaviors.Shoot(8, count: 2, coolDown: 200);
             static readonly TKR.WorldServer.logic.Behavior[] StudioPreviewCollection = [new TKR.WorldServer.logic.behaviors.Shoot(8, count: 3, coolDown: 200)];
             static State StudioPreviewRoot(int count = 4, double speed = .3) => new State(new State("native preview", StudioPreviewFan(count), new TKR.WorldServer.logic.behaviors.Follow(speed, range: 1)));
@@ -30,6 +31,7 @@ public partial class MainWindow
         RunMultipleSlotUiSmoke(source, root, helpers, output, check);
         RunCollectionUiSmoke(source, root, helpers, output, check);
         RunTypedCollectionUiSmoke(source, root, helpers, output, check);
+        await RunInitializerUiSmoke(source, root, helpers, output, check);
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);
         Changed(); var factory = document.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
         check(factory.Kind == "Factory" && factory.Parameters.Single().Name == "count", "Desktop discovers the imported source helper as the encounter root");
@@ -140,6 +142,35 @@ public partial class MainWindow
         item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DragOverEvent)); item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DropEvent));
         check(document.Find(lead.Id).Children.Count == 0 && document.Find(tail.Id).Children.Last().Id == newLead, "Routed desktop drop moves an optional scalar child into the independent native list");
         SelectNode(lead.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "multiple-child-slots.png")); LibraryTabs.SelectedIndex = 0;
+    }
+    async Task RunInitializerUiSmoke(string source, BehaviorNode root, string helpers, string output, Action<bool, string> check)
+    {
+        const string expression = "new State(new State(\"initializer preview\", StudioPreviewTyped(first: new System.Collections.Generic.List<Behavior>(capacity: StudioPreviewCapacity) { new Wander(.2), /* initializer UI note */ StudioPreviewFan(4) }, second: new System.Collections.Generic.List<Behavior>() { new Shoot(8, count: 2) }, third: new(capacity: StudioPreviewCapacity) { new Shoot(8, count: 3) })))";
+        document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity!.SourceFile);
+        Changed(); WorkspaceTabs.SelectedIndex = 1;
+        var call = EncounterRoot.StateChildren.Single().Children.Single(); var first = call.Children[0]; var second = call.Children[1]; var third = call.Children[2]; var moving = first.Children[0]; var oldChild = third.Children.Single();
+        check(call.Children.All(n => !n.ArgumentFromCall && document.CanEditChildren(n.Id)) && TreeItems().Any(i => ((BehaviorNode)i.Tag).Id == oldChild.Id), "Desktop hierarchy exposes explicit and target-typed collection initializer children");
+        SelectNode(oldChild.Id); duplicateStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(document.Find(third.Id).Children.Count == 2 && selectedNode!.Id != oldChild.Id && document.Source.Contains("third: new(capacity: StudioPreviewCapacity)"), "Real Duplicate retains a target-typed collection's constructor and creates a fresh child identity");
+        Undo(this, new()); SelectNode(oldChild.Id); deleteStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(selectedNode!.Id == third.Id && document.Find(third.Id).Children.Count == 0 && document.CanEditChildren(third.Id) && Equals(chooseChildSlotButton?.Content, "+ Add child"), "Deleting the final initializer child retains its empty editable list after C# reparses the braces");
+        BeginNativeCreation(adapter.Primitives.Single(p => p.Name == "Shoot")); constructorInputs["count"].Text = "5"; createNativeButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); var created = selectedNode!.Id;
+        check(document.Find(third.Id).Children.Single().Id == created && document.Source.Contains("third: new(capacity: StudioPreviewCapacity)") && document.Source.Contains("/* initializer UI note */"), "Desktop native creation repopulates empty initializer braces while preserving constructor arguments and comments");
+        SelectAuthoringNode(moving.Id, System.Windows.Input.ModifierKeys.None); UpdateLayout(); var item = TreeItems().Single(i => ((BehaviorNode)i.Tag).Id == second.Id); var data = DragData(new NodeDrag(document.Revision, selectedEntity.Id, [moving.Id]));
+        item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DragOverEvent)); item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DropEvent));
+        check(document.Find(first.Id).Children.Single().Kind == "Factory" && document.Find(second.Id).Children.Last().Id == moving.Id && selectedNode!.Id == moving.Id, "Routed desktop drop moves a child across initializer lists with its source identity intact");
+        Undo(this, new());
+        check(document.Find(first.Id).Children.First().Id == moving.Id && document.Find(second.Id).Children.Count == 1 && document.Find(third.Id).Children.Single().Id == created, "Desktop initializer Undo restores both constructors and preserves unrelated edits");
+        SelectNode(third.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "collection-initializers.png"));
+        document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, "new State(\"source initialized\") { Behaviors = { new Shoot(8, count: 7) } }") + helpers, adapter, sourceFile: selectedEntity.SourceFile);
+        Changed(); WorkspaceTabs.SelectedIndex = 1; var region = EncounterRoot.Children.Single(); SelectNode(region.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "source-initializer.png"));
+        Inspector.Children.OfType<Button>().Single(b => Equals(b.Content, "Open Source")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(region.Kind == "Opaque" && region.Label == "Source initializer" && WorkspaceTabs.SelectedIndex == 2 && SourceEditor.SelectionStart == region.Start && SourceEditor.SelectionLength == region.Length, "Source initializer navigation opens and selects its exact retained C# region");
+        WorkspaceTabs.SelectedIndex = 0;
+        check(await StartSessionAsync() && session is CompiledRuntime && ReferenceEquals(session, Viewport.Session), "Desktop Play selects compiled runtime for a native State object initializer");
+        running = false; Playback.SelectedIndex = 2; await AdvanceCompiledPlayback(100, new(Y: 1));
+        check(session!.Shots.Single().Count == 7 && session.Entities.Single().Phase == "source initialized", "Desktop native playback executes actual object-initializer member additions instead of losing their attacks");
+        Stop(this, new());
     }
     void RunTypedCollectionUiSmoke(string source, BehaviorNode root, string helpers, string output, Action<bool, string> check)
     {

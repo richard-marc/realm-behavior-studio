@@ -109,7 +109,7 @@ public sealed partial class BehaviorDocument
                         legacyPaths[index] = path + "/" + legacyPaths.Count;
                         index++; continue;
                     }
-                    var items = ListItems(arg.Expression);
+                    var items = childArgument && index < pars.Length && !pars[index].Contains('[') && slots.Any(s => s.Name == pars[index].Split('[')[0] && s.IsCollection) ? ListItems(arg.Expression) : null;
                     if (childArgument && items != null)
                     {
                         var groupPath = path + "/" + children.Count;
@@ -136,7 +136,7 @@ public sealed partial class BehaviorDocument
                     {
                         var supplied = args.Select((arg, i) => (arg, i)).Where(p => p.i < pars.Length && pars[p.i].Split('[')[0] == slot.Name).ToArray();
                         var backing = supplied.Length == 1 ? supplied[0].arg.Expression : null;
-                        var items = backing == null ? null : ListItems(backing);
+                        var items = backing == null || !slot.IsCollection || pars[supplied[0].i].Contains('[') ? null : ListItems(backing);
                         var fromCall = items == null;
                         var nullList = slot.IsCollection && backing?.IsKind(SyntaxKind.NullLiteralExpression) == true;
                         var unassignedList = slot.IsCollection && (nullList || supplied.Length == 0 && !slot.IsParams);
@@ -153,6 +153,7 @@ public sealed partial class BehaviorDocument
                             : nullList ? [] : supplied.Select((p, i) => Read(p.arg.Expression, groupPath + "/" + i, legacyPaths[p.i])).ToArray();
                         children.Add(new BehaviorNode(oldGroup?.Id ?? Guid.NewGuid(), groupPath, "ArgumentGroup", slot.Name + " · " + (requiresSource ? "source" : unassignedList ? "unassigned" : ChildListCount(elements)), expression.SpanStart, expression.Span.Length, [], elements) { Argument = slot, ArgumentFromCall = fromCall, ArgumentRequiresSource = requiresSource });
                     }
+                if (c is ObjectCreationExpressionSyntax { Initializer: { Expressions.Count: > 0 } initialization }) children.Add(Opaque(initialization, path + "/" + children.Count) with { Label = "Source initializer" });
                 var matches = identities.Where(n => n.Kind == kind && n.Signature == c.ToString() && n.Path.StartsWith(entityId + "/") && !usedIdentities.Contains(n.Id)).ToArray();
                 var legacy = legacyPath == null ? null : identities.FirstOrDefault(n => n.Path == legacyPath && n.Signature == c.ToString() && n.Kind == kind && !usedIdentities.Contains(n.Id));
                 var old = matches.Length == 1 ? matches[0] : legacy ?? identities.FirstOrDefault(n => n.Path == path && (n.Kind == kind || (kind is "Factory" or "Reference") && n.Kind == "Opaque" && n.Signature == c.ToString()) && !usedIdentities.Contains(n.Id));

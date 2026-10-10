@@ -155,7 +155,7 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
         return new(kind,
             expression is InvocationExpressionSyntax ? method.Name + " · " + type!.Name : type!.Name,
             StateType(type), method.Parameters.Select(p => new SourceParameter(p.Name, TypeName(p.Type), Default(p))).ToArray(), slots, children)
-        { RequiresCompiled = expression is InvocationExpressionSyntax || standalone.RequiresContext || standalone.Constructor is not { } constructor || constructor.DeclaringType?.FullName?.Replace('+', '.') != actualType ||
+        { RequiresCompiled = expression is InvocationExpressionSyntax or ObjectCreationExpressionSyntax { Initializer: not null } || standalone.RequiresContext || standalone.Constructor is not { } constructor || constructor.DeclaringType?.FullName?.Replace('+', '.') != actualType ||
             constructor.GetParameters().Length != method.Parameters.Length || !method.Parameters.Zip(constructor.GetParameters()).All(p => SameType(p.First.Type, p.Second.ParameterType)) };
     }
     public IEnumerable<DocumentDiagnostic> SourceDiagnostics() => Model.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error)
@@ -183,7 +183,7 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
         var child = SyntaxFactory.ParseExpression(childExpression);
         var type = model.GetSpeculativeTypeInfo(expression.SpanStart, child, SpeculativeBindingOption.BindAsExpression).Type;
         ITypeSymbol target = Element(slot.Type);
-        if (arrayExpression != null && model.GetSpeculativeTypeInfo(expression.SpanStart, SyntaxFactory.ParseExpression(arrayExpression), SpeculativeBindingOption.BindAsExpression).Type is IArrayTypeSymbol array) target = array.ElementType;
+        if (arrayExpression != null && model.GetSpeculativeTypeInfo(expression.SpanStart, SyntaxFactory.ParseExpression(arrayExpression), SpeculativeBindingOption.BindAsExpression).Type is { } collectionType && Collection(collectionType)) target = Element(collectionType);
         return type != null && context.Binding.Value.Compilation.ClassifyConversion(type, target).IsImplicit;
     }
     public bool AcceptsSpread(string text, string parameter, string spreadExpression, string? collectionExpression = null)
