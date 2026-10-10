@@ -26,7 +26,7 @@ new State(
 """;
 BehaviorDocument Fresh()
 {
-    var document = new BehaviorDocument(original, adapter.ParameterNames);
+    var document = new BehaviorDocument(original, adapter);
     var root = document.Entities.Single(e => e.EntityId == "Cave Pirate Brawler").Root;
     document.ReplaceSource(document.Source.Remove(root.Start, root.Length).Insert(root.Start, fragment)); return document;
 }
@@ -89,7 +89,7 @@ var dynamicReference = Fresh(); dynamicReference.ReplaceSource(dynamicReference.
 Reject(() => dynamicReference.RenameState(Phase(dynamicReference, "loop").Id, "changed", Validate), "Dynamic phase references require source editing instead of a partial rename");
 var savedDir = Path.GetFullPath(".artifacts/structure"); Directory.CreateDirectory(savedDir);
 var project = Path.Combine(savedDir, "organized.rbs"); BehaviorDocument.Save(project, new StudioProject { Source = duplicated.Source, Identities = duplicated.Identities });
-var loaded = BehaviorDocument.Load(project); var reopened = new BehaviorDocument(loaded.Source, adapter.ParameterNames, loaded.Identities);
+var loaded = BehaviorDocument.Load(project); var reopened = new BehaviorDocument(loaded.Source, adapter, loaded.Identities);
 Check(reopened.Source == duplicated.Source && IdentitySet(reopened) == IdentitySet(duplicated), "Organized phases and identities survive project save/reopen");
 Check(SourceVerification.Check(adapter.ServerRoot, file, renamed.Source).Accepted && SourceVerification.Check(adapter.ServerRoot, file, duplicated.Source).Accepted && SourceVerification.Check(adapter.ServerRoot, file, deleted.Source).Accepted, "Renamed, duplicated and deleted phase exports compile against the original server");
 File.WriteAllText(Path.Combine(savedDir, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));

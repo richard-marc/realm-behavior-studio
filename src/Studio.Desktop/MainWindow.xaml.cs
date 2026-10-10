@@ -96,7 +96,7 @@ public partial class MainWindow : Window
             if (selectedEntity != null && document != null && !arguments.Contains("--smoke")) BehaviorDocument.Save(RecoveryPath(), Snapshot());
             selectedEntity = entry; session = null; running = false; Viewport.Session = null;
             if (!documents.TryGetValue(entry.SourceFile, out document!))
-                documents[entry.SourceFile] = document = new BehaviorDocument(File.ReadAllText(entry.SourceFile), adapter.ParameterNames);
+                documents[entry.SourceFile] = document = new BehaviorDocument(File.ReadAllText(entry.SourceFile), adapter);
             projectPath = null; clearedEvents = 0; UpdatePlayButton(); Events.ItemsSource = null; EventCount.Text = "0 events"; Viewport.ResetCamera(); RefreshDocument();
         });
     }
@@ -141,17 +141,18 @@ public partial class MainWindow : Window
             locked.Checked += (_, _) => { document.LockedNodes.Add(id); UpdateOrganizeButtons(); }; locked.Unchecked += (_, _) => { document.LockedNodes.Remove(id); UpdateOrganizeButtons(); }; Inspector.Children.Add(locked);
             AddOrganizeControls(selectedNode);
             AddTransitionSummary(id);
+            AddLifecycleControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();
             foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State"))
             {
-                var meta = primitive?.Parameters.FirstOrDefault(p => p.Name == parameter.Name);
+                var meta = adapter.ParameterFor(document, selectedNode, parameter);
                 Inspector.Children.Add(new TextBlock { Text = parameter.Name + (string.IsNullOrEmpty(meta?.Unit) ? "" : " · " + meta.Unit), Margin = new(0, 10, 0, 0) });
                 var input = new TextBox { Text = parameter.Expression, ToolTip = meta == null ? "Original C# expression" : meta.Explanation + "\nDefault: " + meta.Default, Margin = new(0, 6, 0, 8) }; inputs.Add((parameter, input)); Inspector.Children.Add(input);
             }
             if (primitive != null)
             {
                 var optional = new StackPanel();
-                foreach (var meta in primitive.Parameters.Where(p => p.Default != "required" && !p.Type.EndsWith("[]") && selectedNode.Parameters.All(a => a.Name != p.Name)))
+                foreach (var meta in adapter.ParametersFor(document, selectedNode).Where(p => p.Default != "required" && !p.Type.EndsWith("[]") && selectedNode.Parameters.All(a => a.Name != p.Name)))
                 {
                     optional.Children.Add(new TextBlock { Text = meta.Name + " · " + meta.Unit, Margin = new(0, 8, 0, 0) });
                     var input = new TextBox { ToolTip = meta.Explanation }; inputs.Add((new(meta.Name, "", 0, 0), input)); optional.Children.Add(input);
@@ -180,16 +181,7 @@ public partial class MainWindow : Window
     void AddPrimitive(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null || Primitives.SelectedItem is not Primitive p) return;
-        var expression = p.Name switch
-        {
-            "Shoot" => "new Shoot(radius: 8, count: 5, shootAngle: 15, projectileIndex: 0, coolDown: 1000)",
-            "Wander" => "new Wander(speed: 0.3)", "Follow" => "new Follow(speed: 0.8, acquireRange: 10, range: 3)",
-            "HpLessTransition" => "new HpLessTransition(threshold: 0.7, targetState: " + PhaseLiteral(document.StateName(selectedNode.Id) ?? document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root.Descendants().Select(n => document.StateName(n.Id)).FirstOrDefault(n => n != null) ?? throw new ArgumentException("Add a named phase before adding transitions.")) + ")",
-            "TimedTransition" => "new TimedTransition(time: 3000, targetState: " + PhaseLiteral(document.StateName(selectedNode.Id) ?? document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root.Descendants().Select(n => document.StateName(n.Id)).FirstOrDefault(n => n != null) ?? throw new ArgumentException("Add a named phase before adding transitions.")) + ")",
-            "State" => "new State(" + PhaseLiteral(NextPhaseName()) + ")",
-            _ => throw new NotSupportedException("This constructor is browsable. Add it in source until a validated visual creation form is implemented.")
-        };
-        document.AddChild(selectedNode.Id, expression, d => adapter.Validate(d, selectedEntity!.Id)); Changed(selectedNode.Id);
+        BeginNativeCreation(p);
     });
     void Play(object sender, RoutedEventArgs e) => Try(() => { if (session == null) StartSession(); running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
     void StartSession(string? phase = null)
@@ -253,7 +245,7 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog { Filter = "C# behavior files|*.cs", InitialDirectory = Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db") };
         if (dialog.ShowDialog() != true) return;
-        var d = new BehaviorDocument(File.ReadAllText(dialog.FileName), adapter.ParameterNames); var id = d.Entities.FirstOrDefault()?.EntityId ?? throw new ArgumentException("No .Init entity definition found.");
+        var d = new BehaviorDocument(File.ReadAllText(dialog.FileName), adapter); var id = d.Entities.FirstOrDefault()?.EntityId ?? throw new ArgumentException("No .Init entity definition found.");
         var known = catalog.FirstOrDefault(c => c.Id == id) ?? throw new ArgumentException("This entity has no resource definition in the supplied server.");
         selectedEntity = known with { SourceFile = dialog.FileName }; document = d; documents[dialog.FileName] = d; projectPath = null; Changed();
     });
@@ -271,7 +263,7 @@ public partial class MainWindow : Window
     void LoadProject(string path)
     {
         var p = BehaviorDocument.Load(path);
-        var d = new BehaviorDocument(p.Source, adapter.ParameterNames, p.Identities);
+        var d = new BehaviorDocument(p.Source, adapter, p.Identities);
         var known = catalog.FirstOrDefault(c => c.Id == p.EntityId) ?? throw new ArgumentException("Project entity is missing from this server's resources.");
         selectedEntity = known with { SourceFile = p.SourceFile }; document = d; documents[p.SourceFile] = d; projectPath = path;
         foreach (var id in p.LockedNodes) d.LockedNodes.Add(id);
@@ -301,7 +293,7 @@ public partial class MainWindow : Window
     {
         pendingProposal = null;
         if (proposal.ExpectedRevision != document.Revision) throw new InvalidOperationException("This proposal is stale.");
-        var candidate = new BehaviorDocument(document.Source, adapter.ParameterNames, document.Identities);
+        var candidate = new BehaviorDocument(document.Source, adapter, document.Identities);
         foreach (var id in document.LockedNodes) candidate.LockedNodes.Add(id);
         candidate.Apply(proposal with { ExpectedRevision = 0 }, d => adapter.Validate(d, selectedEntity!.Id));
         pendingProposal = proposal;

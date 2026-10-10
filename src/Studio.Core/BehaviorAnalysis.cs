@@ -13,7 +13,7 @@ public static class BehaviorAnalysis
 {
     static readonly HashSet<string> Known = ["State", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
         "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
-        "Spawn", "ConditionalEffect", "ConditionalEffect2", "Taunt", "Cooldown"];
+        "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
     static double? Number(BehaviorNode node, string parameter)
     {

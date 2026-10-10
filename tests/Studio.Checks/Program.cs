@@ -9,7 +9,7 @@ void Check(bool condition, string message) { if (!condition) throw new Exception
 void Reject(Action action, string message) { try { action(); } catch (Exception e) when (e is ArgumentException or InvalidOperationException or NotSupportedException) { Check(true, message); return; } throw new Exception("Expected rejection: " + message); }
 var file = Path.Combine(root, "TKR.WorldServer/logic/db/BehaviorDb.PirateCave.cs");
 var original = File.ReadAllText(file);
-var doc = new BehaviorDocument(original, adapter.ParameterNames);
+var doc = new BehaviorDocument(original, adapter);
 Check(doc.Entities.Any(e => e.EntityId == "Cave Pirate Brawler"), "Import real C# behavior file");
 Check(doc.Source == original, "Lossless full-source import/export");
 var shoot = doc.Entities.Single(e => e.EntityId == "Cave Pirate Brawler").Root.Descendants().Single(n => n.Kind == "Shoot");
@@ -28,7 +28,7 @@ doc.LockedNodes.Clear();
 var outDir = Path.GetFullPath(".artifacts/verification"); Directory.CreateDirectory(outDir);
 var projectFile = Path.Combine(outDir, "roundtrip.rbs");
 BehaviorDocument.Save(projectFile, new StudioProject { Source = doc.Source, SourceFile = file, Identities = doc.Identities });
-var p = BehaviorDocument.Load(projectFile); var reopened = new BehaviorDocument(p.Source, adapter.ParameterNames, p.Identities);
+var p = BehaviorDocument.Load(projectFile); var reopened = new BehaviorDocument(p.Source, adapter, p.Identities);
 Check(reopened.Source == doc.Source && reopened.Find(shoot.Id).Id == shoot.Id, "Save/reopen retains edits and identities");
 var watch = System.Diagnostics.Stopwatch.StartNew();
 var session = new EncounterSession(adapter, doc, "Cave Pirate Brawler", 7, new(1000, 50, 0));
@@ -42,10 +42,10 @@ for (var i = 0; i < 100; i++) repeat.Step(new());
 Check(JsonSerializer.Serialize(session.Events) == JsonSerializer.Serialize(repeat.Events), "Seeded stationary replay repeats event trace");
 var warmMs = repeat.StartMs;
 Check(new EncounterSession(adapter, doc, "Cave Pirate Brawler", 7, new(1000, 50, 0), phase: "that").Events.Any(e => e.Kind == "forced-phase"), "Forced-phase mode explicitly labeled");
-var unsupported = new BehaviorDocument(original, adapter.ParameterNames);
+var unsupported = new BehaviorDocument(original, adapter);
 Reject(() => new EncounterSession(adapter, unsupported, "Dreadstump the Pirate King", 1, new()), "Unsupported opaque behavior blocks simulation");
 Check(unsupported.Source == original, "Unsupported content preserved");
-var originalDoc = new BehaviorDocument(original, adapter.ParameterNames);
+var originalDoc = new BehaviorDocument(original, adapter);
 var interpreted = new EncounterSession(adapter, originalDoc, "Cave Pirate Brawler", 7, new(1000, 50, 0));
 for (var i = 0; i < 100; i++) interpreted.Step(new());
 var compiled = new EncounterSession(adapter, originalDoc, "Cave Pirate Brawler", 7, new(1000, 50, 0), originalRuntimeReference: true);
@@ -62,7 +62,7 @@ if (File.Exists(referencePath))
         Math.Abs(pair.First.GetProperty("y").GetDouble() - pair.Second.Y) <= .00051 && Math.Abs(pair.First.GetProperty("angleDeg").GetDouble() - pair.Second.Angle * 180 / Math.PI) <= .00051),
         "Differential: captured original .NET 8 harness matches .NET 10 Studio (rounded report tolerance 0.00051 tiles/degrees)");
 }
-var acceptance = new BehaviorDocument(original, adapter.ParameterNames);
+var acceptance = new BehaviorDocument(original, adapter);
 var acceptanceRoot = acceptance.Entities.Single(e => e.EntityId == "Cave Pirate Brawler").Root;
 var fragment = File.ReadAllText("examples/three-phase.fragment.cs.txt");
 acceptance.ReplaceSource(acceptance.Source.Remove(acceptanceRoot.Start, acceptanceRoot.Length).Insert(acceptanceRoot.Start, fragment));
@@ -96,7 +96,7 @@ Reject(() => doc.Apply(new(doc.Revision, "Locked ancestor", [new(shoot.Id, "coun
 doc.LockedNodes.Clear();
 Reject(() => doc.Apply(new(doc.Revision, "Wrong type", [new(shoot.Id, "count", "1.5")]), d => adapter.Validate(d, "Cave Pirate Brawler")), "Fractional integer parameter rejected");
 Reject(() => doc.Apply(new(doc.Revision, "Opaque identifier", [new(shoot.Id, "count", "missingSymbol")])), "Visual edit cannot invent an identifier");
-var optionalDoc = new BehaviorDocument(original, adapter.ParameterNames, originalDoc.Identities);
+var optionalDoc = new BehaviorDocument(original, adapter, originalDoc.Identities);
 var optionalShot = optionalDoc.Entities.Single(e => e.EntityId == "Cave Pirate Brawler").Root.Descendants().Single(n => n.Kind == "Shoot");
 optionalDoc.Apply(new(0, "Optional pattern parameters", [new(optionalShot.Id, "shootAngle", "12"), new(optionalShot.Id, "rotateAngle", "15")]), d => adapter.Validate(d, "Cave Pirate Brawler"));
 Check(optionalDoc.Find(optionalShot.Id).Parameters.Any(p => p.Name == "rotateAngle" && p.Expression == "15"), "Optional constructor parameters can be added in one atomic edit");

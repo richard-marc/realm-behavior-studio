@@ -35,7 +35,7 @@ public sealed partial class BehaviorDocument
         foreach (var expression in clipboard.Expressions)
             if (expression == null || SyntaxFactory.ParseExpression(expression) is not ObjectCreationExpressionSyntax syntax || syntax.ContainsDiagnostics)
                 throw new ArgumentException("Clipboard entries must be valid constructor expressions.");
-        var temporary = new BehaviorDocument("class Fragment { void Build() { db.Init(\"__fragment__\", new State(" + string.Join(",\n", clipboard.Expressions) + ")); } }", names);
+        var temporary = new BehaviorDocument("class Fragment { void Build() { db.Init(\"__fragment__\", new State(" + string.Join(",\n", clipboard.Expressions) + ")); } }", names, schema: schema);
         var fragmentRoot = temporary.Entities.Single().Root;
         var phases = fragmentRoot.Children.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").ToArray();
         var originals = phases.Select(n => temporary.StateName(n.Id) ?? throw new ArgumentException("Name phases before copying them.")).ToArray();

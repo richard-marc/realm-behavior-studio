@@ -45,9 +45,12 @@ public sealed partial class BehaviorDocument
     public HashSet<Guid> LockedNodes { get; } = [];
     readonly Stack<(string Source, List<NodeIdentity> Ids)> undo = new(), redo = new();
     readonly Func<string, string[]> names;
-    public BehaviorDocument(string source, Func<string, string[]>? parameterNames = null, IEnumerable<NodeIdentity>? identities = null)
+    readonly IBehaviorSchema? schema;
+    public BehaviorDocument(string source, IBehaviorSchema schema, IEnumerable<NodeIdentity>? identities = null) : this(source, schema.ParameterNames, identities, schema) { }
+    public BehaviorDocument(string source, Func<string, string[]>? parameterNames = null, IEnumerable<NodeIdentity>? identities = null, IBehaviorSchema? schema = null)
     {
         names = parameterNames ?? (_ => []);
+        this.schema = schema;
         Source = source;
         Parse(identities?.ToList() ?? []);
         if (Diagnostics.Any(d => d.IsError)) throw new ArgumentException(string.Join("\n", Diagnostics.Select(d => d.Message)));
@@ -68,19 +71,19 @@ public sealed partial class BehaviorDocument
         {
             if (call.Expression is not MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Init" } || call.ArgumentList.Arguments.Count < 2) continue;
             if (call.ArgumentList.Arguments[0].Expression is not LiteralExpressionSyntax id || !id.IsKind(SyntaxKind.StringLiteralExpression)) continue;
-            if (call.ArgumentList.Arguments[1].Expression is not ObjectCreationExpressionSyntax creation || creation.Type.ToString() != "State") continue;
+            if (call.ArgumentList.Arguments[1].Expression is not ObjectCreationExpressionSyntax creation || creation.Type.ToString().Split('.').Last().Replace("global::", "") != "State") continue;
             var entityId = id.Token.ValueText;
             BehaviorNode Read(ObjectCreationExpressionSyntax c, string path)
             {
-                var kind = c.Type.ToString().Split('.').Last();
-                var pars = names(kind);
+                var kind = c.Type.ToString().Split('.').Last().Replace("global::", "");
+                var pars = schema?.ConstructorParameterNames(c.ToString()) ?? names(kind);
                 var args = c.ArgumentList?.Arguments ?? default;
                 var parameters = new List<Parameter>();
                 var children = new List<BehaviorNode>();
                 var index = 0;
                 foreach (var arg in args)
                 {
-                    if (arg.Expression is ObjectCreationExpressionSyntax child && (child.Type.ToString() != "Cooldown"))
+                    if (arg.Expression is ObjectCreationExpressionSyntax child && (schema?.IsChildArgument(c.ToString(), index) ?? child.Type.ToString().Split('.').Last() != "Cooldown"))
                         children.Add(Read(child, path + "/" + children.Count));
                     else if (kind == "State" && arg.Expression is not LiteralExpressionSyntax { Token.Value: string })
                     {
@@ -95,7 +98,7 @@ public sealed partial class BehaviorDocument
                 var matches = identities.Where(n => n.Kind == kind && n.Signature == c.ToString() && n.Path.StartsWith(entityId + "/") && !usedIdentities.Contains(n.Id)).ToArray();
                 var old = matches.Length == 1 ? matches[0] : identities.FirstOrDefault(n => n.Path == path && n.Kind == kind && !usedIdentities.Contains(n.Id));
                 if (old != null) usedIdentities.Add(old.Id);
-                var label = kind == "State" ? (args.FirstOrDefault()?.Expression is LiteralExpressionSyntax { Token.Value: string stateName } ? stateName : "Root") : kind;
+                var label = kind == "State" ? (parameters.Where(p => p.Name is "name" or "$0").Select(p => LiteralString(p.Expression)).FirstOrDefault(v => v != null) ?? "Root") : kind;
                 return new(old?.Id ?? Guid.NewGuid(), path, kind, label, c.SpanStart, c.Span.Length, parameters, children);
             }
             result.Add(new(entityId, call.SpanStart, Read(creation, entityId + "/root")));
@@ -122,7 +125,7 @@ public sealed partial class BehaviorDocument
             var p = n.Parameters.FirstOrDefault(p => p.Name == operation.Parameter);
             var expr = SyntaxFactory.ParseExpression(operation.Expression);
             if (expr.ContainsDiagnostics || expr.FullSpan.Length != operation.Expression.Length) throw new ArgumentException("Enter a valid C# value.");
-            if (expr is not LiteralExpressionSyntax && expr is not PrefixUnaryExpressionSyntax && expr is not MemberAccessExpressionSyntax && expr is not ObjectCreationExpressionSyntax { Type: IdentifierNameSyntax { Identifier.ValueText: "Cooldown" } })
+            if (!VisualValue(expr))
                 throw new ArgumentException("Visual parameter edits require literal values, enums or Cooldown values. Use source editing for other expressions.");
             if (p != null) edits.Add((p.Start, p.Length, operation.Expression));
             else
@@ -149,7 +152,7 @@ public sealed partial class BehaviorDocument
     }
     void Commit(string source, List<NodeIdentity> ids, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
-        var candidate = new BehaviorDocument(source, names, ids);
+        var candidate = new BehaviorDocument(source, names, ids, schema);
         var errors = validate?.Invoke(candidate).Where(d => d.IsError).ToArray() ?? [];
         if (errors.Length > 0) throw new ArgumentException(string.Join("\n", errors.Select(d => d.Message)));
         undo.Push((Source, Identities)); redo.Clear(); Source = source; Parse(ids); Revision++;
@@ -167,6 +170,20 @@ public sealed partial class BehaviorDocument
         Commit(Source.Insert(position, prefix + "\n                    " + expression + "\n                "), Identities, validate);
     }
     public bool Undo() => Restore(undo, redo);
+    static bool VisualValue(ExpressionSyntax expression) => expression switch
+    {
+        LiteralExpressionSyntax => true,
+        PrefixUnaryExpressionSyntax unary => VisualValue(unary.Operand),
+        ParenthesizedExpressionSyntax parenthesized => VisualValue(parenthesized.Expression),
+        MemberAccessExpressionSyntax => true,
+        BinaryExpressionSyntax binary => VisualValue(binary.Left) && VisualValue(binary.Right),
+        CastExpressionSyntax cast => VisualValue(cast.Expression),
+        DefaultExpressionSyntax => true,
+        ArrayCreationExpressionSyntax array => array.Initializer != null && array.Initializer.Expressions.All(VisualValue),
+        ImplicitArrayCreationExpressionSyntax array => array.Initializer.Expressions.All(VisualValue),
+        ObjectCreationExpressionSyntax creation => creation.Type.ToString().Split('.').Last() == "Cooldown" && creation.ArgumentList?.Arguments.All(a => VisualValue(a.Expression)) == true,
+        _ => false
+    };
     public bool Redo() => Restore(redo, undo);
     bool Restore(Stack<(string Source, List<NodeIdentity> Ids)> from, Stack<(string Source, List<NodeIdentity> Ids)> to)
     {

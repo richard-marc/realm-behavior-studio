@@ -99,7 +99,7 @@ public partial class MainWindow
                 return new { status = "previewed", changes = proposed.Operations.Count, applied = false };
             case "run_simulation":
                 var duration = args.GetProperty("durationMs").GetInt32(); if (duration < 100 || duration > 20000 || duration % 100 != 0) throw new ArgumentException("Duration must be 100–20000 ms in 100 ms steps.");
-                var candidate = new BehaviorDocument(document.Source, adapter.ParameterNames, document.Identities);
+                var candidate = new BehaviorDocument(document.Source, adapter, document.Identities);
                 if (args.GetProperty("previewProposal").GetBoolean())
                 {
                     if (pendingProposal == null || pendingProposal.ExpectedRevision != document.Revision) throw new InvalidOperationException("No current proposal to preview.");

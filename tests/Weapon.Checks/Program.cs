@@ -24,7 +24,7 @@ var weapons = GameWeapon.Catalog();
 Check(weapons.Count > 100 && weapons.Any(w => w.Id == "Bow of Fey Magic" && w.Supported), "Weapon catalog uses real equipment slot definitions");
 Console.WriteLine($"Catalog: {weapons.Count(w => w.Supported)} supported / {weapons.Count} total weapons");
 var original = File.ReadAllText(Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db/BehaviorDb.PirateCave.cs"));
-var doc = new BehaviorDocument(original, adapter.ParameterNames);
+var doc = new BehaviorDocument(original, adapter);
 var root = doc.Entities.Single(e => e.EntityId == "Cave Pirate Brawler").Root;
 doc.ReplaceSource(doc.Source.Remove(root.Start, root.Length).Insert(root.Start, "new State(\"idle\")"));
 EncounterSession Run(string weapon, int ticks, bool attack = true, double aimX = 64.5, int dex = 50, int atk = 50)
@@ -83,7 +83,7 @@ for (var i = 0; i < 10; i++) fixedRun.Step(new(Y: 1, Attack: true, AimX: 100, Ai
 var splitRun = new EncounterSession(adapter, doc, "Cave Pirate Brawler", 7, new(Invulnerable: true));
 for (var i = 0; i < 10; i++) foreach (var duration in new[] { 15, 20, 15, 15, 20, 15 }) splitRun.Advance(new(Y: 1, Attack: true, AimX: 100, AimY: 64.5), duration);
 Check(splitRun.Ms == fixedRun.Ms && splitRun.PlayerX == fixedRun.PlayerX && splitRun.PlayerY == fixedRun.PlayerY && JsonSerializer.Serialize(splitRun.PlayerShots) == JsonSerializer.Serialize(fixedRun.PlayerShots), "Display-frame partitioning preserves movement and weapon timing exactly");
-var movingDoc = new BehaviorDocument(original, adapter.ParameterNames);
+var movingDoc = new BehaviorDocument(original, adapter);
 var fixedEnemy = new EncounterSession(adapter, movingDoc, "Cave Pirate Brawler", 7, new(Invulnerable: true));
 for (var i = 0; i < 40; i++) fixedEnemy.Step(new(Y: 1));
 var smoothEnemy = new EncounterSession(adapter, movingDoc, "Cave Pirate Brawler", 7, new(Invulnerable: true));

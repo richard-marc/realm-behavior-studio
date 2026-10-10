@@ -5,7 +5,7 @@ using System.Text.Json;
 var adapter = new RapleAdapter(Path.GetFullPath(args.FirstOrDefault() ?? "../raple-realms-7-server"));
 var checks = new List<string>();
 void Check(bool value, string label) { if (!value) throw new Exception(label); checks.Add(label); Console.WriteLine("PASS " + label); }
-BehaviorDocument Doc(string tree) => new("class Fixture { void Build() { db.Init(\"Cave Pirate Brawler\", " + tree + "); } }", adapter.ParameterNames);
+BehaviorDocument Doc(string tree) => new("class Fixture { void Build() { db.Init(\"Cave Pirate Brawler\", " + tree + "); } }", adapter);
 BehaviorNode Root(BehaviorDocument d) => d.Entities.Single().Root;
 PhaseAnalysis Analyze(BehaviorDocument d) => BehaviorAnalysis.Analyze(Root(d));
 IEnumerable<DocumentDiagnostic> Warnings(BehaviorDocument d, string prefix) => Analyze(d).Diagnostics.Where(d => d.Message.StartsWith(prefix));

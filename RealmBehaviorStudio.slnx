@@ -6,6 +6,7 @@
     <Project Path="src/Studio.Raple/Studio.Raple.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Schema.Checks/Schema.Checks.csproj" />
     <Project Path="tests/Analysis.Checks/Analysis.Checks.csproj" />
     <Project Path="tests/AI.Checks/AI.Checks.csproj" />
     <Project Path="tests/FakeCodex/FakeCodex.csproj" />

@@ -10,6 +10,8 @@ Install the .NET 10 SDK on Windows, then double-click **Start Studio.cmd**. The 
 
 The refreshed workspace uses a graphite theme, matching dark dropdowns, separate Encounter/Behavior/Source/Details views, and a full-width console. Drag the divider above Console to resize it; the two rightmost console buttons expand or collapse it. Panel sizes are saved with projects and remembered between launches. Parameter explanations are available on hover, with optional settings collapsed by default.
 
+Select an action and **Add to state** to choose a real game constructor, fill its fields and inspect the source preview. Overloads, named arguments, arrays and optional defaults follow C# rules. Repeated arguments such as Taunt messages have separate editable fields. A phase's collapsed **Lifecycle** view shows its native callbacks and inherited parent actions; select a row to edit the original action. Factory calls and source variables still require Source editing and may prevent local simulation.
+
 Entity thumbnails, enemies, the Wizard test character and projectiles use the supplied client's actual PNG sheets. Studio reads the client texture registrations and resolves the source XML's texture indices, including hex indices and animated character cells. Pixel art stays crisp while zooming. Sprites are loaded from the private client checkout, not bundled into the public application. Unsupported/missing texture registrations show a placeholder; alternate skins, procedural rendering and full client animation parity remain incomplete.
 
 ```powershell

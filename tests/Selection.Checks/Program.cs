@@ -19,7 +19,7 @@ new State(
 """;
 BehaviorDocument Fresh()
 {
-    var d = new BehaviorDocument(original, adapter.ParameterNames); var root = Root(d);
+    var d = new BehaviorDocument(original, adapter); var root = Root(d);
     d.ReplaceSource(d.Source.Remove(root.Start, root.Length).Insert(root.Start, fragment)); return d;
 }
 BehaviorNode Root(BehaviorDocument d) => d.Entities.Single(e => e.EntityId == "Cave Pirate Brawler").Root;

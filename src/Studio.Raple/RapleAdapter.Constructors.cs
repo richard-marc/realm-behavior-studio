@@ -1,0 +1,74 @@
+using System.Reflection;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Studio.Core;
+using TKR.WorldServer.logic;
+
+namespace Studio.Raple;
+public sealed partial class RapleAdapter
+{
+    public static ConstructorBinding Binding(string expression) => ConstructorSchema.Value.Bind(expression);
+    public string[] ConstructorParameterNames(string expression)
+    {
+        var binding = Binding(expression);
+        if (binding.Constructor != null) return binding.SlotNames;
+        var creation = SyntaxFactory.ParseExpression(expression) as ObjectCreationExpressionSyntax;
+        return creation == null ? [] : ParameterNames(creation.Type.ToString().Split('.').Last());
+    }
+    public bool IsChildArgument(string expression, int argumentIndex)
+    {
+        var binding = Binding(expression);
+        if (binding.Constructor == null || argumentIndex >= binding.ParameterIndices.Length)
+            return SyntaxFactory.ParseExpression(expression) is ObjectCreationExpressionSyntax creation && creation.ArgumentList?.Arguments[argumentIndex].Expression is ObjectCreationExpressionSyntax child && child.Type.ToString().Split('.').Last() != "Cooldown";
+        var type = binding.Constructor.GetParameters()[binding.ParameterIndices[argumentIndex]].ParameterType;
+        if (type.IsArray) type = type.GetElementType()!;
+        return typeof(IStateChildren).IsAssignableFrom(type);
+    }
+    static Type? ParameterType(ConstructorBinding binding, string name)
+    {
+        if (binding.Constructor == null) return null;
+        var slot = Array.IndexOf(binding.SlotNames, name);
+        if (slot >= 0)
+        {
+            var type = binding.Constructor.GetParameters()[binding.ParameterIndices[slot]].ParameterType;
+            return binding.Expanded[slot] ? type.GetElementType() : type;
+        }
+        return binding.Constructor.GetParameters().FirstOrDefault(p => p.Name == name)?.ParameterType;
+    }
+    public IReadOnlyList<PrimitiveParameter> ParametersFor(BehaviorDocument document, BehaviorNode node)
+    {
+        var binding = Binding(document.Expression(node));
+        return binding.Constructor?.GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name, p.HasDefaultValue ? FormatDefault(p) : p.GetCustomAttribute<ParamArrayAttribute>() != null ? "empty array" : "required", Unit(p.Name!), Explain(p.Name!))).ToArray()
+            ?? Primitives.FirstOrDefault(p => p.Name == node.Kind)?.Parameters ?? [];
+    }
+    public PrimitiveParameter? ParameterFor(BehaviorDocument document, BehaviorNode node, Parameter parameter)
+    {
+        var binding = Binding(document.Expression(node)); var type = ParameterType(binding, parameter.Name);
+        var name = parameter.Name.Split('[')[0];
+        return type == null ? null : new(parameter.Name, type.Name, "provided", Unit(name), Explain(name));
+    }
+    static object EvaluateConstructor(ObjectCreationExpressionSyntax creation, Type runtime)
+    {
+        var binding = Binding(creation.ToString());
+        if (binding.RequiresContext) throw new NotSupportedException("This constructor requires source context; preserve/export it through the original compiler.");
+        if (binding.Errors.Length > 0) throw new ArgumentException(string.Join("\n", binding.Errors));
+        if (runtime.Name == "Cooldown" && binding.Constructor == null && creation.ArgumentList?.Arguments.Count == 0) return Activator.CreateInstance(runtime)!;
+        var constructor = binding.Constructor ?? throw new NotSupportedException("Cannot resolve the native constructor for " + runtime.Name);
+        var parameters = constructor.GetParameters(); var arguments = creation.ArgumentList!.Arguments;
+        var values = new object?[parameters.Length];
+        for (var i = 0; i < parameters.Length; i++)
+        {
+            var parameter = parameters[i]; var slots = Enumerable.Range(0, arguments.Count).Where(s => binding.ParameterIndices[s] == i).ToArray();
+            if (parameter.GetCustomAttribute<ParamArrayAttribute>() != null && (slots.Length == 0 || binding.Expanded[slots[0]]))
+            {
+                var element = parameter.ParameterType.GetElementType()!; var array = Array.CreateInstance(element, slots.Length);
+                for (var index = 0; index < slots.Length; index++) array.SetValue(Evaluate(arguments[slots[index]].Expression, element), index);
+                values[i] = array;
+            }
+            else if (slots.Length > 0) values[i] = Evaluate(arguments[slots[0]].Expression, parameter.ParameterType);
+            else if (parameter.HasDefaultValue) values[i] = parameter.DefaultValue ?? (parameter.ParameterType.IsValueType ? Activator.CreateInstance(parameter.ParameterType) : null);
+            else throw new ArgumentException("Missing constructor parameter " + parameter.Name);
+        }
+        return constructor.Invoke(values);
+    }
+}

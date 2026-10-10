@@ -136,7 +136,7 @@ public sealed partial class BehaviorDocument
             for (var i = 0; i < children.Count; i++) Walk(children[i], path + "/" + i);
         }
         foreach (var entity in Entities) Walk(entity.Root, entity.EntityId + "/root");
-        var probe = new BehaviorDocument(changed, names);
+        var probe = new BehaviorDocument(changed, names, schema: schema);
         var ids = probe.Identities.Select(identity => identity with { Id = layout[identity.Path] }).ToList();
         Commit(changed, ids, validate);
     }
