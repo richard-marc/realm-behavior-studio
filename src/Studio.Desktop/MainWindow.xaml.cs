@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         arguments = args; InitializeComponent();
         Graph.Selected += id => SelectAuthoringNode(id, Keyboard.Modifiers); Graph.CollapseRequested += TogglePhaseCollapse; Viewport.Selected += SelectNode;
         InitializeSelectionControls();
+        Viewport.AttackEdited += ApplyAttackEdit;
         autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); };
         PreviewKeyDown += Shortcut;
         Loaded += (_, _) => { Try(Initialize); CompositionTarget.Rendering += Advance; };
@@ -138,6 +139,7 @@ public partial class MainWindow : Window
         Try(() =>
         {
             selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();
+            RefreshAttackSelection();
             if (!retainNodeSelection) { nodeSelection.Clear(); nodeSelection.Add(id); selectionAnchor = id; }
             RefreshSelectionVisuals();
             SelectTreeNode(id); if (WorkspaceTabs.SelectedIndex == 1) ParametersTab.IsSelected = true;
@@ -159,6 +161,7 @@ public partial class MainWindow : Window
             locked.Checked += (_, _) => { document.LockedNodes.Add(id); UpdateOrganizeButtons(); }; locked.Unchecked += (_, _) => { document.LockedNodes.Remove(id); UpdateOrganizeButtons(); }; Inspector.Children.Add(locked);
             AddOrganizeControls(selectedNode);
             AddArgumentControls(selectedNode);
+            AddAttackControls(selectedNode);
             AddTransitionSummary(id);
             AddLifecycleControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();
@@ -202,9 +205,10 @@ public partial class MainWindow : Window
         if (selectedNode == null || Primitives.SelectedItem is not Primitive p) return;
         BeginNativeCreation(p);
     });
-    async void Play(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (session is CompiledRuntime { IsStopped: true }) session = null; if (session == null && !await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
+    async void Play(object sender, RoutedEventArgs e) => await TryRuntime(async () => { ClearAttackEditor(); if (session is CompiledRuntime { IsStopped: true }) session = null; if (session == null && !await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
     void StartSession(string? phase = null)
     {
+        ClearAttackEditor();
         session = new EncounterSession(adapter, document, selectedEntity!.Id, int.Parse(Seed.Text), ReadPreset(), int.Parse(ArenaSize.Text), phase);
         BindSession(phase);
     }

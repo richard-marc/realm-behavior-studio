@@ -75,6 +75,12 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
     public IBehaviorSchema At(int start) => new SourceBehaviorSchema(adapter, context, start);
     public IBehaviorSchema ForSource(string source, string? file) => file == null && context.Prepared && context.Binding.Value.Tree.GetText().ToString() == source ? this : adapter.ForSource(source, file);
     SemanticModel Model => context.Model;
+    internal bool TryConstant(string text, out object? value)
+    {
+        value = null; var expression = Expression(text); if (expression == null) return false;
+        var constant = Model.GetConstantValue(expression); if (!constant.HasValue) return false;
+        value = constant.Value; return true;
+    }
     ExpressionSyntax? Expression(string text)
     {
         if (position < 0) return null;

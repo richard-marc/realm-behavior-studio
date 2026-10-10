@@ -103,4 +103,33 @@ var compile = SourceVerification.Check(adapter.ServerRoot, originalFile, fixture
 Check(compile.Accepted, "Independent original .NET 8 compilation accepts all eight constructor fixtures: " + string.Join(";", compile.Errors.Take(2)));
 var invalidCompile = SourceVerification.Check(adapter.ServerRoot, originalFile, fixtureSource.Replace("_ = new Taunt(\"hello\");", "_ = new Taunt(1000, \"hello\");"));
 Check(!invalidCompile.Accepted && invalidCompile.Errors.Any(e => e.Contains("CS0121")), "Independent original compiler agrees on ambiguous Cooldown versus numeric overload");
+var attackDoc = Doc("new State(new Shoot(8, count: 5, shootAngle: 15, fixedAngle: 90, angleOffset: 10, rotateAngle: 30, coolDown: 100))"); var attackNode = attackDoc.Entities.Single().Root.Children.Single(); var pattern = adapter.ReadShootPattern(attackDoc, attackNode)!;
+Check(pattern is { Count: 5, Spacing: 15, FixedAngle: 90, Offset: 10, Rotation: 30, Radius: 8 } && pattern.Angles(0).SequenceEqual([70d, 85, 100, 115, 130]), "Visual attack geometry reads genuine native degrees, centered fan spacing, offset and instance rotation");
+var defaultFan = Doc("new State(new Shoot(8, count: 4))"); var defaultPattern = adapter.ReadShootPattern(defaultFan, defaultFan.Entities.Single().Root.Children.Single())!;
+Check(defaultPattern.Spacing == 90 && defaultPattern.FixedAngle == null && defaultPattern.Angles(90).SequenceEqual([-45d, 45, 135, 225]), "Default source fans retain 360/count spacing and player-target aim rather than becoming fixed attacks");
+var singleFan = Doc("new State(new Shoot(8, shootAngle: 45))");
+Check(adapter.ReadShootPattern(singleFan, singleFan.Entities.Single().Root.Children.Single())!.Spacing == 0, "Single native shots ignore supplied spacing exactly as the runtime constructor does");
+Check(adapter.ReadShootPattern(attackDoc, attackDoc.Entities.Single().Root) == null, "Attack geometry is exposed only for the actual native Shoot primitive");
+using (var attackSession = new EncounterSession(adapter, attackDoc, "Cave Pirate Brawler", 7, new()))
+{
+    for (var i = 0; i < 10 && attackSession.Shots.Count < 2; i++) attackSession.Step(new());
+    var shots = attackSession.Shots.Take(2).ToArray();
+    Check(shots.Length == 2 && shots.Select((s, volley) => Math.Abs(s.Angle - pattern.Angles(0, volley)[0] * Math.PI / 180) < .000001 && Math.Abs(s.AngleIncrement - pattern.Spacing * Math.PI / 180) < .000001 && s.Count == pattern.Count).All(v => v), "Visual fan directions match independent native Shoot packets across successive rotation counts within float tolerance");
+}
+var editedAttack = attackDoc.Source;
+var fallbackFan = Doc("new State(new Shoot(5.5, count: 3, shootAngle: 20, defaultAngle: 60, angleOffset: 10, coolDown: 100))"); var fallbackPattern = adapter.ReadShootPattern(fallbackFan, fallbackFan.Entities.Single().Root.Children.Single())!;
+Check(fallbackPattern.CanFire(null) && fallbackPattern.Angles(null).SequenceEqual([50d, 70, 90]) && fallbackPattern.Center(0) == 10, "Native default angle supplies fallback aim only when target acquisition has no player");
+using (var fallbackSession = new EncounterSession(adapter, fallbackFan, "Cave Pirate Brawler", 7, new()))
+{
+    fallbackSession.Step(new());
+    Check(fallbackSession.Shots.Count == 1 && Math.Abs(fallbackSession.Shots[0].Angle - fallbackPattern.Angles(null)[0] * Math.PI / 180) < .000001, "Fallback fan geometry matches a native packet with the actual player outside search radius");
+}
+var noTargetFan = Doc("new State(new Shoot(6, count: 3, coolDown: 100))"); var noTargetPattern = adapter.ReadShootPattern(noTargetFan, noTargetFan.Entities.Single().Root.Children.Single())!;
+using (var noTargetSession = new EncounterSession(adapter, noTargetFan, "Cave Pirate Brawler", 7, new()))
+{
+    noTargetSession.Step(new());
+    Check(!noTargetPattern.CanFire(null) && noTargetSession.Shots.Count == 0, "Native acquisition excludes a player exactly at search radius and emits no shots without fixed or fallback aim");
+}
+attackDoc.Apply(new(attackDoc.Revision, "Visual aim", [new(attackNode.Id, "fixedAngle", "180")]), d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(attackDoc.Find(attackNode.Id).Parameters.Single(p => p.Name == "fixedAngle").Expression == "180" && attackDoc.Undo() && attackDoc.Source == editedAttack, "Visual attack parameter commits use the same typed document validation, identity and single undo as the inspector");
 Console.WriteLine($"{count} native schema checks passed.");

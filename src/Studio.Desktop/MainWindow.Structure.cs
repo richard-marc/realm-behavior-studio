@@ -20,6 +20,8 @@ public partial class MainWindow
     void UpdateOrganizeButtons()
     {
         if (selectedNode == null) return; var editable = RegionEditable(selectedNode);
+        if (attackEditorButton != null) attackEditorButton.IsEnabled = editable;
+        RefreshAttackSelection();
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;
         if (deleteStructureButton != null) deleteStructureButton.IsEnabled = editable;

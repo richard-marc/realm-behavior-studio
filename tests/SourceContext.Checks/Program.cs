@@ -20,6 +20,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(int count = 4, double range = 8) => new TKR.WorldServer.logic.behaviors.Shoot(range, count: count, shootAngle: 12, fixedAngle: 90, coolDown: 200);
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(string text) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: text.Length);
     static State StudioContextShared { get { throw new System.InvalidOperationException("authoring must not execute this getter"); } }
+    static double StudioContextAttackAngle { get { throw new System.InvalidOperationException("attack geometry must not execute this getter"); } }
     static readonly TKR.WorldServer.logic.behaviors.Shoot StudioContextSharedAction = new TKR.WorldServer.logic.behaviors.Shoot(8, count: 3, fixedAngle: 90, coolDown: 200);
     static TKR.WorldServer.logic.behaviors.Timed StudioContextWrap(params TKR.WorldServer.logic.Behavior[] children) => new TKR.WorldServer.logic.behaviors.Timed(1000, children);
     static TKR.WorldServer.logic.behaviors.Timed StudioContextLists(TKR.WorldServer.logic.Behavior[] first, TKR.WorldServer.logic.Behavior[] second, int period = 1000) => new TKR.WorldServer.logic.behaviors.Timed(period, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(first, second)));
@@ -441,6 +442,13 @@ await using (var native = await CompiledRuntime.StartAsync(server, project with 
     Check(native.Shots.Single().Count == 7 && native.Entities.Single().Phase == "source initialized", "Native State object initializers execute their actual collection-member additions in compiled preview");
     native.ExportTrace(Path.Combine(output, "state-initializer-trace.json"));
 }
+var sourceAttack = Doc("new State(new Shoot(8, count: StudioContextCount, shootAngle: 12, fixedAngle: StudioContextCount * 20 + 10))"); var sourceAttackNode = Root(sourceAttack).Children.Single();
+Check(adapter.ReadShootPattern(sourceAttack, sourceAttackNode) is { Count: 4, Spacing: 12, FixedAngle: 90 }, "Source attack geometry reads compiler constants and arithmetic in the real constructor scope");
+var getterAttack = Doc("new State(new Shoot(8, fixedAngle: StudioContextAttackAngle))");
+Check(adapter.ReadShootPattern(getterAttack, Root(getterAttack).Children.Single()) == null, "Visual attack geometry refuses unknown source values without executing a throwing getter");
+var getterFallback = Doc("new State(new Shoot(5, defaultAngle: StudioContextAttackAngle))");
+Check(adapter.ReadShootPattern(getterFallback, Root(getterFallback).Children.Single()) == null, "Visual fallback angles refuse unknown getters rather than inventing a direction when no target is in range");
+Check(adapter.ReadShootPattern(shadowed, Root(shadowed).Children.Single()) == null, "A source alias to another native behavior cannot expose false Shoot handles");
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));
 Console.WriteLine($"{checks.Count} source-context checks passed.");

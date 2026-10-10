@@ -6,7 +6,7 @@ using System.Windows.Media.Imaging;
 using Studio.Raple;
 
 namespace Studio.Desktop;
-public sealed class EncounterViewport : FrameworkElement
+public sealed partial class EncounterViewport : FrameworkElement
 {
     IEncounterSession? session;
     public IEncounterSession? Session
@@ -46,25 +46,28 @@ public sealed class EncounterViewport : FrameworkElement
         MouseWheel += (_, e) =>
         {
             var cursor = e.GetPosition(this); var world = World(cursor);
-            scale = Math.Clamp(scale * (e.Delta > 0 ? 1.12 : 1 / 1.12), 8, 100);
+            scale = Math.Clamp(scale * (e.Delta > 0 ? 1.12 : 1 / 1.12), Attack == null ? 8 : .001, 100);
             pan = new Vector(cursor.X - ActualWidth / 2 - (world.X - 64.5) * scale, cursor.Y - ActualHeight / 2 - (world.Y - 64.5) * scale); InvalidateVisual();
         };
-        KeyDown += (_, e) => { keys.Add(e.Key); if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right) e.Handled = true; };
+        KeyDown += (_, e) => { if (e.Key == Key.Escape && attackDrag != null) { CancelAttackDrag(); ReleaseMouseCapture(); e.Handled = true; return; } keys.Add(e.Key); if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right) e.Handled = true; };
         KeyUp += (_, e) => keys.Remove(e.Key); LostKeyboardFocus += (_, _) => keys.Clear();
         MouseDown += (_, e) =>
         {
             Focus(); if (e.ChangedButton == MouseButton.Middle) { drag = e.GetPosition(this); CaptureMouse(); return; }
+            if (e.ChangedButton == MouseButton.Left && BeginAttackDrag(e.GetPosition(this))) { CaptureMouse(); e.Handled = true; return; }
             if (e.ChangedButton == MouseButton.Right && Session != null)
             {
                 var w = HitWorld(e.GetPosition(this)); var bullet = Session.Projectiles.OrderBy(b => Math.Pow(b.X - w.X, 2) + Math.Pow(b.Y - w.Y, 2)).FirstOrDefault();
                 if (bullet?.NodeId is { } id && Math.Abs(bullet.X - w.X) < 1 && Math.Abs(bullet.Y - w.Y) < 1) Selected?.Invoke(id);
             }
         };
-        MouseMove += (_, e) => { if (drag is { } previous) { var next = e.GetPosition(this); pan += next - previous; drag = next; InvalidateVisual(); } };
-        MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { drag = null; ReleaseMouseCapture(); } };
+        MouseMove += (_, e) => { if (attackDrag != null) { MoveAttackDrag(e.GetPosition(this)); e.Handled = true; } else if (drag is { } previous) { var next = e.GetPosition(this); pan += next - previous; drag = next; InvalidateVisual(); } };
+        MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Left && attackDrag != null) { EndAttackDrag(); ReleaseMouseCapture(); e.Handled = true; } if (e.ChangedButton == MouseButton.Middle) { drag = null; ReleaseMouseCapture(); } };
+        LostMouseCapture += (_, _) => { drag = null; CancelAttackDrag(); };
     }
     public EncounterInput Input()
     {
+        if (Attack != null) return new();
         bool Held(params Key[] values) => IsKeyboardFocusWithin && values.Any(keys.Contains);
         var aim = HitWorld(Mouse.GetPosition(this));
         return new((Held(Key.D, Key.Right) ? 1 : 0) - (Held(Key.A, Key.Left) ? 1 : 0), (Held(Key.S, Key.Down) ? 1 : 0) - (Held(Key.W, Key.Up) ? 1 : 0), IsMouseOver && Mouse.LeftButton == MouseButtonState.Pressed, aim.X, aim.Y);
@@ -84,6 +87,7 @@ public sealed class EncounterViewport : FrameworkElement
         if (Session is not { } session)
         {
             DrawCharacter(dc, PreviewEntity, origin, SpriteAction.Stand, 0, 0);
+            if (Attack != null) { DrawAttack(dc); return; }
             Text(dc, "Ready to simulate", new(18, 18), 13, Brush("#A4AAB3"));
             Text(dc, "Press Play  ·  WASD to move  ·  mouse to aim", new(18, ActualHeight - 32), 12, Brush("#686F7B")); return;
         }

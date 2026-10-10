@@ -57,6 +57,7 @@ public partial class MainWindow
     }
     void BeginNativeCreation(Primitive primitive)
     {
+        ClearAttackEditor();
         var focus = selectedNode ?? throw new ArgumentException("Select a phase or argument list first.");
         if (focus.Children.Count(n => n.Kind == "ArgumentGroup") > 1) throw new ArgumentException("Select the named child slot in this wrapper first.");
         var target = document.CanEditChildren(focus.Id) ? focus : document.Parent(focus.Id) is { } parent && document.CanEditChildren(parent.Id) ? parent : OwnerPhase(focus);

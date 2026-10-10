@@ -11,6 +11,7 @@ public partial class MainWindow
     }
     async Task<bool> StartSessionAsync(string? phase = null)
     {
+        ClearAttackEditor();
         session = null; running = false; Viewport.Session = null;
         if (!adapter.NeedsCompiledRuntime(document, selectedEntity!.Id)) { StartSession(phase); return true; }
         var project = Snapshot(); var expectedDocument = document; var revision = document.Revision;
