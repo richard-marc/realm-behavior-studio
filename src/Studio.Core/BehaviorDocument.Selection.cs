@@ -143,7 +143,7 @@ public sealed partial class BehaviorDocument
                 throw new ArgumentException($"{parent.Label}.{slot.Name} requires {(slot.IsArray ? "at least " + slot.Minimum : "exactly one")} child.");
             var owner = parent.Kind == "ArgumentGroup" ? Parent(parent.Id)! : parent;
             foreach (var child in order.Value)
-                if (child.Kind == "ArgumentGroup" || child.Kind != "Opaque" && schema != null && !schema.AcceptsChild(Expression(owner), slot.Name, expressions[child.Id].ToString(), parent.Kind == "ArgumentGroup" ? Expression(parent) : null))
+                if (child.Kind == "ArgumentGroup" || child.Kind != "Opaque" && schema != null && !SchemaAt(owner)!.AcceptsChild(Expression(owner), slot.Name, expressions[child.Id].ToString(), parent.Kind == "ArgumentGroup" ? Expression(parent) : null))
                     throw new ArgumentException($"{child.Label} is not compatible with {parent.Label}.{slot.Name} ({slot.ElementType}).");
         }
         var changed = tree.ReplaceNodes(containers.Keys, (original, current) =>

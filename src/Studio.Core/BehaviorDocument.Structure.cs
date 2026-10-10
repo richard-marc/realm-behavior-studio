@@ -26,6 +26,8 @@ public sealed partial class BehaviorDocument
         var affected = affectedNames.ToHashSet(StringComparer.Ordinal);
         foreach (var node in entity.Root.Descendants())
         {
+            if (node.Kind is "Factory" or "Reference")
+                throw new ArgumentException("This encounter contains source-generated phases or references. Update phase names in source so their hidden references stay consistent.");
             if (node.Parameters.Any(p => p.Name.StartsWith("targetState", StringComparison.Ordinal) && (p.Name != "targetState" || LiteralString(p.Expression) == null)) ||
                 node.Kind == "Opaque" && SyntaxFactory.ParseExpression(Expression(node)).DescendantNodesAndSelf().OfType<LiteralExpressionSyntax>().Any(l => l.Token.Value is string value && affected.Contains(value)))
                 throw new ArgumentException("This encounter contains a phase reference that cannot be safely rewritten. Update it in source first.");
@@ -76,7 +78,7 @@ public sealed partial class BehaviorDocument
             for (var i = 0; i < children.Count; i++) Walk(children[i], path + "/" + i);
         }
         foreach (var entity in Entities) Walk(entity.Root, entity.EntityId + "/root");
-        var probe = new BehaviorDocument(changed, names, schema: schema);
+        var probe = new BehaviorDocument(changed, names, schema: baseSchema, sourceFile: SourceFile);
         var ids = probe.Identities.Select(identity => identity with { Id = layout[identity.Path] }).ToList();
         Commit(changed, ids, validate);
     }

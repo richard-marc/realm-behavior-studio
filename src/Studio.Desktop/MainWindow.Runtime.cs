@@ -7,7 +7,7 @@ public partial class MainWindow
     {
         try { await action(); }
         catch (OperationCanceledException) { }
-        catch (Exception error) { Try(() => throw error); }
+        catch (Exception error) { Try(() => System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw()); }
     }
     async Task<bool> StartSessionAsync(string? phase = null)
     {

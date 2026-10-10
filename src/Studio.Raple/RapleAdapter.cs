@@ -18,9 +18,19 @@ public record CatalogEntry(string Id, ushort ObjectType, string SourceFile)
 public sealed partial class RapleAdapter : IBehaviorSchema
 {
     public string ServerRoot { get; }
+    readonly SourceSchemaCache sourceSchemas;
+    public IBehaviorSchema ForSource(string source, string? sourceFile)
+    {
+        if (string.IsNullOrEmpty(sourceFile)) return this;
+        var path = Path.GetFullPath(sourceFile);
+        var directory = Path.GetFullPath(Path.Combine(ServerRoot, "TKR.WorldServer")) + Path.DirectorySeparatorChar;
+        return File.Exists(path) && path.StartsWith(directory, StringComparison.OrdinalIgnoreCase)
+            ? new SourceBehaviorSchema(this, sourceSchemas, source, path) : this;
+    }
     static readonly Assembly EngineAssembly = typeof(State).Assembly;
     static readonly Lazy<NativeConstructorSchema> ConstructorSchema = new(() => new(EngineAssembly));
     static Type RuntimeType(string name) => EngineAssembly.GetTypes().Single(t => t.Name == name && (typeof(IStateChildren).IsAssignableFrom(t) || t.FullName == "TKR.WorldServer.logic.Cooldown"));
+    internal static string? NativeTypeName(string name) => EngineAssembly.GetTypes().Where(t => t.Name == name && typeof(IStateChildren).IsAssignableFrom(t)).Select(t => t.FullName?.Replace('+', '.')).SingleOrDefault();
     // Explicit scope, independent of the reflection catalog. Constructors outside this list remain opaque.
     static readonly HashSet<string> Supported = ["State", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit",
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityNotExistsTransition",
@@ -29,6 +39,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     public RapleAdapter(string root)
     {
         ServerRoot = Path.GetFullPath(root);
+        sourceSchemas = new(ServerRoot);
         if (!Directory.Exists(Path.Combine(ServerRoot, "TKR.Shared/resources/xml"))) throw new DirectoryNotFoundException("Choose the Raple Realms server source folder, containing TKR.Shared/resources/xml.");
         SimEngine.Root = ServerRoot;
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
@@ -61,15 +72,30 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         var result = new List<CatalogEntry>();
         foreach (var file in Directory.EnumerateFiles(Path.Combine(ServerRoot, "TKR.WorldServer/logic/db"), "*.cs"))
         {
-            var doc = new BehaviorDocument(File.ReadAllText(file), this);
-            foreach (var e in doc.Entities)
-                if (SimEngine.Data.IdToObjectType.TryGetValue(e.EntityId, out var type) && SimEngine.Data.ObjectDescs[type].Enemy)
-                    result.Add(new(e.EntityId, type, file));
+            foreach (var id in EntityIds(File.ReadAllText(file), file))
+                if (SimEngine.Data.IdToObjectType.TryGetValue(id, out var type) && SimEngine.Data.ObjectDescs[type].Enemy)
+                    result.Add(new(id, type, file));
         }
         return result.OrderBy(e => e.Id).ToArray();
     }
+    public IReadOnlyList<string> EntityIds(string source, string sourceFile)
+    {
+        // Library discovery needs roots, not semantic binding of every nested action
+        // in every file. Resolve the selected document fully when it is opened.
+        var ids = new BehaviorDocument(source, this).Entities.Select(e => e.EntityId).ToList();
+        var scoped = ForSource(source, sourceFile);
+        foreach (var call in CSharpSyntaxTree.ParseText(source).GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (call.Expression is not MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Init" } || call.ArgumentList.Arguments.Count < 2 ||
+                call.ArgumentList.Arguments[0].Expression is not LiteralExpressionSyntax { Token.Value: string id } || ids.Contains(id)) continue;
+            var root = call.ArgumentList.Arguments[1].Expression;
+            if (scoped.At(root.SpanStart).DescribeExpression(root.ToString())?.IsState == true) ids.Add(id);
+        }
+        return ids;
+    }
     public IEnumerable<DocumentDiagnostic> Validate(BehaviorDocument document, string? entityId = null)
     {
+        foreach (var diagnostic in document.SourceDiagnostics()) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId))
         {
             var nodes = entity.Root.Descendants().ToArray();
@@ -79,15 +105,19 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             foreach (var n in nodes)
             {
                 if (n.Kind == "ArgumentGroup") continue;
+                var sourceBinding = document.SchemaAt(n)?.DescribeExpression(document.Expression(n));
                 if (n.Kind == "Opaque") yield return new("Visual structure is incomplete; the original expression is retained.", n.Id, false);
                 else if (!Supported.Contains(n.Kind)) yield return new($"{n.Kind} requires compiled source preview. Its game-context fidelity is not yet certified.", n.Id, false);
                 var binding = Binding(document.Expression(n));
                 if (n.Kind == "Prioritize" && n.Children.Sum(c => c.Kind == "ArgumentGroup" ? c.Children.Count : 1) == 0 && n.Parameters.All(p => p.Name != "children"))
                     yield return new("Prioritize requires at least one cycle behavior for native execution.", n.Id);
-                if (binding.RequiresContext && n.Kind != "Opaque") yield return new($"{n.Kind} requires source context for complete constructor binding.", n.Id, false);
-                else if (binding.Errors.Length > 0 && n.Kind != "Opaque") foreach (var error in binding.Errors.Distinct()) yield return new(n.Kind + ": " + error, n.Id);
+                if (sourceBinding == null && binding.RequiresContext && n.Kind != "Opaque") yield return new($"{n.Kind} requires source context for complete constructor binding.", n.Id, false);
+                else if (sourceBinding == null && binding.Errors.Length > 0 && n.Kind != "Opaque") foreach (var error in binding.Errors.Distinct()) yield return new(n.Kind + ": " + error, n.Id);
                 foreach (var p in n.Parameters)
                 {
+                    // Factory parameter names do not establish native units, resource
+                    // IDs or numeric limits. Its own source defines that contract.
+                    if (!Supported.Contains(n.Kind)) continue;
                     var parameterType = ParameterType(binding, p.Name);
                     string? typeError = null;
                     if (parameterType != null && !binding.RequiresContext)
@@ -97,7 +127,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                             try { Evaluate(parsed, parameterType); } catch (Exception e) { typeError = e.GetBaseException().Message; }
                     }
                     if (typeError != null) yield return new($"{n.Kind}.{p.Name}: {typeError}", n.Id);
-                    if (p.Name == "targetState" && !nodes.Any(n => n.Kind == "Opaque") && BehaviorDocument.LiteralString(p.Expression) is { } stateTarget && !states.Any(s => (document.StateName(s.Id) ?? "") == stateTarget))
+                    if (p.Name == "targetState" && !nodes.Any(n => n.Kind is "Opaque" or "Factory" or "Reference") && !states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) && BehaviorDocument.LiteralString(p.Expression) is { } stateTarget && !states.Any(s => (document.StateName(s.Id) ?? "") == stateTarget))
                         yield return new("Missing transition target: " + p.Expression, n.Id);
                     if (p.Name is "children" or "target" && BehaviorDocument.LiteralString(p.Expression) is { } resourceTarget && !SimEngine.Data.IdToObjectType.ContainsKey(resourceTarget))
                         yield return new("Missing entity resource: " + p.Expression, n.Id);
@@ -127,7 +157,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         return root;
     }
     public bool NeedsCompiledRuntime(BehaviorDocument document, string entityId) => document.Entities.Single(e => e.EntityId == entityId)
-        .Root.Descendants().Any(n => n.Kind != "ArgumentGroup" && (!Supported.Contains(n.Kind) || Binding(document.Expression(n)).RequiresContext));
+        .Root.Descendants().Any(n => n.Kind != "ArgumentGroup" && (document.SchemaAt(n)?.DescribeExpression(document.Expression(n))?.RequiresCompiled == true || !Supported.Contains(n.Kind) || Binding(document.Expression(n)).RequiresContext));
     public static object? Evaluate(ExpressionSyntax expr, Type expected)
     {
         var nullable = Nullable.GetUnderlyingType(expected); var type = nullable ?? expected;

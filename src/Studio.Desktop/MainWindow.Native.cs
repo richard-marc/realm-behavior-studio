@@ -17,7 +17,8 @@ public partial class MainWindow
     BehaviorNode OwnerPhase(BehaviorNode node) => node.Kind == "State" ? node : OwnerPhase(document.Parent(node.Id) ?? throw new ArgumentException("Select a phase first."));
     void AddLifecycleControls(BehaviorNode node)
     {
-        if (node.Kind == "ArgumentGroup") { lifecycleRows.Clear(); lifecyclePanel = null; return; }
+        if (node.Kind is "ArgumentGroup" or "Factory" or "Reference" || node.Kind != "State" && !document.Entities.SelectMany(e => e.Root.Descendants()).Any(p => p.Kind == "State" && node.Path.StartsWith(p.Path + "/", StringComparison.Ordinal)))
+        { lifecycleRows.Clear(); lifecyclePanel = null; return; }
         lifecycleRows.Clear(); var body = new StackPanel();
         var actions = node.Kind == "State" ? adapter.PhaseActions(document, node.Id) : [new LifecycleAction(node, OwnerPhase(node), false, adapter.EffectiveCallbacks(document, node))];
         foreach (var stage in new[] { "Entry", "Ongoing", "Exit", "Death" })

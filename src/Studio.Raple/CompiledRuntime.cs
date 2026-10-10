@@ -73,6 +73,16 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
         artifactRoot ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RealmBehaviorStudio", "Runtime");
         var compilation = await Task.Run(() => SourceVerification.Compile(serverRoot, project.SourceFile, project.Source, cancellation), cancellation).ConfigureAwait(false);
         if (!compilation.Verification.Accepted) throw new ArgumentException("Original compiler rejected the runtime:\n" + string.Join("\n", compilation.Verification.Errors.Take(8)));
+        var prepared = await Task.Run(() =>
+        {
+            var adapter = new RapleAdapter(serverRoot);
+            var schema = new SourceBehaviorSchema(adapter, compilation.Compiler!, project.SourceFile);
+            var document = new BehaviorDocument(project.Source, schema, project.Identities);
+            var bindings = document.Entities.SelectMany(e => e.Root.Descendants()).Select(n => (Node: n, Description: document.SchemaAt(n)?.DescribeExpression(document.Expression(n))))
+                .Where(p => p.Description != null).Select(p => new RuntimeSourceBinding(p.Node.Start, document.Expression(p.Node), p.Description!)).ToArray();
+            return (Project: project with { Identities = document.Identities }, Bindings: bindings);
+        }, cancellation).ConfigureAwait(false);
+        project = prepared.Project;
         cancellation.ThrowIfCancellationRequested();
         var hostFiles = Directory.EnumerateFiles(hostDirectory, "*", SearchOption.AllDirectories).OrderBy(p => p, StringComparer.Ordinal)
             .Select(p => (Name: Path.GetRelativePath(hostDirectory, p), Data: File.ReadAllBytes(p))).ToArray();
@@ -103,7 +113,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
         start.ArgumentList.Add("--parent"); start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the compiled runtime.");
         var runtime = new CompiledRuntime(process, stamp, limits, project);
-        try { await runtime.Exchange(new(RuntimeProtocol.Version, 0, "start", new(Path.GetFullPath(serverRoot), project, resourceHash, phase)), limits.StartupSeconds, cancellation).ConfigureAwait(false); return runtime; }
+        try { await runtime.Exchange(new(RuntimeProtocol.Version, 0, "start", new(Path.GetFullPath(serverRoot), project, resourceHash, phase, prepared.Bindings)), limits.StartupSeconds, cancellation).ConfigureAwait(false); return runtime; }
         catch { await runtime.DisposeAsync().ConfigureAwait(false); throw; }
     }
     async Task DrainLog()

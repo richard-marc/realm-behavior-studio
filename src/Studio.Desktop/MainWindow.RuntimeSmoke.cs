@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using Studio.Core;
 using Studio.Raple;
@@ -12,16 +13,30 @@ public partial class MainWindow
     {
         var source = File.ReadAllText(selectedEntity!.SourceFile);
         var doc = new BehaviorDocument(source, adapter); var root = doc.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
-        const string expression = "new State(new State(\"native preview\", StudioPreviewFan(), new Follow(StudioPreviewSpeed, range: 1)))";
+        const string expression = "StudioPreviewRoot(count: 4)";
         const string helpers = """
 
         namespace TKR.WorldServer.logic { public partial class BehaviorDb {
             const double StudioPreviewSpeed = .3;
-            static TKR.WorldServer.logic.behaviors.Shoot StudioPreviewFan() => new TKR.WorldServer.logic.behaviors.Shoot(8, count: 4, coolDown: 200);
+            static State StudioPreviewRoot(int count = 4, double speed = .3) => new State(new State("native preview", StudioPreviewFan(count), new TKR.WorldServer.logic.behaviors.Follow(speed, range: 1)));
+            static TKR.WorldServer.logic.behaviors.Shoot StudioPreviewFan(int count) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: count, coolDown: 200);
         } }
         """;
-        document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter);
-        Changed(); var preparing = StartSessionAsync();
+        document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);
+        Changed(); var factory = document.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
+        check(factory.Kind == "Factory" && factory.Parameters.Single().Name == "count", "Desktop discovers the imported source helper as the encounter root");
+        SelectNode(factory.Id);
+        var input = Inspector.Children.OfType<TextBox>().Single(); input.Text = "6";
+        Inspector.Children.OfType<Button>().Single(b => b.Content is string text && text == "Apply changes").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(document.Find(factory.Id).Parameters.Single().Expression == "6", "Real factory inspector Apply edits the helper argument through the shared document");
+        check(Inspector.Children.OfType<Expander>().Any(e => e.Header is string text && text == "More supported parameters"), "Factory inspector exposes omitted optional source parameters");
+        check(document.Undo() && document.Find(factory.Id).Parameters.Single().Expression == "4", "Desktop factory edit restores its previous source and identity through undo");
+        Changed(factory.Id); WorkspaceTabs.SelectedIndex = 1; UpdateLayout(); CaptureView(Graph, Path.Combine(output, "factory-source-graph.png"));
+        check(Graph.PhaseBounds(factory.Id) != null, "Factory root has a selectable source encounter card in the graph");
+        var card = Graph.PhaseBounds(factory.Id)!.Value; Graph.SelectAt(new(card.Left + 20, card.Top + 40));
+        check(selectedNode?.Id == factory.Id, "Source encounter graph card navigates to the same editable factory identity");
+        WorkspaceTabs.SelectedIndex = 0;
+        var preparing = StartSessionAsync();
         check(runtimeStarting != null && !PlayButton.IsEnabled, "Compiled preparation exposes its pending state in the real playback control");
         var dispatched = false;
         await Dispatcher.InvokeAsync(() => dispatched = true, DispatcherPriority.Background);

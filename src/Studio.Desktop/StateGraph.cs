@@ -50,7 +50,17 @@ public sealed class StateGraph : FrameworkElement
         if (root == null) return;
         var allStates = root.Descendants().Where(n => n.Kind == "State").ToArray();
         var states = allStates.Where(n => !allStates.Any(ancestor => collapsed.Contains(ancestor.Id) && n.Path.StartsWith(ancestor.Path + "/", StringComparison.Ordinal))).ToArray();
-        if (states.Length == 0) return;
+        if (states.Length == 0)
+        {
+            Width = 388; Height = 270;
+            var rect = new Rect(20, 18, 320, 126); locations[root.Id] = rect;
+            dc.DrawRoundedRectangle(EncounterViewport.Brush("#202226"), new Pen(EncounterViewport.Brush(root.Id == highlight ? "#98B4C3" : "#3D414A"), 1), rect, 9, 9);
+            Text(dc, "SOURCE ENCOUNTER", new(34, 29), 10, "#858B95", 290);
+            Text(dc, root.Label, new(34, 49), 15, "#E8E9EC", 290);
+            Text(dc, "Phases are generated when the game loads", new(34, 82), 11, "#92969F", 290);
+            Text(dc, "Select to edit its source arguments", new(34, 106), 11, "#91A69D", 290);
+            return;
+        }
         var y = 18d;
         foreach (var state in states)
         {

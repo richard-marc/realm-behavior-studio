@@ -49,12 +49,19 @@ public sealed partial class RapleAdapter
     }
     public IReadOnlyList<PrimitiveParameter> ParametersFor(BehaviorDocument document, BehaviorNode node)
     {
+        if (document.SchemaAt(node)?.DescribeExpression(document.Expression(node)) is { } source)
+            return source.Parameters.Where(p => source.Children.All(c => c.Name != p.Name)).Select(p => new PrimitiveParameter(p.Name, p.Type, p.Default, source.Kind == "Factory" ? "" : Unit(p.Name), source.Kind == "Factory" ? "Argument passed to this source helper. Its implementation defines the units and behavior." : Explain(p.Name))).ToArray();
         var binding = Binding(document.Expression(node));
         return binding.Constructor?.GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name, p.HasDefaultValue ? FormatDefault(p) : p.GetCustomAttribute<ParamArrayAttribute>() != null ? "empty array" : "required", Unit(p.Name!), Explain(p.Name!))).ToArray()
             ?? Primitives.FirstOrDefault(p => p.Name == node.Kind)?.Parameters ?? [];
     }
     public PrimitiveParameter? ParameterFor(BehaviorDocument document, BehaviorNode node, Parameter parameter)
     {
+        if (document.SchemaAt(node)?.DescribeExpression(document.Expression(node)) is { } source)
+        {
+            var p = source.Parameters.FirstOrDefault(p => p.Name == parameter.Name.Split('[')[0]);
+            return p == null ? null : new(parameter.Name, p.Type.EndsWith("[]") && parameter.Name.Contains('[') ? p.Type[..^2] : p.Type, "provided", source.Kind == "Factory" ? "" : Unit(p.Name), source.Kind == "Factory" ? "Argument passed to this source helper. Its implementation defines the units and behavior." : Explain(p.Name));
+        }
         var binding = Binding(document.Expression(node)); var type = ParameterType(binding, parameter.Name);
         var name = parameter.Name.Split('[')[0];
         return type == null ? null : new(parameter.Name, type.Name, "provided", Unit(name), Explain(name));

@@ -67,7 +67,7 @@ public static class BehaviorAnalysis
                 if (target?.Id == state.Id) diagnostics.Add(new($"Self transition in {state.Label}: stays in this branch or enters its first nested phase. Common-ancestor entry callbacks are not rerun.", node.Id, false));
             }
         }
-        var incomplete = nodes.Any(n => !Known.Contains(n.Kind)) || names.Any(g => g.Value.Length != 1) || edges.Any(e => e.TargetName == null);
+        var incomplete = nodes.Any(n => !Known.Contains(n.Kind)) || states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) || names.Any(g => g.Value.Length != 1) || edges.Any(e => e.TargetName == null);
         if (incomplete) diagnostics.Add(new("Reachability analysis is incomplete: opaque/custom nodes, dynamic targets or duplicate names may change phase entry. Unreachable-phase notices are suppressed.", root.Id, false));
         else
         {

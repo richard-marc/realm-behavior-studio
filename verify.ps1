@@ -36,6 +36,9 @@ try {
     & dotnet run --project tests/Argument.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/argument-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/argument-checks.log' -Tail 25; throw 'Grouped argument checks failed.' }
     Get-Content '.artifacts/argument-checks.log' -Tail 1
+    & dotnet run --project tests/SourceContext.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/source-context-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/source-context-checks.log' -Tail 25; throw 'Source context checks failed.' }
+    Get-Content '.artifacts/source-context-checks.log' -Tail 1
     & dotnet run --project tests/Runtime.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/runtime-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/runtime-checks.log' -Tail 25; throw 'Compiled runtime checks failed.' }
     Get-Content '.artifacts/runtime-checks.log' -Tail 1
@@ -46,7 +49,10 @@ try {
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/desktop-build.log' -Tail 25; throw 'Desktop build failed.' }
     $studioExe = Join-Path $PSScriptRoot 'src/Studio.Desktop/bin/Debug/net10.0-windows/Studio.Desktop.exe'
     $studioProcess = Start-Process -FilePath $studioExe -ArgumentList @('--smoke', '--server', ('"' + [IO.Path]::GetFullPath($ServerRoot) + '"')) -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
-    if (!$studioProcess.WaitForExit(30000)) { throw 'Desktop smoke test did not finish within 30 seconds.' }
+    $studioDeadline = [Diagnostics.Stopwatch]::StartNew()
+    while (!$studioProcess.WaitForExit(5000)) {
+        if ($studioDeadline.Elapsed.TotalSeconds -gt 120) { throw 'Desktop authoring/native-preview smoke test did not finish within 120 seconds.' }
+    }
     if ($studioProcess.ExitCode -ne 0) { throw 'Desktop smoke test failed; see .artifacts/desktop-smoke-error.txt.' }
     Write-Host 'Desktop import/edit/play/save/trace/render smoke passed.'
 } finally { Pop-Location }

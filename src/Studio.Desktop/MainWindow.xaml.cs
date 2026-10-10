@@ -103,7 +103,7 @@ public partial class MainWindow : Window
             if (selectedEntity != null && document != null && !arguments.Contains("--smoke")) BehaviorDocument.Save(RecoveryPath(), Snapshot());
             selectedEntity = entry; session = null; running = false; Viewport.Session = null;
             if (!documents.TryGetValue(entry.SourceFile, out document!))
-                documents[entry.SourceFile] = document = new BehaviorDocument(File.ReadAllText(entry.SourceFile), adapter);
+                documents[entry.SourceFile] = document = new BehaviorDocument(File.ReadAllText(entry.SourceFile), adapter, sourceFile: entry.SourceFile);
             projectPath = null; clearedEvents = 0; UpdatePlayButton(); Events.ItemsSource = null; EventCount.Text = "0 events"; Viewport.ResetCamera(); RefreshDocument();
         });
     }
@@ -143,6 +143,9 @@ public partial class MainWindow : Window
             SelectTreeNode(id); if (WorkspaceTabs.SelectedIndex == 1) ParametersTab.IsSelected = true;
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Label, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 6), TextWrapping = TextWrapping.Wrap });
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind + " · source line " + (document.Source[..selectedNode.Start].Count(c => c == '\n') + 1), Foreground = Brushes.LightSlateGray });
+            if (selectedNode.Kind is "Factory" or "Reference") Inspector.Children.Add(new TextBlock {
+                Text = selectedNode.Kind == "Factory" ? "Edit the arguments passed to this helper. The game builds its contents when you press Play." : "This region uses a shared source value. Open Source to edit its definition.",
+                TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new(0, 10, 0, 0) });
             var primitive = adapter.Primitives.FirstOrDefault(p => p.Name == selectedNode.Kind);
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind == "ArgumentGroup" ? "Native typed argument list" : primitive?.Simulatable == true || selectedNode.Kind == "State" ? "Source runtime" : "Compiled preview", ToolTip = "Complete source is retained. Export is checked by the original compiler and loader. Simulation coverage is partial; complete encounter verification remains pending.", FontSize = 11, Foreground = EncounterViewport.Brush("#91A69D"), Margin = new(0, 12, 0, 10) });
             var locked = new CheckBox { Content = "Lock this region", IsChecked = document.LockedNodes.Contains(id) };
@@ -157,7 +160,7 @@ public partial class MainWindow : Window
                 Inspector.Children.Add(new TextBlock { Text = parameter.Name + (string.IsNullOrEmpty(meta?.Unit) ? "" : " · " + meta.Unit), Margin = new(0, 10, 0, 0) });
                 var input = new TextBox { Text = parameter.Expression, ToolTip = meta == null ? "Original C# expression" : meta.Explanation + "\nDefault: " + meta.Default, Margin = new(0, 6, 0, 8) }; inputs.Add((parameter, input)); Inspector.Children.Add(input);
             }
-            if (primitive != null)
+            if (primitive != null || selectedNode.Kind == "Factory")
             {
                 var optional = new StackPanel();
                 foreach (var meta in adapter.ParametersFor(document, selectedNode).Where(p => p.Default != "required" && !p.Type.EndsWith("[]") && selectedNode.Parameters.All(a => a.Name != p.Name)))
@@ -175,7 +178,7 @@ public partial class MainWindow : Window
                 if (operations.Length == 0) return;
                 document.Apply(new(document.Revision, "Edit " + selectedNode.Label, operations), d => adapter.Validate(d, selectedEntity!.Id)); Changed(id);
             });
-            if (selectedNode.Kind is not ("State" or "ArgumentGroup")) Inspector.Children.Add(apply);
+            if (selectedNode.Kind is not ("State" or "ArgumentGroup") && inputs.Count > 0) Inspector.Children.Add(apply);
             if (selectedNode.Kind == "State")
             {
                 var add = new Button { Content = "+ Add child phase" };
@@ -272,7 +275,7 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog { Filter = "C# behavior files|*.cs", InitialDirectory = Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db") };
         if (dialog.ShowDialog() != true) return;
-        var d = new BehaviorDocument(File.ReadAllText(dialog.FileName), adapter); var id = d.Entities.FirstOrDefault()?.EntityId ?? throw new ArgumentException("No .Init entity definition found.");
+        var d = new BehaviorDocument(File.ReadAllText(dialog.FileName), adapter, sourceFile: dialog.FileName); var id = d.Entities.FirstOrDefault()?.EntityId ?? throw new ArgumentException("No .Init entity definition found.");
         var known = catalog.FirstOrDefault(c => c.Id == id) ?? throw new ArgumentException("This entity has no resource definition in the supplied server.");
         selectedEntity = known with { SourceFile = dialog.FileName }; document = d; documents[dialog.FileName] = d; projectPath = null; Changed();
     });
@@ -290,7 +293,7 @@ public partial class MainWindow : Window
     void LoadProject(string path)
     {
         var p = BehaviorDocument.Load(path);
-        var d = new BehaviorDocument(p.Source, adapter, p.Identities);
+        var d = new BehaviorDocument(p.Source, adapter, p.Identities, p.SourceFile);
         var known = catalog.FirstOrDefault(c => c.Id == p.EntityId) ?? throw new ArgumentException("Project entity is missing from this server's resources.");
         selectedEntity = known with { SourceFile = p.SourceFile }; document = d; documents[p.SourceFile] = d; projectPath = path;
         foreach (var id in p.LockedNodes) d.LockedNodes.Add(id);
@@ -324,7 +327,7 @@ public partial class MainWindow : Window
     {
         pendingProposal = null;
         if (proposal.ExpectedRevision != document.Revision) throw new InvalidOperationException("This proposal is stale.");
-        var candidate = new BehaviorDocument(document.Source, adapter, document.Identities);
+        var candidate = new BehaviorDocument(document.Source, adapter, document.Identities, document.SourceFile);
         foreach (var id in document.LockedNodes) candidate.LockedNodes.Add(id);
         candidate.Apply(proposal with { ExpectedRevision = 0 }, d => adapter.Validate(d, selectedEntity!.Id));
         pendingProposal = proposal;

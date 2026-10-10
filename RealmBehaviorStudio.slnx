@@ -7,6 +7,7 @@
     <Project Path="src/Studio.RuntimeHost/Studio.RuntimeHost.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SourceContext.Checks/SourceContext.Checks.csproj" />
     <Project Path="tests/Runtime.Checks/Runtime.Checks.csproj" />
     <Project Path="tests/Argument.Checks/Argument.Checks.csproj" />
     <Project Path="tests/Schema.Checks/Schema.Checks.csproj" />

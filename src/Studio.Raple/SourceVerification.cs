@@ -11,9 +11,29 @@ namespace Studio.Raple;
 
 public record ExportVerification(bool Accepted, string[] Errors, int SourceFiles);
 public record NativeSourceStamp(string SourceHash, string EditedSourceHash, string ReferenceHash, string EmbeddedResourceHash, int SourceFiles);
-public record NativeCompilation(ExportVerification Verification, byte[] Assembly, byte[] Symbols, NativeSourceStamp Stamp);
+public record NativeCompilation(ExportVerification Verification, byte[] Assembly, byte[] Symbols, NativeSourceStamp Stamp)
+{
+    internal CSharpCompilation? Compiler { get; init; }
+}
 public static class SourceVerification
 {
+    internal static string[] SourcePaths(string serverRoot) => Directory.EnumerateFiles(Path.Combine(serverRoot, "TKR.WorldServer"), "*.cs", SearchOption.AllDirectories)
+        .Where(p => !p.Split(Path.DirectorySeparatorChar).Any(s => s is "obj" or "bin") && !p.Replace('\\', '/').Contains("/behaviors/new/modifiers/"))
+        .OrderBy(p => p, StringComparer.Ordinal).ToArray();
+    internal static CSharpCompilation SemanticCompilation(string serverRoot, string[] paths, string[] references)
+        => CSharpCompilation.Create("TKR.WorldServer", paths.Select(p => CSharpSyntaxTree.ParseText(SourceText.From(File.ReadAllText(p), Encoding.UTF8), new CSharpParseOptions(LanguageVersion.CSharp12), p)),
+            references.Select(p => MetadataReference.CreateFromFile(p)),
+            new CSharpCompilationOptions(OutputKind.ConsoleApplication, allowUnsafe: true, nullableContextOptions: NullableContextOptions.Disable, deterministic: true));
+    internal static string[] ReferencePaths(string dir)
+    {
+        var packages = Environment.GetEnvironmentVariable("NUGET_PACKAGES") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
+        var packRoots = new[] { Path.Combine(packages, "microsoft.netcore.app.ref"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet/packs/Microsoft.NETCore.App.Ref") };
+        var referencePack = packRoots.Where(Directory.Exists).SelectMany(p => Directory.EnumerateDirectories(p))
+            .Where(p => Path.GetFileName(p).StartsWith("8.")).OrderByDescending(p => Version.Parse(Path.GetFileName(p))).FirstOrDefault()
+            ?? throw new InvalidOperationException("The original .NET 8 reference pack is missing. Restore/build the private server project before exporting.");
+        return Directory.EnumerateFiles(Path.Combine(referencePack, "ref/net8.0"), "*.dll").Concat(ServerCompileReferences(dir))
+            .GroupBy(Path.GetFileNameWithoutExtension, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+    }
     // C# is this server's actual behavior parser. Compile the complete original WorldServer sources,
     // replacing just the imported file, against .NET 8 reference assemblies and the server's
     // restored compile assets. Studio's own dependencies can select newer framework variants.
@@ -22,9 +42,7 @@ public static class SourceVerification
     public static NativeCompilation Compile(string serverRoot, string originalFile, string exportedSource, CancellationToken cancellation = default)
     {
         var dir = Path.Combine(serverRoot, "TKR.WorldServer");
-        var paths = Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
-            .Where(p => !p.Split(Path.DirectorySeparatorChar).Any(s => s is "obj" or "bin") && !p.Replace('\\', '/').Contains("/behaviors/new/modifiers/"))
-            .OrderBy(p => p, StringComparer.Ordinal).ToArray();
+        var paths = SourcePaths(serverRoot);
         var original = Path.GetFullPath(originalFile);
         if (!paths.Any(p => Path.GetFullPath(p).Equals(original, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("The imported file is not in this server's behavior source tree.");
         // The SDK normally generates this attribute under obj. Preserve the actual
@@ -33,14 +51,7 @@ public static class SourceVerification
         var sources = paths.Select(p => (Path: p, Text: Path.GetFullPath(p).Equals(original, StringComparison.OrdinalIgnoreCase) ? exportedSource : File.ReadAllText(p)))
             .Append((Path: Path.Combine(dir, "_Studio.NativeAssemblyIdentity.g.cs"), Text: identity)).ToArray();
         var trees = sources.Select(p => CSharpSyntaxTree.ParseText(SourceText.From(p.Text, Encoding.UTF8), new CSharpParseOptions(LanguageVersion.CSharp12), path: p.Path));
-        var packages = Environment.GetEnvironmentVariable("NUGET_PACKAGES") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
-        var packRoots = new[] { Path.Combine(packages, "microsoft.netcore.app.ref"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet/packs/Microsoft.NETCore.App.Ref") };
-        var referencePack = packRoots.Where(Directory.Exists).SelectMany(p => Directory.EnumerateDirectories(p))
-            .Where(p => Path.GetFileName(p).StartsWith("8.")).OrderByDescending(p => Version.Parse(Path.GetFileName(p))).FirstOrDefault()
-            ?? throw new InvalidOperationException("The original .NET 8 reference pack is missing. Restore/build the private server project before exporting.");
-        var referencePaths = Directory.EnumerateFiles(Path.Combine(referencePack, "ref/net8.0"), "*.dll")
-            .Concat(ServerCompileReferences(dir))
-            .GroupBy(Path.GetFileNameWithoutExtension, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+        var referencePaths = ReferencePaths(dir);
         // Embedded JavaScript is part of this native runtime (notably Oryx4). Retain the
         // original project's declared logical names rather than emitting a source-only DLL.
         var resources = XDocument.Load(Path.Combine(dir, "TKR.WorldServer.csproj")).Descendants("EmbeddedResource")
@@ -56,7 +67,7 @@ public static class SourceVerification
         var emitted = compilation.Emit(output, symbols, manifestResources: resources.Select(r => new ResourceDescription(r.Name, () => new MemoryStream(r.Data, false), true)),
             options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb, pdbFilePath: "TKR.WorldServer.pdb"), cancellationToken: cancellation);
         var errors = emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToString()).ToArray();
-        return new(new(errors.Length == 0, errors, paths.Length), emitted.Success ? output.ToArray() : [], emitted.Success ? symbols.ToArray() : [], stamp);
+        return new(new(errors.Length == 0, errors, paths.Length), emitted.Success ? output.ToArray() : [], emitted.Success ? symbols.ToArray() : [], stamp) { Compiler = compilation };
     }
     public static string Hash(IEnumerable<(string Name, byte[] Data)> entries)
     {

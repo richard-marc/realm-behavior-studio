@@ -41,18 +41,23 @@ public sealed record StudioProject
 public sealed partial class BehaviorDocument
 {
     public string Source { get; private set; }
+    public string? SourceFile { get; }
     public long Revision { get; private set; }
     public IReadOnlyList<EntityBehavior> Entities { get; private set; } = [];
     public IReadOnlyList<DocumentDiagnostic> Diagnostics { get; private set; } = [];
     public HashSet<Guid> LockedNodes { get; } = [];
     readonly Stack<(string Source, List<NodeIdentity> Ids)> undo = new(), redo = new();
     readonly Func<string, string[]> names;
-    readonly IBehaviorSchema? schema;
-    public BehaviorDocument(string source, IBehaviorSchema schema, IEnumerable<NodeIdentity>? identities = null) : this(source, schema.ParameterNames, identities, schema) { }
-    public BehaviorDocument(string source, Func<string, string[]>? parameterNames = null, IEnumerable<NodeIdentity>? identities = null, IBehaviorSchema? schema = null)
+    readonly IBehaviorSchema? baseSchema;
+    IBehaviorSchema? schema;
+    public IBehaviorSchema? SchemaAt(BehaviorNode node) => schema?.At(node.Start);
+    public IEnumerable<DocumentDiagnostic> SourceDiagnostics() => schema?.SourceDiagnostics() ?? [];
+    public BehaviorDocument(string source, IBehaviorSchema schema, IEnumerable<NodeIdentity>? identities = null, string? sourceFile = null) : this(source, schema.ParameterNames, identities, schema, sourceFile) { }
+    public BehaviorDocument(string source, Func<string, string[]>? parameterNames = null, IEnumerable<NodeIdentity>? identities = null, IBehaviorSchema? schema = null, string? sourceFile = null)
     {
         names = parameterNames ?? (_ => []);
-        this.schema = schema;
+        baseSchema = schema;
+        SourceFile = sourceFile;
         Source = source;
         Parse(identities?.ToList() ?? []);
         if (Diagnostics.Any(d => d.IsError)) throw new ArgumentException(string.Join("\n", Diagnostics.Select(d => d.Message)));
@@ -61,8 +66,9 @@ public sealed partial class BehaviorDocument
     public BehaviorNode Find(Guid id) => Entities.SelectMany(e => e.Root.Descendants()).FirstOrDefault(n => n.Id == id)
         ?? throw new ArgumentException("The selected element is no longer in this revision.");
     public string Expression(BehaviorNode n) => Source.Substring(n.Start, n.Length);
-    void Parse(List<NodeIdentity> identities)
+    void Parse(List<NodeIdentity> identities, IBehaviorSchema? prepared = null)
     {
+        schema = prepared ?? baseSchema?.ForSource(Source, SourceFile);
         var tree = CSharpSyntaxTree.ParseText(Source);
         Diagnostics = tree.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error)
             .Select(d => new DocumentDiagnostic($"Line {d.Location.GetLineSpan().StartLinePosition.Line + 1}: {d.GetMessage()}")).ToArray();
@@ -73,45 +79,52 @@ public sealed partial class BehaviorDocument
         {
             if (call.Expression is not MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Init" } || call.ArgumentList.Arguments.Count < 2) continue;
             if (call.ArgumentList.Arguments[0].Expression is not LiteralExpressionSyntax id || !id.IsKind(SyntaxKind.StringLiteralExpression)) continue;
-            if (call.ArgumentList.Arguments[1].Expression is not ObjectCreationExpressionSyntax creation || creation.Type.GetLastToken().ValueText != "State") continue;
+            var creation = call.ArgumentList.Arguments[1].Expression;
+            if (creation is not ObjectCreationExpressionSyntax { Type: { } type } || type.GetLastToken().ValueText != "State")
+                if (schema?.At(creation.SpanStart).DescribeExpression(creation.ToString())?.IsState != true) continue;
             var entityId = id.Token.ValueText;
-            BehaviorNode Read(ObjectCreationExpressionSyntax c, string path)
+            BehaviorNode Read(ExpressionSyntax c, string path)
             {
-                var kind = c.Type.GetLastToken().ValueText;
-                var pars = schema?.ConstructorParameterNames(c.ToString()) ?? names(kind);
-                var args = c.ArgumentList?.Arguments ?? default;
+                var scoped = schema?.At(c.SpanStart);
+                var description = scoped?.DescribeExpression(c.ToString());
+                if (c is not ObjectCreationExpressionSyntax && description == null) return Opaque(c, path);
+                var kind = description?.Kind ?? (c is ObjectCreationExpressionSyntax constructor ? constructor.Type.GetLastToken().ValueText : "Opaque");
+                var pars = scoped?.ConstructorParameterNames(c.ToString()) ?? names(kind);
+                var args = c switch { ObjectCreationExpressionSyntax constructorCall => constructorCall.ArgumentList?.Arguments ?? default,
+                    InvocationExpressionSyntax factoryCall => factoryCall.ArgumentList.Arguments, _ => default };
                 var parameters = new List<Parameter>();
                 var children = new List<BehaviorNode>();
                 var index = 0;
                 foreach (var arg in args)
                 {
-                    var childArgument = schema?.IsChildArgument(c.ToString(), index) == true;
+                    var childArgument = scoped?.IsChildArgument(c.ToString(), index) == true;
                     var initializer = arg.Expression switch { ArrayCreationExpressionSyntax a => a.Initializer, ImplicitArrayCreationExpressionSyntax a => a.Initializer, _ => null };
                     if (childArgument && initializer != null)
                     {
                         var groupPath = path + "/" + children.Count;
                         var argumentName = (index < pars.Length ? pars[index] : arg.NameColon?.Name.Identifier.ValueText)?.Split('[')[0];
-                        var slot = schema!.ChildArguments(c.ToString()).Single(p => p.Name == argumentName);
-                        var elements = initializer.Expressions.Select((element, i) => element is ObjectCreationExpressionSyntax creation ? Read(creation, groupPath + "/" + i) : Opaque(element, groupPath + "/" + i)).ToArray();
+                        var slot = scoped!.ChildArguments(c.ToString()).Single(p => p.Name == argumentName);
+                        var elements = initializer.Expressions.Select((element, i) => Read(element, groupPath + "/" + i)).ToArray();
                         var oldGroup = identities.FirstOrDefault(n => n.Path == groupPath && !usedIdentities.Contains(n.Id) && (n.Kind == "ArgumentGroup" || n.Kind == "Opaque" && n.Signature == arg.Expression.ToString()));
                         if (oldGroup != null) usedIdentities.Add(oldGroup.Id);
                         children.Add(new BehaviorNode(oldGroup?.Id ?? Guid.NewGuid(), groupPath, "ArgumentGroup", slot.Name + " · " + elements.Length, arg.Expression.SpanStart, arg.Expression.Span.Length, [], elements) { Argument = slot });
                     }
-                    else if (arg.Expression is ObjectCreationExpressionSyntax child && (childArgument || schema == null && child.Type.ToString().Split('.').Last() != "Cooldown"))
-                        children.Add(Read(child, path + "/" + children.Count));
-                    else if (kind == "State" && arg.Expression is not LiteralExpressionSyntax { Token.Value: string })
+                    else if (childArgument || arg.Expression is ObjectCreationExpressionSyntax child && schema == null && child.Type.ToString().Split('.').Last() != "Cooldown")
+                        children.Add(Read(arg.Expression, path + "/" + children.Count));
+                    else if (kind == "State" && arg.Expression is not LiteralExpressionSyntax { Token.Value: string } && !(description != null && index < pars.Length && pars[index] == "name" || arg.NameColon?.Name.Identifier.ValueText == "name"))
                     {
                         var opaquePath = path + "/" + children.Count;
-                        children.Add(Opaque(arg.Expression, opaquePath));
+                        children.Add(Read(arg.Expression, opaquePath));
                     }
                     else parameters.Add(new(arg.NameColon?.Name.Identifier.ValueText ?? (index < pars.Length ? pars[index] : "$" + index),
                         arg.Expression.ToString(), arg.Expression.SpanStart, arg.Expression.Span.Length));
                     index++;
                 }
                 var matches = identities.Where(n => n.Kind == kind && n.Signature == c.ToString() && n.Path.StartsWith(entityId + "/") && !usedIdentities.Contains(n.Id)).ToArray();
-                var old = matches.Length == 1 ? matches[0] : identities.FirstOrDefault(n => n.Path == path && n.Kind == kind && !usedIdentities.Contains(n.Id));
+                var old = matches.Length == 1 ? matches[0] : identities.FirstOrDefault(n => n.Path == path && (n.Kind == kind || (kind is "Factory" or "Reference") && n.Kind == "Opaque" && n.Signature == c.ToString()) && !usedIdentities.Contains(n.Id));
                 if (old != null) usedIdentities.Add(old.Id);
-                var label = kind == "State" ? (parameters.Where(p => p.Name is "name" or "$0").Select(p => LiteralString(p.Expression)).FirstOrDefault(v => v != null) ?? "Root") : kind;
+                var stateName = parameters.FirstOrDefault(p => p.Name is "name" or "$0");
+                var label = kind == "State" ? stateName == null ? "Root" : LiteralString(stateName.Expression) ?? "State · " + stateName.Expression : description?.Label ?? kind;
                 return new(old?.Id ?? Guid.NewGuid(), path, kind, label, c.SpanStart, c.Span.Length, parameters, children);
             }
             BehaviorNode Opaque(ExpressionSyntax expression, string path)
@@ -144,15 +157,17 @@ public sealed partial class BehaviorDocument
             var p = n.Parameters.FirstOrDefault(p => p.Name == operation.Parameter);
             var expr = SyntaxFactory.ParseExpression(operation.Expression);
             if (expr.ContainsDiagnostics || expr.FullSpan.Length != operation.Expression.Length) throw new ArgumentException("Enter a valid C# value.");
-            if (!VisualValue(expr))
+            if (!VisualValue(expr) && !(expr is IdentifierNameSyntax && schema?.HasSourceContext == true))
                 throw new ArgumentException("Visual parameter edits require literal values, enums or Cooldown values. Use source editing for other expressions.");
             if (p != null) edits.Add((p.Start, p.Length, operation.Expression));
             else
             {
-                if (!names(n.Kind).Contains(operation.Parameter)) throw new ArgumentException("Unknown constructor parameter: " + operation.Parameter);
-                var c = SyntaxFactory.ParseExpression(Expression(n)) as ObjectCreationExpressionSyntax ?? throw new ArgumentException("This opaque element cannot accept parameters.");
-                var position = n.Start + c.ArgumentList!.CloseParenToken.SpanStart;
-                edits.Add((position, 0, (c.ArgumentList.Arguments.Count == 0 ? "" : ", ") + operation.Parameter + ": " + operation.Expression));
+                var metadata = SchemaAt(n)?.DescribeExpression(Expression(n));
+                if (!(metadata?.Parameters.Select(p => p.Name) ?? names(n.Kind)).Contains(operation.Parameter)) throw new ArgumentException("Unknown parameter: " + operation.Parameter);
+                var arguments = CallArguments(SyntaxFactory.ParseExpression(Expression(n)));
+                var position = n.Start + arguments.CloseParenToken.SpanStart;
+                var parameterName = SyntaxFacts.GetKeywordKind(operation.Parameter) == SyntaxKind.None ? operation.Parameter : "@" + operation.Parameter;
+                edits.Add((position, 0, (arguments.Arguments.Count == 0 ? "" : ", ") + parameterName + ": " + operation.Expression));
             }
         }
         var changed = Source;
@@ -171,10 +186,10 @@ public sealed partial class BehaviorDocument
     }
     void Commit(string source, List<NodeIdentity> ids, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
-        var candidate = new BehaviorDocument(source, names, ids, schema);
-        var errors = validate?.Invoke(candidate).Where(d => d.IsError).ToArray() ?? [];
+        var candidate = new BehaviorDocument(source, names, ids, baseSchema, SourceFile);
+        var errors = candidate.SourceDiagnostics().Concat(validate?.Invoke(candidate) ?? []).Where(d => d.IsError).Distinct().ToArray();
         if (errors.Length > 0) throw new ArgumentException(string.Join("\n", errors.Select(d => d.Message)));
-        undo.Push((Source, Identities)); redo.Clear(); Source = source; Parse(ids); Revision++;
+        undo.Push((Source, Identities)); redo.Clear(); Source = source; Parse(ids, candidate.schema); Revision++;
     }
     public void AddChild(Guid parentId, string expression, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
