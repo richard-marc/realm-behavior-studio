@@ -34,7 +34,8 @@ public partial class MainWindow : Window
     public MainWindow(string[] args)
     {
         arguments = args; InitializeComponent();
-        Graph.Selected += SelectNode; Viewport.Selected += SelectNode;
+        Graph.Selected += id => SelectAuthoringNode(id, Keyboard.Modifiers); Graph.CollapseRequested += TogglePhaseCollapse; Viewport.Selected += SelectNode;
+        InitializeSelectionControls();
         autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); };
         PreviewKeyDown += Shortcut;
         Loaded += (_, _) => { Try(Initialize); CompositionTarget.Rendering += Advance; };
@@ -81,7 +82,7 @@ public partial class MainWindow : Window
     {
         SourceFile = selectedEntity!.SourceFile, Source = document.Source, Identities = document.Identities,
         EntityId = selectedEntity.Id, Brief = Brief.Text, Player = ReadPreset(), Seed = int.Parse(Seed.Text), ArenaSize = int.Parse(ArenaSize.Text),
-        Layout = CaptureLayout(), LockedNodes = document.LockedNodes.ToList()
+        Layout = CaptureLayout(), LockedNodes = document.LockedNodes.ToList(), CollapsedNodes = CollapsedNodes.ToList()
     };
     PlayerPreset ReadPreset() => new(int.Parse(PlayerHp.Text), int.Parse(PlayerSpeed.Text), int.Parse(PlayerDefense.Text), Invulnerable.IsChecked == true, Spectator.IsChecked == true,
         selectedWeaponId, int.Parse(PlayerAttack.Text), int.Parse(PlayerDexterity.Text));
@@ -110,22 +111,27 @@ public partial class MainWindow : Window
         if (entity == null) { Status.Text = "Selected entity has no .Init definition in this document."; return; }
         TreeViewItem Item(BehaviorNode n)
         {
-            var item = new TreeViewItem { Header = n.Label, Tag = n, IsExpanded = true };
+            var item = new TreeViewItem { Header = n.Label, Tag = n, IsExpanded = !CollapsedNodes.Contains(n.Id) };
+            item.Expanded += (_, e) => { if (e.OriginalSource == item) { CollapsedNodes.Remove(n.Id); SyncCollapsedGraph(); } };
+            item.Collapsed += (_, e) => { if (e.OriginalSource == item) { CollapsedNodes.Add(n.Id); SyncCollapsedGraph(); } };
             foreach (var child in n.Children) item.Items.Add(Item(child)); return item;
         }
-        BehaviorTree.Items.Add(Item(entity.Root)); Graph.Root = entity.Root;
+        CollapsedNodes.IntersectWith(document.Identities.Select(i => i.Id));
+        BehaviorTree.Items.Add(Item(entity.Root)); Graph.Root = entity.Root; SyncCollapsedGraph();
         ResourceInfo.Text = $"{selectedEntity.Id}\nObject type: 0x{selectedEntity.ObjectType:X4}\n\n" + adapter.ProjectileSummary(selectedEntity.Id);
         var diagnostics = ReviewDiagnostics().ToArray();
         RefreshPhaseReview(diagnostics);
         Status.Text = $"Revision {document.Revision} · {diagnostics.Count(d => d.IsError)} errors · {diagnostics.Count(d => !d.IsError)} notices";
         SelectNode(selection ?? entity.Root.Id);
     }
-    void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n } && n.Id != selectedNode?.Id) SelectNode(n.Id); }
+    void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n } && n.Id != selectedNode?.Id) SelectAuthoringNode(n.Id, Keyboard.Modifiers); }
     void SelectNode(Guid id)
     {
         Try(() =>
         {
             selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();
+            if (!retainNodeSelection) { nodeSelection.Clear(); nodeSelection.Add(id); selectionAnchor = id; }
+            RefreshSelectionVisuals();
             SelectTreeNode(id); if (WorkspaceTabs.SelectedIndex == 1) ParametersTab.IsSelected = true;
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Label, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 6), TextWrapping = TextWrapping.Wrap });
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind + " · source line " + (document.Source[..selectedNode.Start].Count(c => c == '\n') + 1), Foreground = Brushes.LightSlateGray });
@@ -260,17 +266,22 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog { Filter = "Realm Studio project or recovery|*.rbs;*.rbs.recovery", InitialDirectory = recoveryDir };
         if (dialog.ShowDialog() != true) return;
-        var p = BehaviorDocument.Load(dialog.FileName);
+        LoadProject(dialog.FileName);
+    });
+    void LoadProject(string path)
+    {
+        var p = BehaviorDocument.Load(path);
         var d = new BehaviorDocument(p.Source, adapter.ParameterNames, p.Identities);
         var known = catalog.FirstOrDefault(c => c.Id == p.EntityId) ?? throw new ArgumentException("Project entity is missing from this server's resources.");
-        selectedEntity = known with { SourceFile = p.SourceFile }; document = d; documents[p.SourceFile] = d; projectPath = dialog.FileName;
+        selectedEntity = known with { SourceFile = p.SourceFile }; document = d; documents[p.SourceFile] = d; projectPath = path;
         foreach (var id in p.LockedNodes) d.LockedNodes.Add(id);
         Brief.Text = p.Brief; Seed.Text = p.Seed.ToString(); ArenaSize.Text = p.ArenaSize.ToString(); PlayerHp.Text = p.Player.Hp.ToString(); PlayerSpeed.Text = p.Player.Speed.ToString(); PlayerDefense.Text = p.Player.Defense.ToString(); Invulnerable.IsChecked = p.Player.Invulnerable; Spectator.IsChecked = p.Player.Spectator;
         PlayerAttack.Text = p.Player.Attack.ToString(); PlayerDexterity.Text = p.Player.Dexterity.ToString();
         selectedWeaponId = p.Player.WeaponId; WeaponSearch.Text = ""; Weapons.ItemsSource = weaponCatalog; Weapons.SelectedItem = weaponCatalog.FirstOrDefault(w => w.Id == selectedWeaponId);
         if (Weapons.SelectedItem == null) WeaponInfo.Text = "Missing weapon XML: " + selectedWeaponId;
+        CollapsedNodes.UnionWith(p.CollapsedNodes.Where(id => d.Identities.Any(n => n.Id == id)));
         Changed(); RestoreLayout(p.Layout);
-    });
+    }
     void Export(object sender, RoutedEventArgs e) => Try(() =>
     {
         var result = SourceVerification.Check(adapter.ServerRoot, selectedEntity!.SourceFile, document.Source);
@@ -299,6 +310,7 @@ public partial class MainWindow : Window
     void ApplyProposal(object sender, RoutedEventArgs e) => Try(() => { if (pendingProposal == null) throw new ArgumentException("Preview a proposal first."); document.Apply(pendingProposal, d => adapter.Validate(d, selectedEntity!.Id)); pendingProposal = null; Changed(); });
     void Shortcut(object sender, KeyEventArgs e)
     {
+        if (HandleAuthoringShortcut(e)) return;
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             if (e.Key == Key.S) { SaveProject(sender, e); e.Handled = true; }

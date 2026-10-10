@@ -10,14 +10,18 @@ public sealed class StateGraph : FrameworkElement
     BehaviorNode? root; Guid? highlight; string? active;
     PhaseAnalysis analysis = new([], []);
     readonly Dictionary<Guid, Rect> locations = [], transitionRows = [];
+    IReadOnlySet<Guid> selection = new HashSet<Guid>(), collapsed = new HashSet<Guid>();
     public event Action<Guid>? Selected;
+    public event Action<Guid>? CollapseRequested;
+    public IReadOnlySet<Guid> Selection { get => selection; set { selection = value; InvalidateVisual(); } }
+    public IReadOnlySet<Guid> CollapsedNodes { get => collapsed; set { collapsed = value; InvalidateVisual(); } }
     public BehaviorNode? Root { get => root; set { root = value; analysis = value == null ? new([], []) : BehaviorAnalysis.Analyze(value); locations.Clear(); transitionRows.Clear(); InvalidateVisual(); } }
     public Guid? Highlight { get => highlight; set { highlight = value; InvalidateVisual(); } }
     public string? ActivePhase { get => active; set { if (active == value) return; active = value; InvalidateVisual(); } }
     public StateGraph()
     {
         Focusable = true;
-        MouseLeftButtonDown += (_, e) => SelectAt(e.GetPosition(this));
+        MouseLeftButtonDown += (_, e) => { var point = e.GetPosition(this); SelectAt(point); if (e.ClickCount == 2 && !transitionRows.Values.Any(r => r.Contains(point))) foreach (var item in locations) if (item.Value.Contains(point)) { CollapseRequested?.Invoke(item.Key); break; } };
         MouseMove += (_, e) =>
         {
             var point = e.GetPosition(this); var id = transitionRows.FirstOrDefault(r => r.Value.Contains(point)).Key;
@@ -44,12 +48,13 @@ public sealed class StateGraph : FrameworkElement
     {
         locations.Clear(); transitionRows.Clear();
         if (root == null) return;
-        var states = root.Descendants().Where(n => n.Kind == "State").ToArray();
+        var allStates = root.Descendants().Where(n => n.Kind == "State").ToArray();
+        var states = allStates.Where(n => !allStates.Any(ancestor => collapsed.Contains(ancestor.Id) && n.Path.StartsWith(ancestor.Path + "/", StringComparison.Ordinal))).ToArray();
         if (states.Length == 0) return;
         var y = 18d;
         foreach (var state in states)
         {
-            var transitions = analysis.Transitions.Where(t => t.OwnerId == state.Id).ToArray();
+            var transitions = collapsed.Contains(state.Id) ? [] : analysis.Transitions.Where(t => t.OwnerId == state.Id).ToArray();
             var rect = new Rect(20 + Math.Max(0, state.Path.Count(c => c == '/') - 1) * 20, y, 320, 94 + transitions.Length * 32);
             locations[state.Id] = rect;
             for (var i = 0; i < transitions.Length; i++) transitionRows[transitions[i].Node.Id] = new(rect.Left + 8, rect.Top + 86 + i * 32, rect.Width - 16, 30);
@@ -62,15 +67,15 @@ public sealed class StateGraph : FrameworkElement
             var from = locations[state.Id];
             foreach (var child in state.Children.Where(c => c.Kind == "State"))
             {
-                var to = locations[child.Id]; var x = from.Left + 8;
+                if (!locations.TryGetValue(child.Id, out var to)) continue; var x = from.Left + 8;
                 dc.DrawLine(neutral, new(x, from.Bottom), new(x, to.Top + 40)); dc.DrawLine(neutral, new(x, to.Top + 40), new(to.Left, to.Top + 40));
             }
         }
         // Only the selected transition is routed; all destinations remain readable in their rows.
         var selected = analysis.Transitions.FirstOrDefault(t => t.Node.Id == highlight);
-        if (selected?.TargetId is { } targetId && locations.TryGetValue(targetId, out var targetRect))
+        if (selected?.TargetId is { } targetId && locations.TryGetValue(targetId, out var targetRect) && transitionRows.TryGetValue(selected.Node.Id, out var selectedRow))
         {
-            var row = transitionRows[selected.Node.Id]; var from = locations[selected.OwnerId];
+            var row = selectedRow; var from = locations[selected.OwnerId];
             var start = new Point(from.Right, row.Top + 15); var end = new Point(targetRect.Right, targetRect.Top + 40); var route = locations.Values.Max(r => r.Right) + 24;
             var pen = new Pen(EncounterViewport.Brush("#98B4C3"), 1);
             dc.DrawLine(pen, start, new(route, start.Y)); dc.DrawLine(pen, new(route, start.Y), new(route, end.Y)); dc.DrawLine(pen, new(route, end.Y), end);
@@ -82,18 +87,19 @@ public sealed class StateGraph : FrameworkElement
         foreach (var state in states)
         {
             var rect = locations[state.Id]; var activeState = state.Label == active;
-            var stroke = state.Id == highlight ? "#98E8CB" : activeState ? "#A99ACA" : "#3D414A";
+            var stroke = selection.Contains(state.Id) ? "#98E8CB" : state.Id == highlight ? "#98B4C3" : activeState ? "#A99ACA" : "#3D414A";
             dc.DrawRoundedRectangle(EncounterViewport.Brush("#202226"), new Pen(EncounterViewport.Brush(stroke), 1), rect, 9, 9);
             Text(dc, state.Id == root.Id ? "ENCOUNTER" : "PHASE", new(rect.Left + 14, rect.Top + 11), 10, "#858B95", 180);
             if (initial.Contains(state.Id)) Text(dc, "ENTRY", new(rect.Right - 52, rect.Top + 11), 10, "#91A69D", 40);
             Text(dc, state.Id == root.Id && state.Label == "Root" ? "Root behavior" : state.Label, new(rect.Left + 14, rect.Top + 30), 15, "#E8E9EC", 290);
             var actions = string.Join(" · ", state.Children.Where(n => n.Kind != "State" && !n.Kind.EndsWith("Transition")).Select(n => n.Kind));
             if (actions.Length == 0) actions = state.Children.Any(n => n.Kind == "State") ? "Contains nested phases" : "No actions";
+            if (collapsed.Contains(state.Id)) actions = $"+ {state.Children.Count} items · collapsed";
             Text(dc, actions, new(rect.Left + 14, rect.Top + 61), 11, "#92969F", 290);
-            foreach (var edge in analysis.Transitions.Where(t => t.OwnerId == state.Id))
+            foreach (var edge in analysis.Transitions.Where(t => t.OwnerId == state.Id && !collapsed.Contains(state.Id)))
             {
                 var row = transitionRows[edge.Node.Id];
-                dc.DrawRoundedRectangle(EncounterViewport.Brush(edge.Node.Id == highlight ? "#303F44" : "#272A2F"), null, row, 5, 5);
+                dc.DrawRoundedRectangle(EncounterViewport.Brush(selection.Contains(edge.Node.Id) ? "#304738" : edge.Node.Id == highlight ? "#303F44" : "#272A2F"), null, row, 5, 5);
                 Text(dc, edge.Priority.ToString(), new(row.Left + 7, row.Top + 7), 10, "#858B95", 22);
                 Text(dc, edge.Condition, new(row.Left + 30, row.Top + 6), 11, "#CFD3DB", 156);
                 Text(dc, "→ " + (edge.TargetName ?? "dynamic"), new(row.Left + 194, row.Top + 6), 11, edge.TargetId == null ? "#DAAE84" : "#91A69D", 102);

@@ -44,6 +44,8 @@ In Behavior, select a named phase and use **Phase name → Rename** in Parameter
 
 Advanced source edits apply atomically after syntax/reference checks. Invalid edits stay in the source pane while the last valid visual document remains active. Full compiler validation happens at export; source expressions outside the adapter's literal/constructor subset may export successfully while remaining unsimulatable.
 
+Use **Ctrl-click** or **Shift-click** in Behavior to select multiple nodes. **Ctrl+C / Ctrl+V** copies and pastes branches/actions with fresh identities and unique copied phase names. Drag a selection onto a phase to move it inside; use the top/bottom of a row to insert before/after it, or hold Ctrl to copy. **Ctrl+G** groups adjacent siblings into a real nested phase, which changes native entry/inheritance; Ungroup is available through Commands after incoming references are rerouted. **Delete** removes the selected branches and their incoming transitions in one undo. **Ctrl+K** searches editing commands, destination phases and source navigation. Double-click a phase card or use its tree arrow to collapse details; saved projects retain collapsed phases. Parameter edits apply to the focused item, while commands use the whole selection.
+
 Phase cards show each transition's condition, destination and numbered priority. Click a condition to edit it; **Organize → ↑ / ↓** changes its position in the source and the runtime's evaluation order. The first matching transition wins, with active child phases checked before their parents. **Phase review** is collapsed by default and opens clickable missing-target errors, unreachable-phase notices, overlapping HP/player-distance conflicts and self-transition advisories. Selecting a transition draws its destination route. Reachability follows first-child entry and inherited transitions; opaque/custom nodes, dynamic destinations or duplicate names suppress definitive unreachable claims. These authoring notices do not certify encounter behavior or block simulation; missing-target errors still do.
 
 ## What Play currently means
@@ -73,6 +75,7 @@ The original-harness option requires a .NET 8 runtime. This workspace's local ru
 - `.artifacts/desktop/workspace.png`: rendered desktop smoke-test screenshot.
 - `.artifacts/desktop/ui-checks.json`: sprite, real splitter-drag, console, layout, popup and compact-window checks; additional rendered screenshots are in the same directory.
 - `.artifacts/structure/results.json`: structural editing, identity, lock, reference-update, runtime entry and original-compiler checks; `.artifacts/desktop/phase-authoring.png` shows the desktop controls.
+- `.artifacts/selection/results.json`: multi-node moves/paste/grouping, comments/identities/locks/undo, native entry and original-compiler checks; desktop captures include `selection-authoring.png` and `command-search.png`.
 - `.artifacts/analysis/results.json`: transition labels, conservative reachability, priority conflicts and native order checks; `.artifacts/desktop/transition-priority.png` shows clickable review and condition editing.
 - `.artifacts/auth-results.json`: offline authentication/protocol checks, explicitly excluding live sign-in/inference.
 

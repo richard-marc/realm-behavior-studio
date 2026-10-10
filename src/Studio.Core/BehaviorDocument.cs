@@ -32,6 +32,7 @@ public sealed record StudioProject
     public List<NodeIdentity> Identities { get; init; } = new();
     public Dictionary<string, double[]> Layout { get; init; } = new();
     public List<Guid> LockedNodes { get; init; } = new();
+    public List<Guid> CollapsedNodes { get; init; } = new();
 }
 
 // The lossless C# syntax tree is the shared model. Unknown expressions and trivia are never regenerated.

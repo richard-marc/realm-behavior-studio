@@ -129,6 +129,7 @@ public partial class MainWindow
                 CaptureView(this, Path.Combine(output, "compact.png")); Width = 1500; Height = 1000; UpdateLayout();
                 RunStructureUiSmoke(output, Check);
                 RunTransitionUiSmoke(output, Check);
+                RunSelectionUiSmoke(output, Check);
                 File.WriteAllText(Path.Combine(output, "ui-checks.json"), JsonSerializer.Serialize(new { checks, spriteSheets = sprites.SheetCount, loadedFrames = sprites.LoadedFrames, fallbackNames = sprites.Missing.Order().ToArray() }, BehaviorDocument.JsonOptions));
                 Application.Current.Shutdown();
             })), DispatcherPriority.ApplicationIdle);

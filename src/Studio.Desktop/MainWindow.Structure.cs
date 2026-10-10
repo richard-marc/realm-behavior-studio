@@ -80,7 +80,7 @@ public partial class MainWindow
         TreeViewItem? Search(TreeViewItem item)
         {
             if (item.Tag is BehaviorNode node && node.Id == id) return item;
-            foreach (var child in item.Items.OfType<TreeViewItem>()) if (Search(child) is { } found) return found;
+            foreach (var child in item.Items.OfType<TreeViewItem>()) if (Search(child) is { } found) { item.IsExpanded = true; return found; }
             return null;
         }
         foreach (var item in BehaviorTree.Items.OfType<TreeViewItem>()) if (Search(item) is { } found) { found.IsSelected = true; if (WorkspaceTabs.SelectedIndex == 1) found.BringIntoView(); break; }
