@@ -88,9 +88,9 @@ public sealed class RapleAdapter
                             try { Evaluate(parsed, parameterType); } catch (Exception e) { typeError = e.GetBaseException().Message; }
                     }
                     if (typeError != null) yield return new($"{n.Kind}.{p.Name}: {typeError}", n.Id);
-                    if (p.Name == "targetState" && p.Expression.StartsWith('"') && !states.Any(s => s.Label == p.Expression.Trim('"')))
+                    if (p.Name == "targetState" && BehaviorDocument.LiteralString(p.Expression) is { } stateTarget && !states.Any(s => s.Label == stateTarget))
                         yield return new("Missing transition target: " + p.Expression, n.Id);
-                    if (p.Name is "children" or "target" && p.Expression.StartsWith('"') && !SimEngine.Data.IdToObjectType.ContainsKey(p.Expression.Trim('"')))
+                    if (p.Name is "children" or "target" && BehaviorDocument.LiteralString(p.Expression) is { } resourceTarget && !SimEngine.Data.IdToObjectType.ContainsKey(resourceTarget))
                         yield return new("Missing entity resource: " + p.Expression, n.Id);
                     if (double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
                     {

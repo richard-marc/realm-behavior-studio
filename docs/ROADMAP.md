@@ -30,11 +30,11 @@ Required before calling milestone 2 source-faithful gameplay complete:
 
 ## Milestone 3 · full encounter authoring — partial
 
-Implemented hierarchy tree and state overview, transition links, ordered source retention, parameter inspector, constructor search, child-state/basic-action creation, forced-phase test, minion spawning/HP gates and the three-phase acceptance example.
+Implemented hierarchy tree and state overview, transition links, ordered source retention, parameter inspector, constructor search, child-state/basic-action creation, forced-phase test, minion spawning/HP gates and the three-phase acceptance example. The structural authoring slice now adds phase rename with literal transition-reference updates; phase/branch/action duplication with unique copied phase names and remapped internal references; source-order reordering; and branch deletion with removal of incoming literal transitions to deleted phases. These operations preserve surviving node identities, use candidate validation, respect region/ancestor/descendant locks, persist in projects, and support atomic undo/redo. The inspector exposes Phase name and a collapsed Organize section, follows tree/graph selection, and disables locked controls immediately. Named phase changes from parameter proposals use the same safe rename path.
 
 Remaining:
 
-- Drag/drop, multi-selection, copy/paste, phase reordering/duplication/deletion with reference updates, grouping/collapse/navigation and command search.
+- Drag/drop, multi-selection, clipboard copy/paste, cross-parent moves, grouping/collapse/navigation and command search. Structural editing currently handles direct phase children; grouped constructor argument structure and dynamic/opaque phase references require source editing. Renames are separate atomic operations from other parameter edits.
 - First-class entry/ongoing/exit action editing tied to each actual primitive's semantics. Actual parent action inheritance must remain visible.
 - Transition condition labels/priorities/evaluation order controls, unreachable-state/conflict/loop analysis and clickable diagnostics.
 - Runtime constructor overload resolution, factory/helper expressions, variables, counters, weighted choices, loops and shared encounter events where supported.

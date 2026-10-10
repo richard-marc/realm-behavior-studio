@@ -35,7 +35,7 @@ public sealed record StudioProject
 }
 
 // The lossless C# syntax tree is the shared model. Unknown expressions and trivia are never regenerated.
-public sealed class BehaviorDocument
+public sealed partial class BehaviorDocument
 {
     public string Source { get; private set; }
     public long Revision { get; private set; }
@@ -94,7 +94,7 @@ public sealed class BehaviorDocument
                 var matches = identities.Where(n => n.Kind == kind && n.Signature == c.ToString() && n.Path.StartsWith(entityId + "/") && !usedIdentities.Contains(n.Id)).ToArray();
                 var old = matches.Length == 1 ? matches[0] : identities.FirstOrDefault(n => n.Path == path && n.Kind == kind && !usedIdentities.Contains(n.Id));
                 if (old != null) usedIdentities.Add(old.Id);
-                var label = kind == "State" ? (parameters.FirstOrDefault()?.Expression.Trim('"') ?? "Root") : kind;
+                var label = kind == "State" ? (args.FirstOrDefault()?.Expression is LiteralExpressionSyntax { Token.Value: string stateName } ? stateName : "Root") : kind;
                 return new(old?.Id ?? Guid.NewGuid(), path, kind, label, c.SpanStart, c.Span.Length, parameters, children);
             }
             result.Add(new(entityId, call.SpanStart, Read(creation, entityId + "/root")));
@@ -104,6 +104,13 @@ public sealed class BehaviorDocument
     public void Apply(DocumentPatch patch, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
         if (patch.ExpectedRevision != Revision) throw new InvalidOperationException("This proposal is stale. Inspect the current revision before applying changes.");
+        var rename = patch.Operations.FirstOrDefault(o => Find(o.NodeId).Kind == "State" && o.Parameter is "name" or "$0");
+        if (rename != null)
+        {
+            if (patch.Operations.Count != 1) throw new ArgumentException("Rename a phase separately from other parameter edits.");
+            var name = LiteralString(rename.Expression) ?? throw new ArgumentException("Phase names must be literal strings.");
+            RenameState(rename.NodeId, name, validate); return;
+        }
         var edits = new List<(int Start, int Length, string Text)>();
         if (patch.Operations.GroupBy(o => (o.NodeId, o.Parameter)).Any(g => g.Count() > 1)) throw new ArgumentException("A proposal edits the same parameter twice.");
         foreach (var operation in patch.Operations)
@@ -146,7 +153,7 @@ public sealed class BehaviorDocument
         if (errors.Length > 0) throw new ArgumentException(string.Join("\n", errors.Select(d => d.Message)));
         undo.Push((Source, Identities)); redo.Clear(); Source = source; Parse(ids); Revision++;
     }
-    public void AddChild(Guid parentId, string expression)
+    public void AddChild(Guid parentId, string expression, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
         var parent = Find(parentId);
         if (parent.Kind != "State") throw new ArgumentException("Select a state to add an action or child phase.");
@@ -156,14 +163,14 @@ public sealed class BehaviorDocument
         if (child.ContainsDiagnostics || child is not ObjectCreationExpressionSyntax) throw new ArgumentException("Invalid behavior expression.");
         var position = parent.Start + c.ArgumentList!.CloseParenToken.SpanStart;
         var prefix = c.ArgumentList.Arguments.Count > 0 ? "," : "";
-        Commit(Source.Insert(position, prefix + "\n                    " + expression + "\n                "), Identities, null);
+        Commit(Source.Insert(position, prefix + "\n                    " + expression + "\n                "), Identities, validate);
     }
     public bool Undo() => Restore(undo, redo);
     public bool Redo() => Restore(redo, undo);
     bool Restore(Stack<(string Source, List<NodeIdentity> Ids)> from, Stack<(string Source, List<NodeIdentity> Ids)> to)
     {
         if (from.Count == 0) return false;
-        to.Push((Source, Identities)); var previous = from.Pop(); Source = previous.Source; Parse(previous.Ids); Revision++; return true;
+        to.Push((Source, Identities)); var previous = from.Pop(); Source = previous.Source; Parse(previous.Ids); LockedNodes.IntersectWith(Identities.Select(i => i.Id)); Revision++; return true;
     }
     public static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     public static void Save(string path, StudioProject project)

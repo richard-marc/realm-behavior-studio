@@ -9,5 +9,7 @@
     <Project Path="tests/AI.Checks/AI.Checks.csproj" />
     <Project Path="tests/FakeCodex/FakeCodex.csproj" />
     <Project Path="tests/Studio.Checks/Studio.Checks.csproj" />
+    <Project Path="tests/Structure.Checks/Structure.Checks.csproj" />
+    <Project Path="tests/Weapon.Checks/Weapon.Checks.csproj" />
   </Folder>
 </Solution>

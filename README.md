@@ -40,6 +40,8 @@ The launcher builds into a directory identified by the application/server source
 
 The project holds the **complete imported C# file**; changing a selected entity retains other definitions and loot in that file. Switching files retains edits in memory and writes recovery snapshots. Save projects per source file; a multi-document project container is not implemented yet.
 
+In Behavior, select a named phase and use **Phase name → Rename** in Parameters to update its transition references. Expand **Organize** to duplicate a phase/branch/action, move it earlier or later, or delete it. Phase copies get unique names and their internal transitions follow the copied phases; external targets remain unchanged. Deleting a phase also removes incoming transitions to its deleted nested phases. One Undo restores the entire edit. Locks disable structural controls; dynamic/opaque references and grouped constructor argument edits require source editing. Reordering phases changes initial entry, and reordering actions/transitions changes their priority within the runtime's separate execution lists.
+
 Advanced source edits apply atomically after syntax/reference checks. Invalid edits stay in the source pane while the last valid visual document remains active. Full compiler validation happens at export; source expressions outside the adapter's literal/constructor subset may export successfully while remaining unsimulatable.
 
 ## What Play currently means
@@ -68,6 +70,7 @@ The original-harness option requires a .NET 8 runtime. This workspace's local ru
 - `.artifacts/reference-brawler/result.json`: captured original .NET 8 runtime evidence when requested.
 - `.artifacts/desktop/workspace.png`: rendered desktop smoke-test screenshot.
 - `.artifacts/desktop/ui-checks.json`: sprite, real splitter-drag, console, layout, popup and compact-window checks; additional rendered screenshots are in the same directory.
+- `.artifacts/structure/results.json`: structural editing, identity, lock, reference-update, runtime entry and original-compiler checks; `.artifacts/desktop/phase-authoring.png` shows the desktop controls.
 - `.artifacts/auth-results.json`: offline authentication/protocol checks, explicitly excluding live sign-in/inference.
 
 The three-phase example moves and aims, spawns two helpers below 70% HP, enters rotating fans below 35%, and changes its nested state when nearby helpers disappear. Its source fragment is original Studio content in `examples/three-phase.fragment.cs.txt`; it names locally supplied resources. Generated `.rbs` examples contain private imported source and stay ignored. Equipment acceptance scenarios remain pending.

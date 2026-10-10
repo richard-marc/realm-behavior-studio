@@ -33,7 +33,8 @@ public sealed class StateGraph : FrameworkElement
             }
             foreach (var transition in state.Children.Where(n => n.Kind.EndsWith("Transition")))
             {
-                var name = transition.Parameters.FirstOrDefault(p => p.Name == "targetState")?.Expression.Trim('"');
+                var expression = transition.Parameters.FirstOrDefault(p => p.Name == "targetState")?.Expression;
+                var name = expression == null ? null : BehaviorDocument.LiteralString(expression);
                 var target = states.FirstOrDefault(n => n.Label == name); if (target == null) continue;
                 var to = locations[target.Id]; var start = new Point(from.Right, from.Top + 45); var end = new Point(to.Right, to.Top + 45); var route = Math.Max(from.Right, to.Right) + 28;
                 var pen = new Pen(EncounterViewport.Brush("#8A83A1"), 1);

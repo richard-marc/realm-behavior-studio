@@ -47,7 +47,7 @@
     </Grid>
     <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ToolTip="Resize inspector"/>
     <Border Grid.Column="4" Background="{StaticResource Panel}" CornerRadius="10" Padding="12"><TabControl>
-     <TabItem Header="Parameters"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Inspector" Margin="4,2,4,14"/></ScrollViewer></TabItem>
+     <TabItem x:Name="ParametersTab" Header="Parameters"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Inspector" Margin="4,2,4,14"/></ScrollViewer></TabItem>
      <TabItem x:Name="PlayerTab" Header="Player"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="4,2,4,14">
       <TextBlock Text="Test player" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="WASD to move · mouse to aim and fire" Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,6,0,22"/>
       <TextBlock Text="Weapon"/><TextBox x:Name="WeaponSearch" Tag="Find a weapon…" TextChanged="WeaponSearchChanged" Margin="0,6,0,6"/>

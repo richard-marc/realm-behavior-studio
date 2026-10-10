@@ -127,10 +127,40 @@ public partial class MainWindow
                 Width = 1120; Height = 800; UpdateLayout();
                 Check(Viewport.ActualWidth > 400 && ConsoleRow.ActualHeight >= 140, "Compact window keeps a usable viewport and console");
                 CaptureView(this, Path.Combine(output, "compact.png")); Width = 1500; Height = 1000; UpdateLayout();
+                RunStructureUiSmoke(output, Check);
                 File.WriteAllText(Path.Combine(output, "ui-checks.json"), JsonSerializer.Serialize(new { checks, spriteSheets = sprites.SheetCount, loadedFrames = sprites.LoadedFrames, fallbackNames = sprites.Missing.Order().ToArray() }, BehaviorDocument.JsonOptions));
                 Application.Current.Shutdown();
             })), DispatcherPriority.ApplicationIdle);
         })), DispatcherPriority.ApplicationIdle);
+    }
+    void RunStructureUiSmoke(string output, Action<bool, string> check)
+    {
+        WorkspaceTabs.SelectedIndex = 1;
+        var root = document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root; var phase = root.Children.Single(n => n.Kind == "State");
+        var baseline = document.Source; SelectNode(phase.Id);
+        phaseNameInput!.Text = "opening"; renamePhaseButton!.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        check(document.Find(phase.Id).Label == "opening" && ParametersTab.IsSelected && BehaviorTree.SelectedItem is System.Windows.Controls.TreeViewItem { Tag: BehaviorNode node } && node.Id == phase.Id, "Inspector rename updates phase graph and keeps the tree selection");
+        document.AddChild(phase.Id, "new TimedTransition(time: 1000, targetState: \"opening\")", d => adapter.Validate(d, selectedEntity!.Id)); Changed(phase.Id);
+        phaseNameInput!.Text = "approach"; renamePhaseButton!.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        check(document.Find(phase.Id).Children.Any(n => n.Parameters.Any(p => p.Name == "targetState" && BehaviorDocument.LiteralString(p.Expression) == "approach")), "Inspector rename rewrites transition targets in the shared document");
+        organizeExpander!.IsExpanded = true; duplicateStructureButton!.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        var cloneId = selectedNode!.Id;
+        check(cloneId != phase.Id && selectedNode.Label == "approach-copy" && document.Find(cloneId).Children.Any(n => n.Parameters.Any(p => p.Name == "targetState" && BehaviorDocument.LiteralString(p.Expression) == "approach-copy")), "Duplicate button selects a new phase with remapped self transitions");
+        organizeExpander!.IsExpanded = true; upStructureButton!.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        check(document.Find(root.Id).Children.First().Id == cloneId && selectedNode!.Id == cloneId, "Move-up button changes phase entry order and retains selection");
+        organizeExpander!.IsExpanded = true; UpdateLayout(); CaptureView(this, Path.Combine(output, "phase-authoring.png"));
+        var lockBox = Inspector.Children.OfType<System.Windows.Controls.CheckBox>().Single(); lockBox.IsChecked = true;
+        check(!duplicateStructureButton!.IsEnabled && !deleteStructureButton!.IsEnabled && !renamePhaseButton!.IsEnabled, "Region lock immediately disables structural controls");
+        lockBox.IsChecked = false;
+        check(duplicateStructureButton.IsEnabled && deleteStructureButton.IsEnabled, "Unlock restores structural controls without rebuilding the inspector");
+        deleteStructureButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        check(document.Find(root.Id).Children.Count == 1 && selectedNode!.Id == root.Id, "Delete button removes the branch and selects its parent");
+        Undo(this, new());
+        check(document.Find(root.Id).Children.First().Id == cloneId, "Desktop undo restores the organized phase and its identity");
+        Redo(this, new());
+        check(document.Find(root.Id).Children.Count == 1 && duplicateStructureButton == null && deleteStructureButton == null, "Root inspector omits duplicate, reorder and delete operations");
+        while (document.Source != baseline) if (!document.Undo()) throw new InvalidOperationException("Could not restore the UI test's original document.");
+        Changed(root.Id);
     }
     void CaptureSpriteAlignment(string path)
     {

@@ -119,20 +119,22 @@ public partial class MainWindow : Window
         Status.Text = $"Revision {document.Revision} · {diagnostics.Count(d => d.IsError)} errors · {diagnostics.Count(d => !d.IsError)} compatibility notices";
         SelectNode(selection ?? entity.Root.Id);
     }
-    void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n }) SelectNode(n.Id); }
+    void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n } && n.Id != selectedNode?.Id) SelectNode(n.Id); }
     void SelectNode(Guid id)
     {
         Try(() =>
         {
             selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();
+            SelectTreeNode(id); if (WorkspaceTabs.SelectedIndex == 1) ParametersTab.IsSelected = true;
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Label, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 6), TextWrapping = TextWrapping.Wrap });
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind + " · source line " + (document.Source[..selectedNode.Start].Count(c => c == '\n') + 1), Foreground = Brushes.LightSlateGray });
             var primitive = adapter.Primitives.FirstOrDefault(p => p.Name == selectedNode.Kind);
             Inspector.Children.Add(new TextBlock { Text = primitive?.Simulatable == true || selectedNode.Kind == "State" ? "Source runtime" : "Preserved source · preview unavailable", ToolTip = "Complete source is retained. Export is checked by the original compiler. Simulation coverage is partial; complete encounter verification remains pending.", FontSize = 11, Foreground = EncounterViewport.Brush("#91A69D"), Margin = new(0, 12, 0, 10) });
             var locked = new CheckBox { Content = "Lock this region", IsChecked = document.LockedNodes.Contains(id) };
-            locked.Checked += (_, _) => document.LockedNodes.Add(id); locked.Unchecked += (_, _) => document.LockedNodes.Remove(id); Inspector.Children.Add(locked);
+            locked.Checked += (_, _) => { document.LockedNodes.Add(id); UpdateOrganizeButtons(); }; locked.Unchecked += (_, _) => { document.LockedNodes.Remove(id); UpdateOrganizeButtons(); }; Inspector.Children.Add(locked);
+            AddOrganizeControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();
-            foreach (var parameter in selectedNode.Parameters)
+            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State"))
             {
                 var meta = primitive?.Parameters.FirstOrDefault(p => p.Name == parameter.Name);
                 Inspector.Children.Add(new TextBlock { Text = parameter.Name + (string.IsNullOrEmpty(meta?.Unit) ? "" : " · " + meta.Unit), Margin = new(0, 10, 0, 0) });
@@ -156,11 +158,11 @@ public partial class MainWindow : Window
                 if (operations.Length == 0) return;
                 document.Apply(new(document.Revision, "Edit " + selectedNode.Label, operations), d => adapter.Validate(d, selectedEntity!.Id)); Changed(id);
             });
-            Inspector.Children.Add(apply);
+            if (selectedNode.Kind != "State") Inspector.Children.Add(apply);
             if (selectedNode.Kind == "State")
             {
                 var add = new Button { Content = "+ Add child phase" };
-                add.Click += (_, _) => Try(() => { document.AddChild(id, "new State(\"phase-" + (document.Revision + 1) + "\")"); Changed(id); }); Inspector.Children.Add(add);
+                add.Click += (_, _) => Try(() => { document.AddChild(id, "new State(" + PhaseLiteral(NextPhaseName()) + ")", d => adapter.Validate(d, selectedEntity!.Id)); Changed(id); }); Inspector.Children.Add(add);
             }
             foreach (var diagnostic in adapter.Validate(document, selectedEntity!.Id).Where(d => d.NodeId == id)) Inspector.Children.Add(new TextBlock { Text = diagnostic.Message, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Goldenrod, Margin = new(0, 12, 0, 0) });
             if (selectedNode.Parameters.Any(p => p.Name == "count")) Proposal.Text = JsonSerializer.Serialize(new DocumentPatch(document.Revision, "Increase shot count", [new(id, "count", "3")]), BehaviorDocument.JsonOptions);
@@ -174,12 +176,12 @@ public partial class MainWindow : Window
         {
             "Shoot" => "new Shoot(radius: 8, count: 5, shootAngle: 15, projectileIndex: 0, coolDown: 1000)",
             "Wander" => "new Wander(speed: 0.3)", "Follow" => "new Follow(speed: 0.8, acquireRange: 10, range: 3)",
-            "HpLessTransition" => "new HpLessTransition(threshold: 0.7, targetState: \"" + selectedNode.Label + "\")",
-            "TimedTransition" => "new TimedTransition(time: 3000, targetState: \"" + selectedNode.Label + "\")",
-            "State" => "new State(\"phase-" + (document.Revision + 1) + "\")",
+            "HpLessTransition" => "new HpLessTransition(threshold: 0.7, targetState: " + PhaseLiteral(document.StateName(selectedNode.Id) ?? document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root.Descendants().Select(n => document.StateName(n.Id)).FirstOrDefault(n => n != null) ?? throw new ArgumentException("Add a named phase before adding transitions.")) + ")",
+            "TimedTransition" => "new TimedTransition(time: 3000, targetState: " + PhaseLiteral(document.StateName(selectedNode.Id) ?? document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root.Descendants().Select(n => document.StateName(n.Id)).FirstOrDefault(n => n != null) ?? throw new ArgumentException("Add a named phase before adding transitions.")) + ")",
+            "State" => "new State(" + PhaseLiteral(NextPhaseName()) + ")",
             _ => throw new NotSupportedException("This constructor is browsable. Add it in source until a validated visual creation form is implemented.")
         };
-        document.AddChild(selectedNode.Id, expression); Changed(selectedNode.Id);
+        document.AddChild(selectedNode.Id, expression, d => adapter.Validate(d, selectedEntity!.Id)); Changed(selectedNode.Id);
     });
     void Play(object sender, RoutedEventArgs e) => Try(() => { if (session == null) StartSession(); running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
     void StartSession(string? phase = null)
