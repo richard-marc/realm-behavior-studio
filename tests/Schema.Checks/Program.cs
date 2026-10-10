@@ -136,4 +136,40 @@ Check(adapter.HasKnownProjectileOwner(attackDoc, "Cave Pirate Brawler", attackNo
 var ownedWrapper = Doc("new State(new Timed(1000, new Shoot(8, projectileIndex: 2)))"); var ownedShot = ownedWrapper.Entities.Single().Root.Descendants().Single(n => n.Kind == "Shoot");
 Check(adapter.HasKnownProjectileOwner(ownedWrapper, "Cave Pirate Brawler", ownedShot) && adapter.ReadProjectileIndex(ownedWrapper, ownedShot) == 2, "Known native wrapper dispatch retains host ownership and an explicit projectile index");
 Check(!adapter.HasKnownProjectileOwner(ownedWrapper, "Ghost Ship", ownedShot) && !adapter.IsNativeShoot(ownedWrapper, ownedWrapper.Entities.Single().Root), "Projectile selection rejects a foreign encounter owner and a non-Shoot primitive");
+var followDoc = Doc("new State(new Follow(.3))"); var followNode = followDoc.Entities.Single().Root.Children.Single();
+Check(adapter.ReadMovementPattern(followDoc, followNode) is { Kind: "Follow", Range: 6, ResumeRange: 7, AcquireRange: 10, Speed: .3, Target: null }, "Movement geometry reads native Follow defaults and its one-tile resume hysteresis");
+var orbitDoc = Doc("new State(new Orbit(.3, 3))"); var orbitNode = orbitDoc.Entities.Single().Root.Children.Single();
+Check(adapter.ReadMovementPattern(orbitDoc, orbitNode) is { Kind: "Orbit", Range: 3, AcquireRange: 10, RadiusVariance: 1, SpeedVariance: 1, Clockwise: false }, "Orbit geometry retains native default variances and direction instead of inventing a fixed circular path");
+var homeDoc = Doc("new State(new StayCloseToSpawn(.3))"); var homeNode = homeDoc.Entities.Single().Root.Children.Single();
+Check(adapter.ReadMovementPattern(homeDoc, homeNode) is { Kind: "StayCloseToSpawn", Range: 5, IntegerRange: true, AcquireRange: null }, "Home-range geometry retains the actual integer native boundary");
+var signedOrbit = Doc("new State(new Orbit(.3, 3, radiusVariance: -1, orbitClockwise: null, target: \"Cave Pirate Brawler\"))");
+Check(adapter.ReadMovementPattern(signedOrbit, signedOrbit.Entities.Single().Root.Children.Single()) is { RadiusVariance: -1, Clockwise: null, Target: "Cave Pirate Brawler" }, "Native signed radius variance, seeded direction and entity target are retained without constructor execution");
+Check(adapter.ReadMovementPattern(attackDoc, attackNode) == null, "Movement controls are unavailable for a genuine attack primitive");
+using (var followSession = new EncounterSession(adapter, followDoc, "Cave Pirate Brawler", 7, new()))
+{
+    followSession.Step(new()); var start = followSession.Entities.Single();
+    var nativeEngine = typeof(EncounterSession).GetField("engine", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(followSession)!;
+    var nativeActor = (Entity)nativeEngine.GetType().GetField("Actor")!.GetValue(nativeEngine)!;
+    nativeActor.Move(71, 64.5f); followSession.Step(new()); var resting = followSession.Entities.Single();
+    nativeActor.Move(71.6f, 64.5f); followSession.Step(new()); var moving = followSession.Entities.Single();
+    Check(start.X == 64.5 && start.Y == 64.5 && resting.X == start.X && resting.Y == start.Y && Math.Abs(Math.Sqrt(Math.Pow(moving.X - start.X, 2) + Math.Pow(moving.Y - start.Y, 2)) - .15) < .00001, "Native Follow stops at range, rests inside range+1, then resumes with its real BehaviourTickTime displacement");
+}
+var acquireDoc = Doc("new State(new Follow(.3, acquireRange: 6, range: 1))");
+using (var acquireSession = new EncounterSession(adapter, acquireDoc, "Cave Pirate Brawler", 7, new()))
+{
+    acquireSession.Step(new()); Check(acquireSession.Entities.Single() is { X: 64.5f, Y: 64.5f }, "Native Follow acquisition excludes a target exactly at the acquisition boundary");
+}
+var fixedOrbitDoc = Doc("new State(new Orbit(.3, 3, radiusVariance: 0, speedVariance: 0, orbitClockwise: true))");
+using (var orbitSession = new EncounterSession(adapter, fixedOrbitDoc, "Cave Pirate Brawler", 7, new()))
+{
+    orbitSession.Step(new()); var moved = orbitSession.Entities.Single();
+    Check(moved.Y < 64.5 && Math.Abs(Math.Sqrt(Math.Pow(moved.X - 64.5, 2) + Math.Pow(moved.Y - 64.5, 2)) - .03) < .00001, "Native Orbit direction and DeltaTime displacement differ correctly from Follow's five-times tick factor");
+}
+using (var homeSession = new EncounterSession(adapter, homeDoc, "Cave Pirate Brawler", 7, new()))
+{
+    var nativeBoss = (Enemy)typeof(EncounterSession).GetField("boss", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(homeSession)!;
+    nativeBoss.Move(70, 64.5f); homeSession.Step(new()); var inside = homeSession.Entities.Single();
+    nativeBoss.Move(76, 64.5f); homeSession.Step(new()); var returning = homeSession.Entities.Single();
+    Check(inside.X == 70 && Math.Abs(returning.X - 75.85) < .00001, "StayCloseToSpawn captures its entry position and uses the actual range before returning toward that anchor");
+}
 Console.WriteLine($"{count} native schema checks passed.");

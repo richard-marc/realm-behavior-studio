@@ -22,6 +22,9 @@ public partial class MainWindow
         if (selectedNode == null) return; var editable = RegionEditable(selectedNode);
         if (attackEditorButton != null) attackEditorButton.IsEnabled = editable;
         RefreshAttackSelection();
+        if (movementEditorButton != null) movementEditorButton.IsEnabled = editable;
+        if (movementDirection != null) movementDirection.IsEnabled = editable;
+        RefreshMovementSelection();
         UpdateProjectileControls();
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;

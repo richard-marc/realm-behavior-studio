@@ -21,6 +21,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(string text) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: text.Length);
     static State StudioContextShared { get { throw new System.InvalidOperationException("authoring must not execute this getter"); } }
     static double StudioContextAttackAngle { get { throw new System.InvalidOperationException("attack geometry must not execute this getter"); } }
+    static string StudioContextMovementTarget { get { throw new System.InvalidOperationException("movement authoring must not execute this getter"); } }
     static readonly TKR.WorldServer.logic.behaviors.Shoot StudioContextSharedAction = new TKR.WorldServer.logic.behaviors.Shoot(8, count: 3, fixedAngle: 90, coolDown: 200);
     static TKR.WorldServer.logic.behaviors.Timed StudioContextWrap(params TKR.WorldServer.logic.Behavior[] children) => new TKR.WorldServer.logic.behaviors.Timed(1000, children);
     static TKR.WorldServer.logic.behaviors.Timed StudioContextLists(TKR.WorldServer.logic.Behavior[] first, TKR.WorldServer.logic.Behavior[] second, int period = 1000) => new TKR.WorldServer.logic.behaviors.Timed(period, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(first, second)));
@@ -456,6 +457,15 @@ var unknownIndex = Doc("new State(new Shoot(8, projectileIndex: (int)StudioConte
 Check(adapter.ReadProjectileIndex(unknownIndex, Root(unknownIndex).Children.Single()) == null, "Unknown projectile getters remain source expressions rather than silently selecting index zero");
 var unknownOwner = Doc("new State(StudioContextWrap(new Shoot(8)))"); var unownedShot = Root(unknownOwner).Descendants().Single(n => n.Kind == "Shoot");
 Check(!adapter.HasKnownProjectileOwner(unknownOwner, "Cave Pirate Brawler", unownedShot), "Source helper dispatch does not invent a projectile owner for nested actions");
+var sourceFollow = Doc("new State(new Follow(StudioContextAttackAngle, range: StudioContextCount, acquireRange: 12))");
+Check(adapter.ReadMovementPattern(sourceFollow, Root(sourceFollow).Children.Single()) is { Range: 4, ResumeRange: 5, AcquireRange: 12, Speed: null }, "Compiler-known movement boundaries stay editable independently of an unknown speed getter without executing it");
+var sourceOrbit = Doc("new State(new Orbit(.3, StudioContextCount - 1, radiusVariance: -1, speedVariance: 0, orbitClockwise: null, target: \"Cave Pirate Brawler\"))");
+Check(adapter.ReadMovementPattern(sourceOrbit, Root(sourceOrbit).Children.Single()) is { Range: 3, RadiusVariance: -1, Clockwise: null, Target: "Cave Pirate Brawler" }, "Source-scoped orbit constants, signed variance, native null direction and target IDs bind without source execution");
+var unknownRange = Doc("new State(new Follow(.3, range: StudioContextAttackAngle))");
+Check(adapter.ReadMovementPattern(unknownRange, Root(unknownRange).Children.Single()) == null, "An unknown range getter does not produce invented movement geometry");
+var unknownTarget = Doc("new State(new Orbit(.3, 3, target: StudioContextMovementTarget))");
+Check(adapter.ReadMovementPattern(unknownTarget, Root(unknownTarget).Children.Single()) == null, "An unknown target getter retains its source boundary rather than being replaced with a player prototype");
+Check(adapter.ReadMovementPattern(shadowed, Root(shadowed).Children.Single()) is { Kind: "Follow", Range: 1 }, "A source alias resolves to the actual native movement primitive and its explicit range instead of exposing attack controls");
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));
 Console.WriteLine($"{checks.Count} source-context checks passed.");

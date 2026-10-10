@@ -23,7 +23,7 @@ public partial class MainWindow
     void AddAttackControls(BehaviorNode node)
     {
         attackEditorButton = null;
-        if (node.Kind != "Shoot") return;
+        if (!adapter.IsNativeShoot(document, node)) return;
         var pattern = adapter.ReadShootPattern(document, node);
         if (pattern == null)
         {
@@ -33,7 +33,7 @@ public partial class MainWindow
         attackEditorButton.Click += (_, _) =>
         {
             if (attackEditing) { ClearAttackEditor(); return; }
-            Stop(this, new()); attackEditing = true; RefreshAttackSelection();
+            ClearMovementEditor(); Stop(this, new()); attackEditing = true; RefreshAttackSelection();
             attackEditorButton!.Content = "Close attack editor"; WorkspaceTabs.SelectedIndex = 0; UpdateLayout(); Viewport.FitAttack(); Viewport.Focus();
             Status.Text = "Attack editor · drag a handle to change one parameter · edits restart playback";
         };

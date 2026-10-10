@@ -28,15 +28,20 @@ public sealed partial class RapleAdapter
     bool ReadNumericParameter(BehaviorDocument document, BehaviorNode node, string name, double? fallback, out double? value)
     {
         value = fallback;
+        if (!ReadConstantParameter(document, node, name, fallback, out var constant)) return false;
+        if (constant == null) { value = null; return fallback == null; }
+        if (constant is not (byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal)) return false;
+        value = Convert.ToDouble(constant, CultureInfo.InvariantCulture); return double.IsFinite(value.Value);
+    }
+    bool ReadConstantParameter(BehaviorDocument document, BehaviorNode node, string name, object? fallback, out object? constant)
+    {
+        constant = fallback;
         var parameter = node.Parameters.SingleOrDefault(p => p.Name == name); if (parameter == null) return true;
-        object? constant;
         if (document.SchemaAt(node)?.HasSourceContext == true)
         {
             if (document.SchemaAt(node)!.At(parameter.Start) is not SourceBehaviorSchema source || !source.TryConstant(parameter.Expression, out constant)) return false;
         }
         else { var info = ConstructorSchema.Value.ValueInfo(parameter.Expression); if (!info.Constant) return false; constant = info.Value; }
-        if (constant == null) { value = null; return fallback == null; }
-        if (constant is not (byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal)) return false;
-        value = Convert.ToDouble(constant, CultureInfo.InvariantCulture); return double.IsFinite(value.Value);
+        return true;
     }
 }

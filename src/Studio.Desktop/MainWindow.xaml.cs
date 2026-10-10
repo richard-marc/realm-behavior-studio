@@ -44,6 +44,7 @@ public partial class MainWindow : Window
         Graph.Selected += id => SelectAuthoringNode(id, Keyboard.Modifiers); Graph.CollapseRequested += TogglePhaseCollapse; Viewport.Selected += SelectNode;
         InitializeSelectionControls();
         Viewport.AttackEdited += ApplyAttackEdit;
+        Viewport.MovementEdited += ApplyMovementEdit;
         autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); };
         PreviewKeyDown += Shortcut;
         Loaded += (_, _) => { Try(Initialize); CompositionTarget.Rendering += Advance; };
@@ -140,6 +141,7 @@ public partial class MainWindow : Window
         {
             selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();
             RefreshAttackSelection();
+            RefreshMovementSelection();
             if (!retainNodeSelection) { nodeSelection.Clear(); nodeSelection.Add(id); selectionAnchor = id; }
             RefreshSelectionVisuals();
             SelectTreeNode(id); if (WorkspaceTabs.SelectedIndex == 1) ParametersTab.IsSelected = true;
@@ -162,11 +164,12 @@ public partial class MainWindow : Window
             AddOrganizeControls(selectedNode);
             AddArgumentControls(selectedNode);
             AddAttackControls(selectedNode);
+            AddMovementControls(selectedNode);
             AddProjectileControls(selectedNode);
             AddTransitionSummary(id);
             AddLifecycleControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();
-            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State"))
+            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State" && (p.Name != "orbitClockwise" || movementDirection == null)))
             {
                 var meta = adapter.ParameterFor(document, selectedNode, parameter);
                 Inspector.Children.Add(new TextBlock { Text = parameter.Name + (string.IsNullOrEmpty(meta?.Unit) ? "" : " · " + meta.Unit), Margin = new(0, 10, 0, 0) });
@@ -175,7 +178,7 @@ public partial class MainWindow : Window
             if (primitive != null || selectedNode.Kind == "Factory")
             {
                 var optional = new StackPanel();
-                foreach (var meta in adapter.ParametersFor(document, selectedNode).Where(p => p.Default != "required" && !p.Type.EndsWith("[]") && selectedNode.Parameters.All(a => a.Name != p.Name)))
+                foreach (var meta in adapter.ParametersFor(document, selectedNode).Where(p => p.Default != "required" && !p.Type.EndsWith("[]") && (p.Name != "orbitClockwise" || movementDirection == null) && selectedNode.Parameters.All(a => a.Name != p.Name)))
                 {
                     optional.Children.Add(new TextBlock { Text = meta.Name + " · " + meta.Unit, Margin = new(0, 8, 0, 0) });
                     var input = new TextBox { ToolTip = meta.Explanation }; inputs.Add((new(meta.Name, "", 0, 0), input)); optional.Children.Add(input);
@@ -206,10 +209,10 @@ public partial class MainWindow : Window
         if (selectedNode == null || Primitives.SelectedItem is not Primitive p) return;
         BeginNativeCreation(p);
     });
-    async void Play(object sender, RoutedEventArgs e) => await TryRuntime(async () => { ClearAttackEditor(); if (session is CompiledRuntime { IsStopped: true }) session = null; if (session == null && !await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
+    async void Play(object sender, RoutedEventArgs e) => await TryRuntime(async () => { ClearViewportEditors(); if (session is CompiledRuntime { IsStopped: true }) session = null; if (session == null && !await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
     void StartSession(string? phase = null)
     {
-        ClearAttackEditor();
+        ClearViewportEditors();
         session = new EncounterSession(adapter, document, selectedEntity!.Id, int.Parse(Seed.Text), ReadPreset(), int.Parse(ArenaSize.Text), phase);
         BindSession(phase);
     }
