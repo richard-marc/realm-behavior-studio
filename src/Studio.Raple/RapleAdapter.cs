@@ -80,7 +80,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             {
                 if (n.Kind == "ArgumentGroup") continue;
                 if (n.Kind == "Opaque") yield return new("Visual structure is incomplete; the original expression is retained.", n.Id, false);
-                else if (!Supported.Contains(n.Kind)) yield return new($"{n.Kind} is preserved in export; Studio cannot simulate it yet.", n.Id, false);
+                else if (!Supported.Contains(n.Kind)) yield return new($"{n.Kind} requires compiled source preview. Its game-context fidelity is not yet certified.", n.Id, false);
                 var binding = Binding(document.Expression(n));
                 if (n.Kind == "Prioritize" && n.Children.Sum(c => c.Kind == "ArgumentGroup" ? c.Children.Count : 1) == 0 && n.Parameters.All(p => p.Name != "children"))
                     yield return new("Prioritize requires at least one cycle behavior for native execution.", n.Id);
@@ -126,6 +126,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         typeof(State).GetMethod("ResolveChildren", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(root, [states]);
         return root;
     }
+    public bool NeedsCompiledRuntime(BehaviorDocument document, string entityId) => document.Entities.Single(e => e.EntityId == entityId)
+        .Root.Descendants().Any(n => n.Kind != "ArgumentGroup" && (!Supported.Contains(n.Kind) || Binding(document.Expression(n)).RequiresContext));
     public static object? Evaluate(ExpressionSyntax expr, Type expected)
     {
         var nullable = Nullable.GetUnderlyingType(expected); var type = nullable ?? expected;

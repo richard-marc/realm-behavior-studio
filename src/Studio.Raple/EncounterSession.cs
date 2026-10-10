@@ -21,7 +21,7 @@ public record Emission(long Ms, int OwnerId, int Index, int Count, int BulletId,
 public record ReplayRecord(int Version, int Seed, string Entity, string Source, string ResourceHash, PlayerPreset Player, List<ReplayInput> Inputs);
 
 // Enemy execution, resource definitions and weapon formulas are reused. Client collision is sampled.
-public sealed class EncounterSession
+public sealed class EncounterSession : IEncounterSession
 {
     readonly SimEngine engine;
     readonly Enemy boss;
@@ -32,6 +32,7 @@ public sealed class EncounterSession
     readonly PlayerPreset preset;
     readonly string entityId;
     readonly int seed;
+    readonly bool compiledSource;
     readonly ConditionEffectManager playerConditions;
     readonly GameWeapon weapon;
     public const int SampleMs = 5;
@@ -60,6 +61,10 @@ public sealed class EncounterSession
     public IReadOnlyList<int> PlayerStats => Enumerable.Range(0, 8).Select(i => weapon.Stats[i]).ToArray();
     public string Coverage { get; private set; } = "Real enemy executor · XML weapons · client hit geometry / 5 ms samples";
     public List<Emission> PlayerShots { get; } = [];
+    IReadOnlyList<EncounterEvent> IEncounterSession.Events => Events;
+    IReadOnlyList<Emission> IEncounterSession.Shots => Shots;
+    IReadOnlyList<Emission> IEncounterSession.PlayerShots => PlayerShots;
+    IReadOnlyList<ReplayInput> IEncounterSession.Inputs => Inputs;
     public IReadOnlyList<EntityView> Entities => engine.World.Enemies.Values.Where(e => !e.Dead)
         .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id))).ToArray();
     public IReadOnlyList<BulletView> Projectiles => bullets.Where(b => !b.Removed).Select(b => new BulletView(b.X, b.Y, b.Owner, b.Index, b.Node, b.Desc.ObjectId, b.Path.Angle, b.Friendly)).ToArray();
@@ -72,7 +77,7 @@ public sealed class EncounterSession
     }
     public EncounterSession(RapleAdapter adapter, BehaviorDocument doc, string entity, int seed, PlayerPreset player, int arenaSize = 48, string? phase = null, bool originalRuntimeReference = false)
     {
-        var watch = Stopwatch.StartNew(); document = doc; entityId = entity; this.seed = seed; preset = player;
+        var watch = Stopwatch.StartNew(); document = doc; entityId = entity; this.seed = seed; preset = player; compiledSource = originalRuntimeReference;
         if (player.Hp < 1 || player.Hp > 1000000 || player.Speed < 0 || player.Speed > 500 || player.Defense < 0 || player.Defense > 10000 || player.Attack < 0 || player.Attack > 500 || player.Dexterity < 0 || player.Dexterity > 500) throw new ArgumentException("Player values are outside supported bounds.");
         engine = new SimEngine(new SimConfig { Boss = entity, Seed = seed });
         // The upstream harness copies base fields from an enemy. Replace its effect manager so
@@ -173,7 +178,7 @@ public sealed class EncounterSession
                     motions[e.Id] = new(from.X, from.Y, e.X, e.Y, Ms, SimEngine.TickMs);
                     var current = e.CurrentState?.Name ?? "";
                     if (!lastStates.TryGetValue(e.Id, out var previous)) Add("spawn", e.ObjectDesc.IdName);
-                    if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}", FindState(current));
+                    if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}", e.ObjectType == boss.ObjectType ? FindState(current) : null);
                     lastStates[e.Id] = current;
                 }
                 foreach (var shot in engine.DrainShots())
@@ -181,7 +186,7 @@ public sealed class EncounterSession
                     Shots.Add(new(Ms, shot.OwnerId, shot.BulletType, shot.NumShots, shot.BulletId, shot.StartingPos.X, shot.StartingPos.Y, shot.Angle, shot.AngleInc, shot.Damage));
                     if (!SimEngine.Data.ObjectDescs[(ushort)shot.ObjectType].Projectiles.TryGetValue(shot.BulletType, out var desc)) continue;
                     var owner = engine.World.Enemies.Values.FirstOrDefault(e => e.Id == shot.OwnerId);
-                    var node = FindAttack(owner?.CurrentState?.Name ?? "", shot.BulletType);
+                    var node = !compiledSource && owner?.ObjectType == boss.ObjectType ? FindAttack(owner.CurrentState?.Name ?? "", shot.BulletType) : null;
                     Add("attack", $"{owner?.ObjectDesc.IdName}: {shot.NumShots} × projectile #{shot.BulletType}", node);
                     if (!Player.ValidatedProjectile.CanSampleBossLab(desc) || desc.Homing || desc.Orbit)
                     { Coverage = "Unsupported projectile motion present · run is not verified"; Add("unsupported", "Projectile omitted: client-history-dependent motion.", node); continue; }
@@ -224,7 +229,11 @@ public sealed class EncounterSession
         foreach (var removed in bullets.Where(b => b.Friendly && b.Removed)) weapon.Forget(removed.Id);
         bullets.RemoveAll(b => b.Removed);
     }
-    Guid? FindState(string state) => document.Entities.First(e => e.EntityId == entityId).Root.Descendants().FirstOrDefault(n => n.Kind == "State" && n.Label == state)?.Id;
+    Guid? FindState(string state)
+    {
+        var matches = document.Entities.First(e => e.EntityId == entityId).Root.Descendants().Where(n => n.Kind == "State" && n.Label == state).ToArray();
+        return matches.Length == 1 ? matches[0].Id : null;
+    }
     Guid? FindAttack(string state, int index)
     {
         var root = document.Entities.First(e => e.EntityId == entityId).Root;
@@ -234,4 +243,5 @@ public sealed class EncounterSession
     }
     public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, events = Events, shots = Shots, playerShots = PlayerShots, inputs = Inputs }, BehaviorDocument.JsonOptions));
     public string InspectTimers() => string.Join("\n", boss.StateStorage.Select(p => p.Key.GetType().Name + ": " + (p.Value is int n ? n + " ms / scalar" : p.Value?.GetType().Name ?? "null")));
+    public void Dispose() { } // The current linked bootstrap owns no OS process/resources.
 }

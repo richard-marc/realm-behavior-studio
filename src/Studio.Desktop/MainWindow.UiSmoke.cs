@@ -132,8 +132,7 @@ public partial class MainWindow
                 RunSelectionUiSmoke(output, Check);
                 RunNativeUiSmoke(output, Check);
                 RunArgumentUiSmoke(output, Check);
-                File.WriteAllText(Path.Combine(output, "ui-checks.json"), JsonSerializer.Serialize(new { checks, spriteSheets = sprites.SheetCount, loadedFrames = sprites.LoadedFrames, fallbackNames = sprites.Missing.Order().ToArray() }, BehaviorDocument.JsonOptions));
-                Application.Current.Shutdown();
+                CompleteRuntimeUiSmoke(output, checks, Check);
             })), DispatcherPriority.ApplicationIdle);
         })), DispatcherPriority.ApplicationIdle);
     }

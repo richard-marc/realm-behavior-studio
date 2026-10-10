@@ -1,0 +1,10 @@
+<Project>
+  <Target Name="CopyStudioRuntimeHost" AfterTargets="Build" Condition="'$(BundleStudioRuntimeHost)' == 'true'">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)src/Studio.RuntimeHost/Studio.RuntimeHost.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);ServerRoot=$(ServerRoot)">
+      <Output TaskParameter="TargetOutputs" ItemName="StudioRuntimeHostPath" />
+    </MSBuild>
+    <Error Condition="'@(StudioRuntimeHostPath)' == ''" Text="The runtime host output path is missing." />
+    <ItemGroup><StudioRuntimeHostFiles Include="%(StudioRuntimeHostPath.RootDir)%(StudioRuntimeHostPath.Directory)**/*" /></ItemGroup>
+    <Copy SourceFiles="@(StudioRuntimeHostFiles)" DestinationFiles="@(StudioRuntimeHostFiles->'$(TargetDir)runtime-host/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

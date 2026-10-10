@@ -28,7 +28,9 @@ A future general adapter interface should provide resource/provenance manifests,
 
 ## Testing/export
 
-The current C# export gate replaces the imported file in an in-memory compilation of the original WorldServer source set. No private server source file is overwritten to validate an export. Original compiler dependencies are discovered from the application runtime and local referenced assemblies.
+The current C# export gate replaces the imported file in an in-memory compilation of the original WorldServer source set. It retains the actual assembly version and project-declared embedded resource logical names and emits portable symbols. No private server source file is overwritten. Original .NET 8 compiler dependencies come from the restored project assets and reference pack. The desktop then loads the emitted assembly through the compiled process host before writing the source and provenance sidecar. Failed compilation or native initialization refuses export; successful initialization does not certify subsequent gameplay.
+
+Studio.RuntimeHost consumes versioned, sequenced JSON commands and returns immutable sampled state and trace deltas. Native console output never shares its protocol stream. Keep every native tick on one thread, preserve ThreadStatic RNG initialization, and terminate a process after a failed command rather than resuming partial native state. Current deadlines and sampled working-set checks handle failed startup/ticks; they are not an OS security sandbox. Helpers/custom expressions execute as source code in this path. The quick literal interpreter remains a distinct path with its own support limits.
 
 The narrow runtime comparison creates one production BehaviorDb tree and one interpreter-bound document tree, runs equivalent recorded scenarios, and compares raw packet fields. An additional captured .NET 8 result checks cross-CLR emission behavior at report-rounding tolerance. Extend this to movement samples, timer/state transitions, collision reports, damage and lifecycle events before certifying another feature.
 

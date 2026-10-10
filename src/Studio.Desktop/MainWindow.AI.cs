@@ -60,7 +60,7 @@ public partial class MainWindow
             codex = new();
             codex.Delta += delta => Dispatcher.BeginInvoke(new Action(() => { Conversation.AppendText(delta); Conversation.ScrollToEnd(); }));
             codex.Status += status => Dispatcher.BeginInvoke(new Action(() => AccountStatus.Text = status));
-            codex.ToolHandler = (tool, args) => Dispatcher.InvokeAsync(() => NativeTool(tool, args)).Task;
+            codex.ToolHandler = (tool, args) => Dispatcher.InvokeAsync(() => NativeTool(tool, args)).Task.Unwrap();
             await codex.StartAsync(CodexPath.Text, activeAccount, Model.Text, ToolCatalog(), token, resumeThread);
             codexToken = activeAccount.AccessToken; conversationRegistration = activeAccount.RegistrationId;
         }
@@ -80,7 +80,7 @@ public partial class MainWindow
             Tool("inspect_trace", "Inspect recent events from the user run; no inference of unobserved causes.", "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}")
         }}];
     }
-    object NativeTool(string tool, JsonElement args)
+    async Task<object> NativeTool(string tool, JsonElement args)
     {
         if (ShareContext.IsChecked != true) throw new InvalidOperationException("Project sharing is disabled.");
         tool = tool.Split('.').Last();
@@ -98,6 +98,7 @@ public partial class MainWindow
                 ValidateProposal(proposed); Proposal.Text = JsonSerializer.Serialize(proposed, BehaviorDocument.JsonOptions);
                 return new { status = "previewed", changes = proposed.Operations.Count, applied = false };
             case "run_simulation":
+            {
                 var duration = args.GetProperty("durationMs").GetInt32(); if (duration < 100 || duration > 20000 || duration % 100 != 0) throw new ArgumentException("Duration must be 100–20000 ms in 100 ms steps.");
                 var candidate = new BehaviorDocument(document.Source, adapter, document.Identities);
                 if (args.GetProperty("previewProposal").GetBoolean())
@@ -106,9 +107,13 @@ public partial class MainWindow
                     candidate.Apply(pendingProposal with { ExpectedRevision = 0 }, d => adapter.Validate(d, selectedEntity!.Id));
                 }
                 running = false; session = null; Viewport.Session = null; UpdatePlayButton(); Viewport.InvalidateVisual();
-                var sim = new EncounterSession(adapter, candidate, selectedEntity!.Id, int.Parse(Seed.Text), ReadPreset(), int.Parse(ArenaSize.Text));
-                for (var elapsed = 0; elapsed < duration; elapsed += 100) sim.Step(new());
-                return new { durationMs = duration, sim.Seed, inputs = "stationary; no attacks", player = ReadPreset(), sim.PlayerHp, sim.Coverage, entityLimit = 128, projectileLimit = 20000, events = sim.Events.TakeLast(120) };
+                var preset = ReadPreset();
+                using IEncounterSession sim = adapter.NeedsCompiledRuntime(candidate, selectedEntity!.Id)
+                    ? await CompiledRuntime.StartAsync(adapter.ServerRoot, Snapshot() with { Source = candidate.Source, Identities = candidate.Identities }, cancellation: aiCancellation?.Token ?? default)
+                    : new EncounterSession(adapter, candidate, selectedEntity.Id, int.Parse(Seed.Text), preset, int.Parse(ArenaSize.Text));
+                for (var elapsed = 0; elapsed < duration; elapsed += 100) await sim.AdvanceAsync(new(), 100, aiCancellation?.Token ?? default);
+                return new { durationMs = duration, sim.Seed, inputs = "stationary; no attacks", player = preset, sim.PlayerHp, sim.Coverage, entityLimit = 128, projectileLimit = 20000, events = sim.Events.TakeLast(120) };
+            }
             case "inspect_trace": return new { seed = session?.Seed, coverage = session?.Coverage, events = session?.Events.TakeLast(120).ToArray() ?? [] };
             default: throw new NotSupportedException("Unknown application tool.");
         }

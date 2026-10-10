@@ -4,8 +4,10 @@
     <Project Path="src/Studio.Core/Studio.Core.csproj" />
     <Project Path="src/Studio.Desktop/Studio.Desktop.csproj" />
     <Project Path="src/Studio.Raple/Studio.Raple.csproj" />
+    <Project Path="src/Studio.RuntimeHost/Studio.RuntimeHost.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Runtime.Checks/Runtime.Checks.csproj" />
     <Project Path="tests/Argument.Checks/Argument.Checks.csproj" />
     <Project Path="tests/Schema.Checks/Schema.Checks.csproj" />
     <Project Path="tests/Analysis.Checks/Analysis.Checks.csproj" />

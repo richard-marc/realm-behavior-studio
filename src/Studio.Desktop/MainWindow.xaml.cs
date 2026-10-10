@@ -22,7 +22,14 @@ public partial class MainWindow : Window
     readonly Dictionary<string, BehaviorDocument> documents = new(StringComparer.OrdinalIgnoreCase);
     CatalogEntry? selectedEntity;
     BehaviorNode? selectedNode;
-    EncounterSession? session;
+    IEncounterSession? currentSession;
+    CancellationTokenSource? runtimeStarting;
+    bool advancingRuntime;
+    IEncounterSession? session
+    {
+        get => currentSession;
+        set { runtimeStarting?.Cancel(); if (!ReferenceEquals(currentSession, value)) currentSession?.Dispose(); currentSession = value; }
+    }
     DocumentPatch? pendingProposal;
     readonly DispatcherTimer autosaveTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     readonly Stopwatch clock = new();
@@ -39,7 +46,7 @@ public partial class MainWindow : Window
         autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); };
         PreviewKeyDown += Shortcut;
         Loaded += (_, _) => { Try(Initialize); CompositionTarget.Rendering += Advance; };
-        Closing += async (_, _) => { CompositionTarget.Rendering -= Advance; SaveWorkspaceLayout(); if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); aiCancellation?.Cancel(); if (codex != null) await codex.DisposeAsync(); };
+        Closing += async (_, _) => { CompositionTarget.Rendering -= Advance; session = null; SaveWorkspaceLayout(); if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); aiCancellation?.Cancel(); if (codex != null) await codex.DisposeAsync(); };
     }
     string ServerPath()
     {
@@ -137,7 +144,7 @@ public partial class MainWindow : Window
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Label, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 6), TextWrapping = TextWrapping.Wrap });
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind + " · source line " + (document.Source[..selectedNode.Start].Count(c => c == '\n') + 1), Foreground = Brushes.LightSlateGray });
             var primitive = adapter.Primitives.FirstOrDefault(p => p.Name == selectedNode.Kind);
-            Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind == "ArgumentGroup" ? "Native typed argument list" : primitive?.Simulatable == true || selectedNode.Kind == "State" ? "Source runtime" : "Preserved source · preview unavailable", ToolTip = "Complete source is retained. Export is checked by the original compiler. Simulation coverage is partial; complete encounter verification remains pending.", FontSize = 11, Foreground = EncounterViewport.Brush("#91A69D"), Margin = new(0, 12, 0, 10) });
+            Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind == "ArgumentGroup" ? "Native typed argument list" : primitive?.Simulatable == true || selectedNode.Kind == "State" ? "Source runtime" : "Compiled preview", ToolTip = "Complete source is retained. Export is checked by the original compiler and loader. Simulation coverage is partial; complete encounter verification remains pending.", FontSize = 11, Foreground = EncounterViewport.Brush("#91A69D"), Margin = new(0, 12, 0, 10) });
             var locked = new CheckBox { Content = "Lock this region", IsChecked = document.LockedNodes.Contains(id) };
             locked.Checked += (_, _) => { document.LockedNodes.Add(id); UpdateOrganizeButtons(); }; locked.Unchecked += (_, _) => { document.LockedNodes.Remove(id); UpdateOrganizeButtons(); }; Inspector.Children.Add(locked);
             AddOrganizeControls(selectedNode);
@@ -184,11 +191,15 @@ public partial class MainWindow : Window
         if (selectedNode == null || Primitives.SelectedItem is not Primitive p) return;
         BeginNativeCreation(p);
     });
-    void Play(object sender, RoutedEventArgs e) => Try(() => { if (session == null) StartSession(); running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
+    async void Play(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (session is CompiledRuntime { IsStopped: true }) session = null; if (session == null && !await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
     void StartSession(string? phase = null)
     {
         session = new EncounterSession(adapter, document, selectedEntity!.Id, int.Parse(Seed.Text), ReadPreset(), int.Parse(ArenaSize.Text), phase);
-        session.BreakpointKind = Breakpoint.SelectedIndex > 0 ? ((ComboBoxItem)Breakpoint.SelectedItem).Content.ToString() : null;
+        BindSession(phase);
+    }
+    void BindSession(string? phase)
+    {
+        session!.BreakpointKind = Breakpoint.SelectedIndex > 0 ? ((ComboBoxItem)Breakpoint.SelectedItem).Content.ToString() : null;
         Viewport.Session = session; Viewport.ShowHitboxes = Hitboxes.IsChecked == true; Viewport.ShowGrid = ArenaGrid.IsChecked == true; accumulator = 0; clearedEvents = 0;
         WorkspaceTabs.SelectedIndex = 0;
         Coverage.Text = "Local simulation · seed " + session.Seed;
@@ -197,33 +208,48 @@ public partial class MainWindow : Window
         UpdateSession();
     }
     void Pause(object sender, RoutedEventArgs e) { running = false; Status.Text = "Paused"; UpdatePlayButton(); }
-    void Restart(object sender, RoutedEventArgs e) => Try(() => { StartSession(); running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
+    async void Restart(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (!await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
     void Stop(object sender, RoutedEventArgs e) { running = false; session = null; Viewport.Session = null; Viewport.InvalidateVisual(); Events.ItemsSource = null; EventCount.Text = "0 events"; Status.Text = "Stopped"; UpdatePlayButton(); }
-    void Step(object sender, RoutedEventArgs e) => Try(() => { running = false; if (session == null) StartSession(); session!.Step(Viewport.Input()); UpdateSession(); });
-    void TestPhase(object sender, RoutedEventArgs e) => Try(() => { if (selectedNode?.Kind != "State" || selectedNode.Label == "Root") throw new ArgumentException("Select a named phase first."); StartSession(selectedNode.Label); running = true; clock.Restart(); Viewport.Focus(); });
-    void Advance(object? sender, EventArgs e)
+    async void Step(object sender, RoutedEventArgs e) => await TryRuntime(async () => { running = false; if (session == null && !await StartSessionAsync()) return; var active = session!; await active.AdvanceAsync(Viewport.Input(), 100); if (ReferenceEquals(active, session)) UpdateSession(); });
+    async void TestPhase(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (selectedNode?.Kind != "State" || selectedNode.Label == "Root") throw new ArgumentException("Select a named phase first."); if (!await StartSessionAsync(selectedNode.Label)) return; running = true; clock.Restart(); Viewport.Focus(); });
+    async void Advance(object? sender, EventArgs e)
     {
-        if (!running || session == null) return;
+        if (!running || session == null || advancingRuntime) return;
         var elapsed = clock.Elapsed.TotalMilliseconds; clock.Restart();
-        Try(() => AdvancePlayback(elapsed, Viewport.Input()));
+        if (session is not CompiledRuntime) { Try(() => AdvancePlayback(elapsed, Viewport.Input())); return; }
+        var active = session; var input = Viewport.Input(); advancingRuntime = true;
+        try
+        {
+            await AdvanceCompiledPlayback(elapsed, input);
+        }
+        catch (Exception error) { if (ReferenceEquals(active, session)) Try(() => throw error); }
+        finally { advancingRuntime = false; }
     }
-    void AdvancePlayback(double elapsedMs, EncounterInput input)
+    async Task AdvanceCompiledPlayback(double elapsedMs, EncounterInput input)
+    {
+        var active = session!; var duration = PlaybackDuration(elapsedMs);
+        if (duration > 0) await active.AdvanceAsync(input, duration);
+        if (ReferenceEquals(active, session)) { CheckRuntimePause(); UpdateSession(); }
+    }
+    int PlaybackDuration(double elapsedMs)
     {
         var speed = Playback.SelectedIndex switch { 0 => .25, 1 => .5, 3 => 2, 4 => 4, _ => 1d };
         accumulator += Math.Min(elapsedMs, 250) * speed;
-        if (accumulator >= EncounterSession.SampleMs)
-        {
-            var duration = (int)(accumulator / EncounterSession.SampleMs) * EncounterSession.SampleMs;
-            accumulator -= duration; session!.Advance(input, duration);
-            if (session.PauseRequested || session.Dead) { running = false; Status.Text = session.Dead ? "Test player died. Restart to respawn." : "Breakpoint reached"; }
-        }
+        var duration = (int)(accumulator / EncounterSession.SampleMs) * EncounterSession.SampleMs;
+        accumulator -= duration; return duration;
+    }
+    void CheckRuntimePause() { if (session!.PauseRequested || session.Dead) { running = false; Status.Text = session.Dead ? "Test player died. Restart to respawn." : "Breakpoint reached"; } }
+    void AdvancePlayback(double elapsedMs, EncounterInput input)
+    {
+        var duration = PlaybackDuration(elapsedMs);
+        if (duration > 0) { session!.Advance(input, duration); CheckRuntimePause(); }
         UpdateSession();
     }
     void UpdateSession()
     {
         Viewport.FrameRemainderMs = accumulator;
         Viewport.InvalidateVisual(); Graph.ActivePhase = session?.Entities.FirstOrDefault(e => e.Name == selectedEntity?.Id)?.Phase; UpdatePlayButton();
-        if (session != null) { Coverage.ToolTip = session.Coverage; Coverage.Text = session.Coverage.Contains("Unsupported") ? "Unsupported motion · see console" : "Client hit geometry · 5 ms samples"; }
+        if (session != null) { Coverage.ToolTip = session.Coverage; Coverage.Text = session.Coverage.Contains("Unsupported") ? "Unsupported motion · see console" : session is CompiledRuntime ? "Compiled encounter · 5 ms samples" : "Client hit geometry · 5 ms samples"; }
         TimerInfo.Text = session?.InspectTimers(); FilterEvents(this, null!);
     }
     record EventRow(EncounterEvent Event) { public string Time => $"{Event.Ms / 1000d:0.0}s"; public override string ToString() => $"{Time}  {Event.Kind}  {Event.Message}"; }
@@ -275,14 +301,18 @@ public partial class MainWindow : Window
         CollapsedNodes.UnionWith(p.CollapsedNodes.Where(id => d.Identities.Any(n => n.Id == id)));
         Changed(); RestoreLayout(p.Layout);
     }
-    void Export(object sender, RoutedEventArgs e) => Try(() =>
+    async void Export(object sender, RoutedEventArgs e) => await TryRuntime(async () =>
     {
-        var result = SourceVerification.Check(adapter.ServerRoot, selectedEntity!.SourceFile, document.Source);
-        if (!result.Accepted) throw new ArgumentException("Original compiler rejected export:\n" + string.Join("\n", result.Errors.Take(8)));
+        var project = Snapshot(); var expected = document; var revision = document.Revision;
+        Status.Text = "Checking export…";
+        await using var native = await CompiledRuntime.StartAsync(adapter.ServerRoot, project);
+        if (document != expected || document.Revision != revision || selectedEntity?.Id != project.EntityId) throw new InvalidOperationException("The document changed during export checking. Export the current revision again.");
         var dialog = new SaveFileDialog { Filter = "C# behavior source|*.cs", FileName = Path.GetFileName(selectedEntity.SourceFile) };
         if (dialog.ShowDialog() != true) return;
         if (Path.GetFullPath(dialog.FileName).StartsWith(adapter.ServerRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Export to a separate folder, then review before installing in the private server.");
-        File.WriteAllText(dialog.FileName, document.Source); Status.Text = $"Exported C# · original server compiler accepted {result.SourceFiles} source files";
+        File.WriteAllText(dialog.FileName, project.Source);
+        File.WriteAllText(dialog.FileName + ".verification.json", JsonSerializer.Serialize(native.Stamp, BehaviorDocument.JsonOptions));
+        Status.Text = $"Exported C# · original compiler and native loader accepted {native.Stamp.Source.SourceFiles} source files";
     });
     void SaveTrace(object sender, RoutedEventArgs e) => Try(() => { if (session == null) return; var dialog = new SaveFileDialog { Filter = "Encounter trace|*.json", FileName = "encounter-trace.json" }; if (dialog.ShowDialog() == true) session.ExportTrace(dialog.FileName); });
     void PreviewProposal(object sender, RoutedEventArgs e) => Try(() =>

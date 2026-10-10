@@ -8,8 +8,8 @@ using Studio.Raple;
 namespace Studio.Desktop;
 public sealed class EncounterViewport : FrameworkElement
 {
-    EncounterSession? session;
-    public EncounterSession? Session
+    IEncounterSession? session;
+    public IEncounterSession? Session
     {
         get => session;
         set { if (ReferenceEquals(session, value)) return; session = value; facings.Clear(); FrameRemainderMs = 0; InvalidateVisual(); }

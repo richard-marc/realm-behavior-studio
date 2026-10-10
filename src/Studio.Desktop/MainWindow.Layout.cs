@@ -15,14 +15,14 @@ public partial class MainWindow
     double consoleHeight = 260;
     int consoleMode, clearedEvents, lastEventCount = -1;
     string lastEventQuery = "";
-    Studio.Raple.EncounterSession? lastEventSession;
+    Studio.Raple.IEncounterSession? lastEventSession;
     readonly string layoutPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RealmBehaviorStudio", "workspace.json");
 
     void MinimizeWindow(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     void MaximizeWindow(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     void CloseWindow(object sender, RoutedEventArgs e) => Close();
     void TogglePlay(object sender, RoutedEventArgs e) { if (running) Pause(sender, e); else Play(sender, e); UpdatePlayButton(); }
-    void UpdatePlayButton() => PlayButton.Content = running ? "Ⅱ  Pause" : "▶  Play";
+    void UpdatePlayButton() { PlayButton.Content = runtimeStarting != null ? "Preparing…" : running ? "Ⅱ  Pause" : "▶  Play"; PlayButton.IsEnabled = runtimeStarting == null; }
     void ResetCamera(object sender, RoutedEventArgs e) => Viewport.ResetCamera();
     void BreakpointChanged(object sender, SelectionChangedEventArgs e)
     { if (session != null) session.BreakpointKind = Breakpoint.SelectedIndex > 0 ? ((ComboBoxItem)Breakpoint.SelectedItem).Content.ToString() : null; }
