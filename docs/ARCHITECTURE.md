@@ -20,6 +20,8 @@ Structural edits replace only syntax argument lists or literal expressions. Phas
 
 Revision checks, locks and undo are in Studio.Core. A patch validates a candidate before committing. Failed edits preserve the last valid document. Full source replacement requires unlocked regions. Undo history is session-local. Source syntax and reference checks are immediate; compilation against all original server files is the export gate.
 
+Studio.Core's BehaviorAnalysis describes direct phase transitions in their native filtered source order and computes conservative reachability through first-child descent and transitions inherited from active ancestors. It reports unreachable phases only when all nodes are recognized and destinations are literal/unambiguous. Opaque/custom content, dynamic destinations and duplicate phase names suppress those reports. Predicate conflicts cover broader preceding HP/player-distance checks and unconditional zero-time timers; nonzero stateful timers are not treated as stateless predicates. Self transitions are advisories: the native common ancestor can suppress entry/exit callbacks, so a self edge does not imply a full restart. These diagnostics are kept separate from RapleAdapter's blocking validation. The graph exposes condition hit targets and draws only the selected transition route; the collapsed Phase review navigates by the document's existing node IDs.
+
 ## Runtime hosting
 
 Studio.Raple references the actual private server project and links its unchanged `tests/BossPatternSim/SimEngine.cs`. This bootstrap bypasses account/network startup, creates a real BossLabWorld, initializes BehaviorDb and captures EnemyShoot packets at the existing player broadcast boundary.

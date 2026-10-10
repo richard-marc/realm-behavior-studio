@@ -115,8 +115,9 @@ public partial class MainWindow : Window
         }
         BehaviorTree.Items.Add(Item(entity.Root)); Graph.Root = entity.Root;
         ResourceInfo.Text = $"{selectedEntity.Id}\nObject type: 0x{selectedEntity.ObjectType:X4}\n\n" + adapter.ProjectileSummary(selectedEntity.Id);
-        var diagnostics = adapter.Validate(document, selectedEntity.Id).ToArray();
-        Status.Text = $"Revision {document.Revision} · {diagnostics.Count(d => d.IsError)} errors · {diagnostics.Count(d => !d.IsError)} compatibility notices";
+        var diagnostics = ReviewDiagnostics().ToArray();
+        RefreshPhaseReview(diagnostics);
+        Status.Text = $"Revision {document.Revision} · {diagnostics.Count(d => d.IsError)} errors · {diagnostics.Count(d => !d.IsError)} notices";
         SelectNode(selection ?? entity.Root.Id);
     }
     void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n } && n.Id != selectedNode?.Id) SelectNode(n.Id); }
@@ -133,6 +134,7 @@ public partial class MainWindow : Window
             var locked = new CheckBox { Content = "Lock this region", IsChecked = document.LockedNodes.Contains(id) };
             locked.Checked += (_, _) => { document.LockedNodes.Add(id); UpdateOrganizeButtons(); }; locked.Unchecked += (_, _) => { document.LockedNodes.Remove(id); UpdateOrganizeButtons(); }; Inspector.Children.Add(locked);
             AddOrganizeControls(selectedNode);
+            AddTransitionSummary(id);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();
             foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State"))
             {
@@ -164,7 +166,7 @@ public partial class MainWindow : Window
                 var add = new Button { Content = "+ Add child phase" };
                 add.Click += (_, _) => Try(() => { document.AddChild(id, "new State(" + PhaseLiteral(NextPhaseName()) + ")", d => adapter.Validate(d, selectedEntity!.Id)); Changed(id); }); Inspector.Children.Add(add);
             }
-            foreach (var diagnostic in adapter.Validate(document, selectedEntity!.Id).Where(d => d.NodeId == id)) Inspector.Children.Add(new TextBlock { Text = diagnostic.Message, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Goldenrod, Margin = new(0, 12, 0, 0) });
+            foreach (var diagnostic in ReviewDiagnostics().Where(d => d.NodeId == id)) Inspector.Children.Add(new TextBlock { Text = diagnostic.Message, TextWrapping = TextWrapping.Wrap, Foreground = EncounterViewport.Brush(diagnostic.IsError ? "#E5A195" : "#DAAE84"), Margin = new(0, 12, 0, 0) });
             if (selectedNode.Parameters.Any(p => p.Name == "count")) Proposal.Text = JsonSerializer.Serialize(new DocumentPatch(document.Revision, "Increase shot count", [new(id, "count", "3")]), BehaviorDocument.JsonOptions);
         });
     }

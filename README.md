@@ -44,6 +44,8 @@ In Behavior, select a named phase and use **Phase name → Rename** in Parameter
 
 Advanced source edits apply atomically after syntax/reference checks. Invalid edits stay in the source pane while the last valid visual document remains active. Full compiler validation happens at export; source expressions outside the adapter's literal/constructor subset may export successfully while remaining unsimulatable.
 
+Phase cards show each transition's condition, destination and numbered priority. Click a condition to edit it; **Organize → ↑ / ↓** changes its position in the source and the runtime's evaluation order. The first matching transition wins, with active child phases checked before their parents. **Phase review** is collapsed by default and opens clickable missing-target errors, unreachable-phase notices, overlapping HP/player-distance conflicts and self-transition advisories. Selecting a transition draws its destination route. Reachability follows first-child entry and inherited transitions; opaque/custom nodes, dynamic destinations or duplicate names suppress definitive unreachable claims. These authoring notices do not certify encounter behavior or block simulation; missing-target errors still do.
+
 ## What Play currently means
 
 Play reuses the actual `State`, `Entity.Tick`, movement, targeting, transition, Spawn, Shoot, projectile-position and defense implementations, through the upstream headless BossPatternSim host. Enemy ticks are always 100 ms. Collision/player samples are 5 ms. The viewport advances the player on each WPF display frame rather than waiting for an enemy tick. Enemy sprites, shadows, health bars and displayed hitboxes blend between tick positions on each frame, following the client's linear position-update formula. Enemy walking direction and cadence follow that segment's velocity. Playback speed changes scheduling, never the step sizes. Native player walking frames follow movement speed/direction; attack frames follow the equipped weapon's cadence, including extended weapon art.
@@ -71,6 +73,7 @@ The original-harness option requires a .NET 8 runtime. This workspace's local ru
 - `.artifacts/desktop/workspace.png`: rendered desktop smoke-test screenshot.
 - `.artifacts/desktop/ui-checks.json`: sprite, real splitter-drag, console, layout, popup and compact-window checks; additional rendered screenshots are in the same directory.
 - `.artifacts/structure/results.json`: structural editing, identity, lock, reference-update, runtime entry and original-compiler checks; `.artifacts/desktop/phase-authoring.png` shows the desktop controls.
+- `.artifacts/analysis/results.json`: transition labels, conservative reachability, priority conflicts and native order checks; `.artifacts/desktop/transition-priority.png` shows clickable review and condition editing.
 - `.artifacts/auth-results.json`: offline authentication/protocol checks, explicitly excluding live sign-in/inference.
 
 The three-phase example moves and aims, spawns two helpers below 70% HP, enters rotating fans below 35%, and changes its nested state when nearby helpers disappear. Its source fragment is original Studio content in `examples/three-phase.fragment.cs.txt`; it names locally supplied resources. Generated `.rbs` examples contain private imported source and stay ignored. Equipment acceptance scenarios remain pending.

@@ -40,7 +40,18 @@
        <Border Grid.Row="1" Background="#101215" CornerRadius="8" ClipToBounds="True"><local:EncounterViewport x:Name="Viewport" Focusable="True"/></Border>
        <DockPanel Grid.Row="2" Margin="2,10,2,0"><TextBlock Text="XML weapons" Foreground="#AAB09C" FontSize="11" ToolTip="Real weapon definitions and client collision geometry; full player lifecycle remains pending."/><TextBlock x:Name="Coverage" Text="Local simulation · partial fidelity" Foreground="{StaticResource Muted}" FontSize="11" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/></DockPanel>
       </Grid></Border></TabItem>
-      <TabItem Header="Behavior"><Border Background="{StaticResource Panel}" CornerRadius="10" Padding="12"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="180" MinWidth="100"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TreeView x:Name="BehaviorTree" SelectedItemChanged="NodeSelected"/><GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/><ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"><local:StateGraph x:Name="Graph" HorizontalAlignment="Left" VerticalAlignment="Top"/></ScrollViewer></Grid></Border></TabItem>
+      <TabItem Header="Behavior"><Border Background="{StaticResource Panel}" CornerRadius="10" Padding="12"><Grid>
+       <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+       <Grid.ColumnDefinitions><ColumnDefinition Width="180" MinWidth="100"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+       <TreeView x:Name="BehaviorTree" SelectedItemChanged="NodeSelected"/>
+       <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
+       <ScrollViewer x:Name="GraphScroll" Grid.Column="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"><local:StateGraph x:Name="Graph" HorizontalAlignment="Left" VerticalAlignment="Top"/></ScrollViewer>
+       <Expander x:Name="PhaseReview" Grid.Row="1" Grid.ColumnSpan="3" Header="Phase review" Margin="0,12,0,0">
+        <StackPanel><TextBlock Text="First match wins · child phases before parents" Style="{StaticResource Label}" Margin="4,6,4,8" ToolTip="Transitions run in numbered source order. A phase enters its first nested phase. Actions in parent phases remain active. Select a transition, then Organize, to change its priority."/>
+         <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto"><StackPanel x:Name="PhaseDiagnostics"/></ScrollViewer>
+        </StackPanel>
+       </Expander>
+      </Grid></Border></TabItem>
       <TabItem Header="Source"><Border Background="{StaticResource Panel}" CornerRadius="10" Padding="12"><DockPanel><DockPanel DockPanel.Dock="Top" Margin="0,0,0,10"><Button Content="Import C#" Click="ImportSource" DockPanel.Dock="Left"/><Button Content="Validate &amp; apply" Click="ApplySource" HorizontalAlignment="Right"/></DockPanel><TextBox x:Name="SourceEditor" Margin="0" FontFamily="Cascadia Code, Consolas" FontSize="12" AcceptsReturn="True" AcceptsTab="True" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"/></DockPanel></Border></TabItem>
       <TabItem Header="Details"><Border Background="{StaticResource Panel}" CornerRadius="10" Padding="14"><TabControl><TabItem Header="Resources"><TextBox x:Name="ResourceInfo" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" BorderThickness="0"/></TabItem><TabItem Header="Runtime"><TextBox x:Name="TimerInfo" IsReadOnly="True" AcceptsReturn="True" FontFamily="Cascadia Code, Consolas" VerticalScrollBarVisibility="Auto"/></TabItem></TabControl></Border></TabItem>
      </TabControl>
