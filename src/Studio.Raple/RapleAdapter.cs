@@ -19,6 +19,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
 {
     public string ServerRoot { get; }
     public string FragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(" + string.Join(",\n", expressions) + ")";
+    public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(children: [" + string.Join(",\n", expressions) + "])";
     readonly SourceSchemaCache sourceSchemas;
     public IBehaviorSchema ForSource(string source, string? sourceFile)
     {
@@ -106,6 +107,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             foreach (var n in nodes)
             {
                 if (n.Kind == "ArgumentGroup") continue;
+                if (n.Kind == "Spread") { yield return new("Spread contents are evaluated by compiled source preview; their contents are retained in source.", n.Id, false); continue; }
                 var sourceBinding = document.SchemaAt(n)?.DescribeExpression(document.Expression(n));
                 if (n.Kind == "Opaque") yield return new("Visual structure is incomplete; the original expression is retained.", n.Id, false);
                 else if (!Supported.Contains(n.Kind)) yield return new($"{n.Kind} requires compiled source preview. Its game-context fidelity is not yet certified.", n.Id, false);
@@ -128,7 +130,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                             try { Evaluate(parsed, parameterType); } catch (Exception e) { typeError = e.GetBaseException().Message; }
                     }
                     if (typeError != null) yield return new($"{n.Kind}.{p.Name}: {typeError}", n.Id);
-                    if (p.Name == "targetState" && !nodes.Any(n => n.Kind is "Opaque" or "Factory" or "Reference") && !states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) && BehaviorDocument.LiteralString(p.Expression) is { } stateTarget && !states.Any(s => (document.StateName(s.Id) ?? "") == stateTarget))
+                    if (p.Name == "targetState" && !nodes.Any(n => n.Kind is "Opaque" or "Factory" or "Reference" or "Spread") && !states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) && BehaviorDocument.LiteralString(p.Expression) is { } stateTarget && !states.Any(s => (document.StateName(s.Id) ?? "") == stateTarget))
                         yield return new("Missing transition target: " + p.Expression, n.Id);
                     if (p.Name is "children" or "target" && BehaviorDocument.LiteralString(p.Expression) is { } resourceTarget && !SimEngine.Data.IdToObjectType.ContainsKey(resourceTarget))
                         yield return new("Missing entity resource: " + p.Expression, n.Id);
@@ -171,6 +173,14 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         {
             var value = Evaluate(cast.Expression, typeof(int));
             return type.GetMethod("op_Implicit", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, [value]);
+        }
+        if (expr is CollectionExpressionSyntax collection)
+        {
+            if (!expected.IsArray) throw new NotSupportedException("This collection target requires compiled source preview.");
+            if (collection.Elements.Any(e => e is SpreadElementSyntax)) throw new NotSupportedException("Spread inputs require compiled source preview.");
+            var element = expected.GetElementType()!; var array = Array.CreateInstance(element, collection.Elements.Count);
+            for (var i = 0; i < collection.Elements.Count; i++) array.SetValue(Evaluate(((ExpressionElementSyntax)collection.Elements[i]).Expression, element), i);
+            return array;
         }
         InitializerExpressionSyntax? initializer = expr switch { ArrayCreationExpressionSyntax array => array.Initializer, ImplicitArrayCreationExpressionSyntax array => array.Initializer, _ => null };
         if (initializer != null)

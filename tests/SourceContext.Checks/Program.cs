@@ -28,6 +28,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     static TKR.WorldServer.logic.behaviors.Timed StudioContextKeywordSlot(TKR.WorldServer.logic.Behavior @event = null, params TKR.WorldServer.logic.Behavior[] tail) => StudioContextOptional(@event, tail: tail);
     static TKR.WorldServer.logic.behaviors.Timed StudioContextOptionalArrays(TKR.WorldServer.logic.Behavior[] first = null, TKR.WorldServer.logic.Behavior[] second = null) => StudioContextLists(first ?? new TKR.WorldServer.logic.Behavior[0], second ?? new TKR.WorldServer.logic.Behavior[0]);
     static readonly TKR.WorldServer.logic.Behavior[] StudioContextSharedList = new TKR.WorldServer.logic.Behavior[] { new TKR.WorldServer.logic.behaviors.Shoot(8) };
+    static System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> StudioContextThrowingList { get { throw new System.InvalidOperationException("spread authoring must not execute this getter"); } }
     static State StudioContextMessages(params string[] text) => new State(string.Join("-", text));
     static State StudioContextKeyword(int @event = 1) => new State(@event.ToString());
     static State StudioContextAmbiguous(int count, double speed = 1) => new State(count.ToString());
@@ -207,6 +208,33 @@ var phase = Doc("new State(new State(\"visible\", new Shoot(8)), StudioContextFa
 Reject(() => phase.RenameState(Root(phase).Children[0].Id, "renamed"), "Visible phase rename refuses to guess hidden helper references");
 Reject(() => factory.ReplaceSource(factory.Source.Replace("count: count", "count: StudioNoSuchCount")), "Compiler errors in a helper body reject complete source replacement");
 var output = Path.GetFullPath(".artifacts/source-context"); Directory.CreateDirectory(output);
+var collectionDoc = Doc("new State(children: [new State(\"source collections\", StudioContextWrap(children: [StudioContextFan(count: 2), .. /* spread note */ StudioContextSharedList, new Wander(StudioContextSpeed)]), new Timed(1000, behaviors: [new Shoot(8, count: 5)]))])");
+var collectionPhase = Root(collectionDoc).StateChildren.Single(); var collectionWrap = collectionPhase.Children[0]; var collectionList = collectionWrap.Children.Single(); var targetCollection = collectionPhase.Children[1].Children.Single(); var spread = collectionList.Children.Single(n => n.Kind == "Spread"); var explicitChild = collectionList.Children[0];
+Check(collectionList.Children.Select(n => n.Kind).SequenceEqual(["Factory", "Spread", "Wander"]) && collectionDoc.CanOrganize(spread.Id) && !adapter.Validate(collectionDoc, "Cave Pirate Brawler").Any(d => d.IsError), "Source collections retain explicit children and a typed spread input without executing or expanding the shared list");
+collectionDoc.MoveNode(explicitChild.Id, 1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(collectionDoc.Find(collectionList.Id).Children[0].Id == spread.Id && collectionDoc.Source.Contains(".. /* spread note */ StudioContextSharedList"), "Collection reorder preserves a spread's source expression, internal comments and identity");
+var copiedSpread = collectionDoc.PasteNodes(targetCollection.Id, 0, collectionDoc.CopyNodes([spread.Id]), d => adapter.Validate(d, "Cave Pirate Brawler")).Single();
+Check(copiedSpread != spread.Id && collectionDoc.Find(targetCollection.Id).Children[0].Kind == "Spread" && collectionDoc.Source.Contains("behaviors: ["), "Spread copy/paste binds the unchanged source input inside a destination collection with a fresh identity");
+collectionDoc.MoveNodes([spread.Id], targetCollection.Id, 1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(collectionDoc.Find(collectionList.Id).Children.All(n => n.Kind != "Spread") && collectionDoc.Find(targetCollection.Id).Children[1].Id == spread.Id, "Cross-collection spread moves preserve source inputs and stable selection identities");
+var beforeSpreadError = collectionDoc.Source; var spreadRevision = collectionDoc.Revision;
+Reject(() => collectionDoc.AddChild(targetCollection.Id, "..StudioContextNoSuchList", d => adapter.Validate(d, "Cave Pirate Brawler")), "An unavailable spread source rejects atomically in the destination's complete compiler context");
+Reject(() => collectionDoc.AddChild(collectionPhase.Id, "..StudioContextSharedList", d => adapter.Validate(d, "Cave Pirate Brawler")), "Spread insertion requires an actual collection-expression destination");
+Check(collectionDoc.Source == beforeSpreadError && collectionDoc.Revision == spreadRevision, "Rejected spread edits preserve the last valid source and revision");
+var cycleCollections = Doc("new State(new Prioritize(children: [new Wander(.2)]))"); var cycleCollection = Root(cycleCollections).Children.Single().Children.Single(); var beforeBadSpread = cycleCollections.Source;
+Reject(() => cycleCollections.AddChild(cycleCollection.Id, "..StudioContextSharedList", d => adapter.Validate(d, "Cave Pirate Brawler")), "A collection spread with incompatible native element types cannot enter a CycleBehavior list");
+Check(cycleCollections.Source == beforeBadSpread, "Rejected spread subtype conversion preserves the destination source");
+var throwingCollection = Doc("new State(new Timed(1000, behaviors: [..StudioContextThrowingList, new Wander(.2)]))"); var throwingCollectionList = Root(throwingCollection).Children.Single().Children.Single(); var throwingSpread = throwingCollectionList.Children[0];
+var throwingCopy = throwingCollection.DuplicateNode(throwingSpread.Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(throwingCollection.Find(throwingCopy).Kind == "Spread" && throwingCollectionList.Children[0].Id == throwingSpread.Id, "Typed enumerable spreads bind and copy without executing a throwing source getter");
+collectionDoc.LockedNodes.Add(spread.Id); Reject(() => collectionDoc.DeleteNode(spread.Id), "Spread region locks protect their complete source input"); collectionDoc.LockedNodes.Clear();
+Check(collectionDoc.Undo() && collectionDoc.Find(collectionList.Id).Children.Any(n => n.Id == spread.Id) && collectionDoc.Redo() && collectionDoc.Find(targetCollection.Id).Children[1].Id == spread.Id, "Cross-list spread edits restore complete source and identities through undo and redo");
+var multiCollections = Doc("new State(StudioContextLists(first: [StudioContextFan()], second: [new Wander(StudioContextSpeed)]))"); var multiCollectionCall = Root(multiCollections).Children.Single();
+multiCollections.MoveNodes([multiCollectionCall.Children[0].Children.Single().Id], multiCollectionCall.Children[1].Id, 1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(multiCollections.Find(multiCollectionCall.Id).Children[0].Children.Count == 0 && multiCollections.Find(multiCollectionCall.Id).Children[1].Children.Count == 2 && multiCollections.Source.Contains("first: []"), "Multiple source collection slots retain their distinct target types and empty bracket syntax");
+var collectionProjectPath = Path.Combine(output, "collections.rbs"); BehaviorDocument.Save(collectionProjectPath, new StudioProject { SourceFile = file, Source = collectionDoc.Source, EntityId = "Cave Pirate Brawler", Identities = collectionDoc.Identities }); var collectionSaved = BehaviorDocument.Load(collectionProjectPath);
+var collectionReopened = new BehaviorDocument(collectionSaved.Source, adapter, collectionSaved.Identities, collectionSaved.SourceFile);
+Check(collectionReopened.Identities.SequenceEqual(collectionDoc.Identities) && collectionReopened.Find(spread.Id).Kind == "Spread", "Collection and spread source identities survive project save and reopen");
 var slotPath = Path.Combine(output, "multi-slot.rbs"); BehaviorDocument.Save(slotPath, new StudioProject { SourceFile = file, Source = optionalSlots.Source, EntityId = "Cave Pirate Brawler", Identities = optionalSlots.Identities }); var savedSlots = BehaviorDocument.Load(slotPath);
 var reopenedSlots = new BehaviorDocument(savedSlots.Source, adapter, savedSlots.Identities, savedSlots.SourceFile);
 Check(reopenedSlots.Identities.SequenceEqual(optionalSlots.Identities) && Root(reopenedSlots).Descendants().Where(n => n.Kind == "ArgumentGroup").All(n => reopenedSlots.CanEditChildren(n.Id)), "Mixed scalar and array slot layouts reopen with all identities and independent editability intact");
@@ -250,6 +278,12 @@ await using (var native = await CompiledRuntime.StartAsync(server, project with 
     await native.AdvanceAsync(new(Y: 1));
     Check(native.Shots.Select(s => s.Count).SequenceEqual([4, 6]), "Source-defined multi-slot constructor executes its actual reverse tick dispatch without an invented wrapper model");
     native.ExportTrace(Path.Combine(output, "constructor-slot-trace.json"));
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = collectionReopened.Source, Identities = collectionReopened.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Select(s => s.Count).SequenceEqual([2, 1, 5]) && native.Entities.Single().Phase == "source collections", "Reopened collections expand spreads in the actual native runtime while repeated references retain shared cooldown state");
+    native.ExportTrace(Path.Combine(output, "collection-spread-trace.json"));
 }
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));

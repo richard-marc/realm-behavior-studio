@@ -52,6 +52,7 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
     readonly int position;
     public bool HasSourceContext => true;
     public string FragmentRoot(IReadOnlyList<string> expressions) => adapter.FragmentRoot(expressions);
+    public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => adapter.CollectionFragmentRoot(expressions);
     public string ChildArray(string expression, string parameter, IReadOnlyList<string> children)
     {
         var source = Expression(expression);
@@ -154,7 +155,7 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
     public string? ArrayElementType(string text)
     {
         var expression = Expression(text);
-        return expression != null && Model.GetTypeInfo(expression).Type is IArrayTypeSymbol array ? array.ElementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", "") : adapter.ArrayElementType(text);
+        return expression != null && (Model.GetTypeInfo(expression).Type ?? Model.GetTypeInfo(expression).ConvertedType) is IArrayTypeSymbol array ? array.ElementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", "") : adapter.ArrayElementType(text);
     }
     public bool AcceptsChild(string text, string parameter, string childExpression, string? arrayExpression = null)
     {
@@ -168,5 +169,11 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
         ITypeSymbol target = Element(slot.Type);
         if (arrayExpression != null && model.GetSpeculativeTypeInfo(expression.SpanStart, SyntaxFactory.ParseExpression(arrayExpression), SpeculativeBindingOption.BindAsExpression).Type is IArrayTypeSymbol array) target = array.ElementType;
         return type != null && context.Binding.Value.Compilation.ClassifyConversion(type, target).IsImplicit;
+    }
+    public bool AcceptsSpread(string text, string parameter, string spreadExpression, string? collectionExpression = null)
+    {
+        var expression = Expression(text); if (expression == null) return adapter.AcceptsSpread(text, parameter, spreadExpression, collectionExpression);
+        if (Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || method.Parameters.FirstOrDefault(p => p.Name == parameter)?.Type is not IArrayTypeSymbol target) return false;
+        return Model.ClassifyConversion(expression.SpanStart, SyntaxFactory.ParseExpression("[" + spreadExpression + "]"), target).IsImplicit;
     }
 }

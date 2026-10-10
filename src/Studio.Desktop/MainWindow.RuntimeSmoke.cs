@@ -19,6 +19,7 @@ public partial class MainWindow
         namespace TKR.WorldServer.logic { public partial class BehaviorDb {
             const double StudioPreviewSpeed = .3;
             static readonly TKR.WorldServer.logic.behaviors.Shoot StudioPreviewShared = new TKR.WorldServer.logic.behaviors.Shoot(8, count: 2, coolDown: 200);
+            static readonly TKR.WorldServer.logic.Behavior[] StudioPreviewCollection = [new TKR.WorldServer.logic.behaviors.Shoot(8, count: 3, coolDown: 200)];
             static State StudioPreviewRoot(int count = 4, double speed = .3) => new State(new State("native preview", StudioPreviewFan(count), new TKR.WorldServer.logic.behaviors.Follow(speed, range: 1)));
             static TKR.WorldServer.logic.behaviors.Shoot StudioPreviewFan(int count) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: count, coolDown: 200);
             static TKR.WorldServer.logic.behaviors.Timed StudioPreviewSlots(TKR.WorldServer.logic.Behavior lead = null, params TKR.WorldServer.logic.Behavior[] tail) => new TKR.WorldServer.logic.behaviors.Timed(1000, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(System.Linq.Enumerable.Where(new[] { lead }, b => b != null), tail)));
@@ -26,6 +27,7 @@ public partial class MainWindow
         """;
         RunSourceStructureUiSmoke(source, root, helpers, output, check);
         RunMultipleSlotUiSmoke(source, root, helpers, output, check);
+        RunCollectionUiSmoke(source, root, helpers, output, check);
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);
         Changed(); var factory = document.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
         check(factory.Kind == "Factory" && factory.Parameters.Single().Name == "count", "Desktop discovers the imported source helper as the encounter root");
@@ -136,5 +138,27 @@ public partial class MainWindow
         item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DragOverEvent)); item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DropEvent));
         check(document.Find(lead.Id).Children.Count == 0 && document.Find(tail.Id).Children.Last().Id == newLead, "Routed desktop drop moves an optional scalar child into the independent native list");
         SelectNode(lead.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "multiple-child-slots.png")); LibraryTabs.SelectedIndex = 0;
+    }
+    void RunCollectionUiSmoke(string source, BehaviorNode root, string helpers, string output, Action<bool, string> check)
+    {
+        const string expression = "new State(children: [new State(\"collection preview\", new Timed(1000, behaviors: [new Wander(.2), ..StudioPreviewCollection]), new Timed(1000, behaviors: [new Shoot(8, count: 2)]))])";
+        document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity!.SourceFile);
+        Changed(); WorkspaceTabs.SelectedIndex = 1;
+        var phase = EncounterRoot.StateChildren.Single(); var left = phase.Children[0].Children.Single(); var right = phase.Children[1].Children.Single(); var spread = left.Children.Single(n => n.Kind == "Spread");
+        UpdateLayout();
+        check(TreeItems().Any(i => ((BehaviorNode)i.Tag).Id == spread.Id) && left.Label.Contains("1 + spread") && Graph.PhaseBounds(phase.Id) != null, "Desktop collection hierarchy and graph retain explicit phases and show unknown spread counts honestly");
+        SelectNode(spread.Id);
+        check(Inspector.Children.OfType<TextBlock>().Any(t => t.Text.StartsWith("Spread input ·")) && duplicateStructureButton?.IsEnabled == true && !Inspector.Children.OfType<Button>().Any(b => Equals(b.Content, "Apply changes")), "Spread inspector explains its source role and offers structure controls without invented scalar fields");
+        duplicateStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); var copy = selectedNode!.Id;
+        check(copy != spread.Id && document.Find(left.Id).Children.Count(n => n.Kind == "Spread") == 2 && document.Source.Contains("behaviors: ["), "Real desktop Duplicate copies a spread expression with a fresh identity and retained brackets");
+        upStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(document.Find(left.Id).Children[1].Id == copy && selectedNode!.Id == copy, "Desktop spread reorder preserves exact input identity and focused selection");
+        Undo(this, new()); Undo(this, new());
+        SelectAuthoringNode(spread.Id, System.Windows.Input.ModifierKeys.None); UpdateLayout(); var item = TreeItems().Single(i => ((BehaviorNode)i.Tag).Id == right.Id); var data = DragData(new NodeDrag(document.Revision, selectedEntity.Id, [spread.Id]));
+        item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DragOverEvent)); item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DropEvent));
+        check(document.Find(left.Id).Children.All(n => n.Kind != "Spread") && document.Find(right.Id).Children.Last().Id == spread.Id && selectedNode!.Id == spread.Id, "Routed desktop drop moves a spread between real collection lists without expanding its source value");
+        SelectNode(right.Id); BeginNativeCreation(adapter.Primitives.Single(p => p.Name == "Wander")); createNativeButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(document.Find(right.Id).Children.Last().Kind == "Wander" && document.Find(right.Id).Children.Any(n => n.Id == spread.Id), "Native creation appends a typed child beside a retained collection spread");
+        SelectNode(spread.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "collection-spreads.png"));
     }
 }

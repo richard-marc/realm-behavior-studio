@@ -34,6 +34,20 @@ public sealed partial class BehaviorDocument
     }
     ChildArgument Slot(BehaviorNode container) => container.Argument ?? SchemaAt(container)?.ChildArguments(Expression(container)).Single() ?? new("children", "IStateChildren", true, true);
     bool PhaseContainer(BehaviorNode node) => node.Kind == "State" || node.Kind == "ArgumentGroup" && Parent(node.Id)?.Kind == "State";
+    static IReadOnlyList<SyntaxNode>? ListItems(ExpressionSyntax expression) => expression switch
+    {
+        CollectionExpressionSyntax collection => collection.Elements.Select(e => e is ExpressionElementSyntax value ? (SyntaxNode)value.Expression : e).ToArray(),
+        ArrayCreationExpressionSyntax { Initializer: { } initializer } => initializer.Expressions.Cast<SyntaxNode>().ToArray(),
+        ImplicitArrayCreationExpressionSyntax array => array.Initializer.Expressions.Cast<SyntaxNode>().ToArray(),
+        _ => null
+    };
+    bool CollectionContainer(BehaviorNode node) => node.Kind == "ArgumentGroup" && !node.ArgumentFromCall && SyntaxFactory.ParseExpression(Expression(node)) is CollectionExpressionSyntax;
+    static string ChildListCount(IReadOnlyList<BehaviorNode> children)
+    {
+        var spreads = children.Count(n => n.Kind == "Spread");
+        return spreads == 0 ? children.Count.ToString() : (children.Count - spreads) + " + " + (spreads == 1 ? "spread" : spreads + " spreads");
+    }
+    static ExpressionSyntax ChildValue(SyntaxNode item) => item is SpreadElementSyntax spread ? SyntaxFactory.ParseExpression(spread.ToFullString()) : (ExpressionSyntax)item;
     InitializerExpressionSyntax Initializer(ExpressionSyntax expression) => expression switch
     {
         ArrayCreationExpressionSyntax { Initializer: { } initializer } => initializer,
@@ -59,7 +73,7 @@ public sealed partial class BehaviorDocument
         var names = SchemaAt(owner)!.ConstructorParameterNames(Expression(owner));
         return names.Select((name, index) => (name, index)).Where(p => p.name.Split('[')[0] == Slot(node).Name).Select(p => p.index).ToArray();
     }
-    IEnumerable<ExpressionSyntax> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => node.Kind != "ArgumentGroup" ? CallArguments(expression).Arguments.Select(a => a.Expression) : node.ArgumentFromCall ? CallSlotIndices(node).Select(i => CallArguments(expression).Arguments[i].Expression) : Initializer(expression).Expressions;
+    IEnumerable<SyntaxNode> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => node.Kind != "ArgumentGroup" ? CallArguments(expression).Arguments.Select(a => a.Expression) : node.ArgumentFromCall ? CallSlotIndices(node).Select(i => CallArguments(expression).Arguments[i].Expression) : ListItems(expression) ?? throw new ArgumentException("Select an editable native child list.");
     ExpressionSyntax WithSeparator(ExpressionSyntax expression, SeparatedSyntaxList<ExpressionSyntax> list, int index)
     {
         if (index >= list.SeparatorCount) return expression;
@@ -74,8 +88,21 @@ public sealed partial class BehaviorDocument
             var expression = NodeExpression(tree, parent);
             if (parent.Kind == "ArgumentGroup" && !parent.ArgumentFromCall)
             {
-                var list = Initializer(expression).Expressions;
-                foreach (var child in parent.Children) { var index = list.IndexOf(list.Single(e => e.SpanStart == child.Start)); result[child.Id] = WithSeparator(list[index], list, index); }
+                if (expression is CollectionExpressionSyntax collection)
+                {
+                    foreach (var child in parent.Children)
+                    {
+                        var element = collection.Elements.Single(e => e.SpanStart == child.Start); var index = collection.Elements.IndexOf(element);
+                        var value = ChildValue(element is ExpressionElementSyntax item ? item.Expression : element);
+                        if (index < collection.Elements.SeparatorCount) { var separator = collection.Elements.GetSeparator(index); value = value.WithTrailingTrivia(value.GetTrailingTrivia().Concat(separator.LeadingTrivia).Concat(separator.TrailingTrivia)); }
+                        result[child.Id] = value;
+                    }
+                }
+                else
+                {
+                    var list = Initializer(expression).Expressions;
+                    foreach (var child in parent.Children) { var index = list.IndexOf(list.Single(e => e.SpanStart == child.Start)); result[child.Id] = WithSeparator(list[index], list, index); }
+                }
             }
             else
             {
@@ -90,6 +117,8 @@ public sealed partial class BehaviorDocument
         if (parent.Kind == "ArgumentGroup")
         {
             if (parent.ArgumentFromCall) return RewriteCallSlots(current, original, [(parent, children)]);
+            if (current is CollectionExpressionSyntax collection)
+                return collection.WithElements(SyntaxFactory.SeparatedList(children.Select(child => child is RangeExpressionSyntax { LeftOperand: null, RightOperand: { } operand } range ? (CollectionElementSyntax)SyntaxFactory.SpreadElement(range.OperatorToken, operand).WithTriviaFrom(child) : SyntaxFactory.ExpressionElement(child))));
             var initializer = Initializer(current).WithExpressions(SyntaxFactory.SeparatedList(children));
             if (current is ArrayCreationExpressionSyntax array) return array.WithInitializer(initializer);
             var implicitArray = (ImplicitArrayCreationExpressionSyntax)current;

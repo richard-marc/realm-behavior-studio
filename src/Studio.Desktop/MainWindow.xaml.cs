@@ -142,10 +142,10 @@ public partial class MainWindow : Window
             RefreshSelectionVisuals();
             SelectTreeNode(id); if (WorkspaceTabs.SelectedIndex == 1) ParametersTab.IsSelected = true;
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Label, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 6), TextWrapping = TextWrapping.Wrap });
-            var kindLabel = selectedNode.Kind switch { "ArgumentGroup" => "Child slot", "Factory" => "Source helper", "Reference" => "Shared reference", _ => selectedNode.Kind };
+            var kindLabel = selectedNode.Kind switch { "ArgumentGroup" => "Child slot", "Factory" => "Source helper", "Reference" => "Shared reference", "Spread" => "Spread input", _ => selectedNode.Kind };
             Inspector.Children.Add(new TextBlock { Text = kindLabel + " · source line " + (document.Source[..selectedNode.Start].Count(c => c == '\n') + 1), Foreground = Brushes.LightSlateGray });
-            if (selectedNode.Kind is "Factory" or "Reference") Inspector.Children.Add(new TextBlock {
-                Text = selectedNode.Kind == "Factory" ? "Edit the arguments passed to this helper. The game builds its contents when you press Play." : "This region uses a shared source value. Open Source to edit its definition.",
+            if (selectedNode.Kind is "Factory" or "Reference" or "Spread") Inspector.Children.Add(new TextBlock {
+                Text = selectedNode.Kind == "Factory" ? "Edit the arguments passed to this helper. The game builds its contents when you press Play." : selectedNode.Kind == "Spread" ? "This input expands a source collection when you press Play. Move or copy it within collection lists; use Source to edit its expression." : "This region uses a shared source value. Open Source to edit its definition.",
                 TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new(0, 10, 0, 0) });
             var primitive = adapter.Primitives.FirstOrDefault(p => p.Name == selectedNode.Kind);
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind == "ArgumentGroup" ? selectedNode.Argument!.ElementType + (selectedNode.Argument.IsArray ? " list" : " child") : primitive?.Simulatable == true || selectedNode.Kind == "State" ? "Source runtime" : "Compiled preview", ToolTip = "Complete source is retained. Export is checked by the original compiler and loader. Simulation coverage is partial; complete encounter verification remains pending.", FontSize = 11, Foreground = EncounterViewport.Brush("#91A69D"), Margin = new(0, 12, 0, 10) });

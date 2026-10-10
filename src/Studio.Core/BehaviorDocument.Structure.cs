@@ -26,7 +26,7 @@ public sealed partial class BehaviorDocument
         var affected = affectedNames.ToHashSet(StringComparer.Ordinal);
         foreach (var node in entity.Root.Descendants())
         {
-            if (node.Kind is "Factory" or "Reference")
+            if (node.Kind is "Factory" or "Reference" or "Spread")
                 throw new ArgumentException("This encounter contains source-generated phases or references. Update phase names in source so their hidden references stay consistent.");
             if (node.Parameters.Any(p => p.Name.StartsWith("targetState", StringComparison.Ordinal) && (p.Name != "targetState" || LiteralString(p.Expression) == null)) ||
                 node.Kind == "Opaque" && SyntaxFactory.ParseExpression(Expression(node)).DescendantNodesAndSelf().OfType<LiteralExpressionSyntax>().Any(l => l.Token.Value is string value && affected.Contains(value)))

@@ -52,6 +52,11 @@ public sealed partial class RapleAdapter
         var childType = ConstructorSchema.Value.ValueInfo(childExpression).Type;
         return p != null && childType != null && ConstructorSchema.Value.CanConvert("default(global::" + CSharpTypeName(childType) + ")", element ?? (p.ParameterType.IsArray ? p.ParameterType.GetElementType()! : p.ParameterType));
     }
+    public bool AcceptsSpread(string expression, string parameter, string spreadExpression, string? collectionExpression = null)
+    {
+        var type = Binding(expression).Constructor?.GetParameters().FirstOrDefault(p => p.Name == parameter)?.ParameterType;
+        return type?.IsArray == true && ConstructorSchema.Value.CanConvert("[" + spreadExpression + "]", type);
+    }
     public IReadOnlyList<PrimitiveParameter> ParametersFor(BehaviorDocument document, BehaviorNode node)
     {
         if (document.SchemaAt(node)?.DescribeExpression(document.Expression(node)) is { } source)
