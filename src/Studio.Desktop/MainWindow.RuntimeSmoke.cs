@@ -23,11 +23,13 @@ public partial class MainWindow
             static State StudioPreviewRoot(int count = 4, double speed = .3) => new State(new State("native preview", StudioPreviewFan(count), new TKR.WorldServer.logic.behaviors.Follow(speed, range: 1)));
             static TKR.WorldServer.logic.behaviors.Shoot StudioPreviewFan(int count) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: count, coolDown: 200);
             static TKR.WorldServer.logic.behaviors.Timed StudioPreviewSlots(TKR.WorldServer.logic.Behavior lead = null, params TKR.WorldServer.logic.Behavior[] tail) => new TKR.WorldServer.logic.behaviors.Timed(1000, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(System.Linq.Enumerable.Where(new[] { lead }, b => b != null), tail)));
+            static TKR.WorldServer.logic.behaviors.Timed StudioPreviewTyped(System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> first, System.Collections.Generic.IReadOnlyList<TKR.WorldServer.logic.Behavior> second, System.Collections.Generic.List<TKR.WorldServer.logic.Behavior> third = null) => new TKR.WorldServer.logic.behaviors.Timed(1000, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(System.Linq.Enumerable.Concat(first, second), third ?? new System.Collections.Generic.List<TKR.WorldServer.logic.Behavior>())));
         } }
         """;
         RunSourceStructureUiSmoke(source, root, helpers, output, check);
         RunMultipleSlotUiSmoke(source, root, helpers, output, check);
         RunCollectionUiSmoke(source, root, helpers, output, check);
+        RunTypedCollectionUiSmoke(source, root, helpers, output, check);
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);
         Changed(); var factory = document.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
         check(factory.Kind == "Factory" && factory.Parameters.Single().Name == "count", "Desktop discovers the imported source helper as the encounter root");
@@ -138,6 +140,35 @@ public partial class MainWindow
         item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DragOverEvent)); item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DropEvent));
         check(document.Find(lead.Id).Children.Count == 0 && document.Find(tail.Id).Children.Last().Id == newLead, "Routed desktop drop moves an optional scalar child into the independent native list");
         SelectNode(lead.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "multiple-child-slots.png")); LibraryTabs.SelectedIndex = 0;
+    }
+    void RunTypedCollectionUiSmoke(string source, BehaviorNode root, string helpers, string output, Action<bool, string> check)
+    {
+        const string expression = "new State(new State(\"typed input preview\", StudioPreviewTyped(first: [new Wander(.2), ..StudioPreviewCollection], second: [new Shoot(8, count: 2)])))";
+        document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity!.SourceFile);
+        Changed(); WorkspaceTabs.SelectedIndex = 1;
+        var call = EncounterRoot.StateChildren.Single().Children.Single(); var first = call.Children[0]; var second = call.Children[1]; var third = call.Children[2]; var moving = first.Children[0]; var spread = first.Children[1];
+        check(call.Children.Count == 3 && call.Children.All(n => n.Argument is { IsArray: false, IsCollection: true }) && TreeItems().Any(i => ((BehaviorNode)i.Tag).Id == third.Id), "Desktop exposes independently selectable enumerable, read-only and concrete child lists");
+        SelectNode(third.Id);
+        check(Equals(chooseChildSlotButton?.Content, "+ Add child") && Inspector.Children.OfType<TextBlock>().Any(t => t.Text.Contains("creates an explicit Behavior collection")), "An omitted concrete list offers Add child and describes actual collection construction");
+        BeginNativeCreation(adapter.Primitives.Single(p => p.Name == "Shoot")); constructorInputs["count"].Text = "5"; createNativeButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); var created = selectedNode!.Id;
+        check(document.Find(third.Id).Children.Single().Id == created && document.Source.Contains("third:[") && document.Find(second.Id).Children.Single().Parameters.Single(p => p.Name == "count").Expression == "2", "Desktop creation populates the omitted concrete list while retaining the other formal arguments");
+        duplicateStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); var copy = selectedNode!.Id;
+        check(document.Find(third.Id).Children.Count == 2 && copy != created, "Real Duplicate treats a non-array collection as a multi-child list");
+        Undo(this, new());
+        SelectAuthoringNode(moving.Id, System.Windows.Input.ModifierKeys.None); UpdateLayout(); var item = TreeItems().Single(i => ((BehaviorNode)i.Tag).Id == second.Id); var data = DragData(new NodeDrag(document.Revision, selectedEntity.Id, [moving.Id]));
+        item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DragOverEvent)); item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DropEvent));
+        check(document.Find(first.Id).Children.Single().Id == spread.Id && document.Find(second.Id).Children.Last().Id == moving.Id && selectedNode!.Id == moving.Id, "Routed desktop drop moves a child from enumerable to read-only input with its identity intact");
+        BehaviorClipboard? clipboard = null; var previousRead = readNodeClipboard; var previousWrite = writeNodeClipboard; readNodeClipboard = () => clipboard; writeNodeClipboard = value => clipboard = value;
+        try
+        {
+            SelectNode(spread.Id); CopySelectedNodes(); SelectNode(third.Id); PasteSelectedNodes();
+            check(document.Find(third.Id).Children.Last().Kind == "Spread" && selectedNode!.Id != spread.Id && document.Find(first.Id).Children.Single().Id == spread.Id, "Desktop clipboard paste copies a bound spread into a concrete collection with a fresh identity");
+            Undo(this, new()); check(document.Find(third.Id).Children.Single().Id == created, "Non-array collection clipboard Undo restores the exact earlier list");
+        }
+        finally { readNodeClipboard = previousRead; writeNodeClipboard = previousWrite; }
+        SelectNode(second.Id); var regionLock = Inspector.Children.OfType<CheckBox>().Single(); regionLock.IsChecked = true;
+        check(chooseChildSlotButton?.IsEnabled == false && Inspector.Children.OfType<TextBlock>().Any(t => t.Text.Contains("inputs in source order") && Equals(t.ToolTip, second.Argument!.CollectionType)), "Locked collection controls retain the actual target type and describe source input order"); regionLock.IsChecked = false;
+        UpdateLayout(); CaptureView(this, Path.Combine(output, "typed-collections.png"));
     }
     void RunCollectionUiSmoke(string source, BehaviorNode root, string helpers, string output, Action<bool, string> check)
     {

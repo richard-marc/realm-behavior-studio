@@ -171,8 +171,8 @@ public sealed partial class BehaviorDocument
         foreach (var order in orders)
         {
             var parent = Find(order.Key); var slot = Slot(parent);
-            if (order.Value.Count < slot.Minimum || !slot.IsArray && order.Value.Count > 1)
-                throw new ArgumentException($"{parent.Label}.{slot.Name} requires {(slot.IsArray ? "at least " + slot.Minimum : slot.Minimum == 0 ? "at most one" : "exactly one")} child.");
+            if (order.Value.Count < slot.Minimum || !slot.IsCollection && order.Value.Count > 1)
+                throw new ArgumentException($"{parent.Label}.{slot.Name} requires {(slot.IsCollection ? "at least " + slot.Minimum : slot.Minimum == 0 ? "at most one" : "exactly one")} child.");
             var owner = parent.Kind == "ArgumentGroup" ? Parent(parent.Id)! : parent;
             foreach (var child in order.Value)
                 if (child.Kind == "Spread" ? !CollectionContainer(parent) || SchemaAt(owner)?.AcceptsSpread(Expression(owner), slot.Name, expressions[child.Id].ToString(), Expression(parent)) != true : child.Kind == "ArgumentGroup" || child.Kind != "Opaque" && schema != null && !SchemaAt(owner)!.AcceptsChild(Expression(owner), slot.Name, expressions[child.Id].ToString(), parent.Kind == "ArgumentGroup" && !parent.ArgumentFromCall ? Expression(parent) : null))

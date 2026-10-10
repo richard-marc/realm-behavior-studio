@@ -98,13 +98,13 @@ public sealed partial class BehaviorDocument
                 var parameters = new List<Parameter>();
                 var children = new List<BehaviorNode>();
                 var slots = scoped?.ChildArguments(c.ToString()) ?? [];
-                var multipleSlots = slots.Count > 1;
+                var separateSlots = slots.Count > 1 || slots.Any(s => s.CollectionType != null);
                 var legacyPaths = new Dictionary<int, string>();
                 var index = 0;
                 foreach (var arg in args)
                 {
                     var childArgument = scoped?.IsChildArgument(c.ToString(), index) == true;
-                    if (childArgument && multipleSlots)
+                    if (childArgument && separateSlots)
                     {
                         legacyPaths[index] = path + "/" + legacyPaths.Count;
                         index++; continue;
@@ -131,27 +131,27 @@ public sealed partial class BehaviorDocument
                         arg.Expression.ToString(), arg.Expression.SpanStart, arg.Expression.Span.Length));
                     index++;
                 }
-                if (multipleSlots)
+                if (separateSlots)
                     foreach (var slot in slots)
                     {
                         var supplied = args.Select((arg, i) => (arg, i)).Where(p => p.i < pars.Length && pars[p.i].Split('[')[0] == slot.Name).ToArray();
                         var backing = supplied.Length == 1 ? supplied[0].arg.Expression : null;
                         var items = backing == null ? null : ListItems(backing);
                         var fromCall = items == null;
-                        var nullArray = slot.IsArray && backing?.IsKind(SyntaxKind.NullLiteralExpression) == true;
-                        var unassignedArray = slot.IsArray && (nullArray || supplied.Length == 0 && !slot.IsParams);
-                        var requiresSource = fromCall && slot.IsArray && !nullArray && supplied.Length > 0 && (!slot.IsParams || supplied.Any(p => !pars[p.i].Contains('[')));
+                        var nullList = slot.IsCollection && backing?.IsKind(SyntaxKind.NullLiteralExpression) == true;
+                        var unassignedList = slot.IsCollection && (nullList || supplied.Length == 0 && !slot.IsParams);
+                        var requiresSource = fromCall && slot.IsCollection && !nullList && supplied.Length > 0 && (!slot.IsParams || supplied.Any(p => !pars[p.i].Contains('[')));
                         var groupPath = path + "/" + children.Count;
                         var expression = fromCall ? c : backing!;
                         var signature = (fromCall ? "$slot:" + slot.Name + "|" : "") + expression;
                         var matching = identities.Where(n => n.Kind == "ArgumentGroup" && n.Signature == signature && !usedIdentities.Contains(n.Id)).ToArray();
                         var oldGroup = matching.Length == 1 ? matching[0] : identities.FirstOrDefault(n => n.Path == groupPath && n.Kind == "ArgumentGroup" && !usedIdentities.Contains(n.Id) && (!fromCall || n.Signature?.StartsWith("$slot:" + slot.Name + "|", StringComparison.Ordinal) == true));
-                        if (oldGroup == null && nullArray) oldGroup = identities.FirstOrDefault(n => n.Path == legacyPaths[supplied[0].i] && n.Kind == "Opaque" && n.Signature == "null" && !usedIdentities.Contains(n.Id));
+                        if (oldGroup == null && nullList) oldGroup = identities.FirstOrDefault(n => n.Path == legacyPaths[supplied[0].i] && n.Kind == "Opaque" && n.Signature == "null" && !usedIdentities.Contains(n.Id));
                         if (oldGroup != null) usedIdentities.Add(oldGroup.Id);
                         var elements = items != null
                             ? items.Select((element, i) => ReadItem(element, groupPath + "/" + i, legacyPaths[supplied[0].i] + "/" + i)).ToArray()
-                            : nullArray ? [] : supplied.Select((p, i) => Read(p.arg.Expression, groupPath + "/" + i, legacyPaths[p.i])).ToArray();
-                        children.Add(new BehaviorNode(oldGroup?.Id ?? Guid.NewGuid(), groupPath, "ArgumentGroup", slot.Name + " · " + (requiresSource ? "source" : unassignedArray ? "unassigned" : ChildListCount(elements)), expression.SpanStart, expression.Span.Length, [], elements) { Argument = slot, ArgumentFromCall = fromCall, ArgumentRequiresSource = requiresSource });
+                            : nullList ? [] : supplied.Select((p, i) => Read(p.arg.Expression, groupPath + "/" + i, legacyPaths[p.i])).ToArray();
+                        children.Add(new BehaviorNode(oldGroup?.Id ?? Guid.NewGuid(), groupPath, "ArgumentGroup", slot.Name + " · " + (requiresSource ? "source" : unassignedList ? "unassigned" : ChildListCount(elements)), expression.SpanStart, expression.Span.Length, [], elements) { Argument = slot, ArgumentFromCall = fromCall, ArgumentRequiresSource = requiresSource });
                     }
                 var matches = identities.Where(n => n.Kind == kind && n.Signature == c.ToString() && n.Path.StartsWith(entityId + "/") && !usedIdentities.Contains(n.Id)).ToArray();
                 var legacy = legacyPath == null ? null : identities.FirstOrDefault(n => n.Path == legacyPath && n.Signature == c.ToString() && n.Kind == kind && !usedIdentities.Contains(n.Id));

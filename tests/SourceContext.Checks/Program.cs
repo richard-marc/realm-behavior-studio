@@ -29,6 +29,24 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     static TKR.WorldServer.logic.behaviors.Timed StudioContextOptionalArrays(TKR.WorldServer.logic.Behavior[] first = null, TKR.WorldServer.logic.Behavior[] second = null) => StudioContextLists(first ?? new TKR.WorldServer.logic.Behavior[0], second ?? new TKR.WorldServer.logic.Behavior[0]);
     static readonly TKR.WorldServer.logic.Behavior[] StudioContextSharedList = new TKR.WorldServer.logic.Behavior[] { new TKR.WorldServer.logic.behaviors.Shoot(8) };
     static System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> StudioContextThrowingList { get { throw new System.InvalidOperationException("spread authoring must not execute this getter"); } }
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextCollections(System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> first, System.Collections.Generic.IReadOnlyList<TKR.WorldServer.logic.Behavior> second, System.Collections.Generic.List<TKR.WorldServer.logic.Behavior> third = null, int period = 1000) => new TKR.WorldServer.logic.behaviors.Timed(period, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(System.Linq.Enumerable.Concat(first, second), third ?? new System.Collections.Generic.List<TKR.WorldServer.logic.Behavior>())));
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextEnumerable(System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> children = null) => new TKR.WorldServer.logic.behaviors.Timed(1000, System.Linq.Enumerable.ToArray(children ?? System.Linq.Enumerable.Empty<TKR.WorldServer.logic.Behavior>()));
+    static TKR.WorldServer.logic.behaviors.Prioritize StudioContextCycles(System.Collections.Generic.IReadOnlyList<TKR.WorldServer.logic.CycleBehavior> children) => new TKR.WorldServer.logic.behaviors.Prioritize(System.Linq.Enumerable.ToArray(children));
+    [System.Runtime.CompilerServices.CollectionBuilder(typeof(StudioContextChildBuilder), "Create")]
+    sealed class StudioContextBuiltChildren : System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> {
+        readonly TKR.WorldServer.logic.Behavior[] children;
+        public StudioContextBuiltChildren(TKR.WorldServer.logic.Behavior[] children) { this.children = children; }
+        public System.Collections.Generic.IEnumerator<TKR.WorldServer.logic.Behavior> GetEnumerator() => ((System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior>)children).GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    static class StudioContextChildBuilder { public static StudioContextBuiltChildren Create(System.ReadOnlySpan<TKR.WorldServer.logic.Behavior> children) => new StudioContextBuiltChildren(children.ToArray()); }
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextBuilt(StudioContextBuiltChildren children) => StudioContextEnumerable(children);
+    sealed class StudioContextUnbuildable : System.Collections.Generic.IEnumerable<TKR.WorldServer.logic.Behavior> {
+        public StudioContextUnbuildable(int token) { }
+        public System.Collections.Generic.IEnumerator<TKR.WorldServer.logic.Behavior> GetEnumerator() => System.Linq.Enumerable.Empty<TKR.WorldServer.logic.Behavior>().GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextUnbuildableInput(StudioContextUnbuildable children = null) => StudioContextEnumerable(children);
     static State StudioContextMessages(params string[] text) => new State(string.Join("-", text));
     static State StudioContextKeyword(int @event = 1) => new State(@event.ToString());
     static State StudioContextAmbiguous(int count, double speed = 1) => new State(count.ToString());
@@ -41,6 +59,13 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
         public StudioContextPairBehavior(TKR.WorldServer.logic.Behavior first, TKR.WorldServer.logic.Behavior second) { this.first = first; this.second = second; }
         protected override void OnStateEntry(TKR.WorldServer.core.objects.Entity host, TKR.WorldServer.core.worlds.TickTime time, ref object state) { first.OnStateEntry(host, time); second.OnStateEntry(host, time); }
         protected override void TickCore(TKR.WorldServer.core.objects.Entity host, TKR.WorldServer.core.worlds.TickTime time, ref object state) { second.Tick(host, time); first.Tick(host, time); }
+    }
+    sealed class StudioContextCollectionBehavior : TKR.WorldServer.logic.Behavior {
+        readonly System.Collections.Generic.IReadOnlyList<TKR.WorldServer.logic.Behavior> first;
+        readonly System.Collections.Generic.List<TKR.WorldServer.logic.Behavior> second;
+        public StudioContextCollectionBehavior(System.Collections.Generic.IReadOnlyList<TKR.WorldServer.logic.Behavior> first, System.Collections.Generic.List<TKR.WorldServer.logic.Behavior> second) { this.first = first; this.second = second; }
+        protected override void OnStateEntry(TKR.WorldServer.core.objects.Entity host, TKR.WorldServer.core.worlds.TickTime time, ref object state) { foreach (var child in first) child.OnStateEntry(host, time); foreach (var child in second) child.OnStateEntry(host, time); }
+        protected override void TickCore(TKR.WorldServer.core.objects.Entity host, TKR.WorldServer.core.worlds.TickTime time, ref object state) { foreach (var child in second) child.Tick(host, time); foreach (var child in first) child.Tick(host, time); }
     }
 } }
 """;
@@ -235,6 +260,44 @@ Check(multiCollections.Find(multiCollectionCall.Id).Children[0].Children.Count =
 var collectionProjectPath = Path.Combine(output, "collections.rbs"); BehaviorDocument.Save(collectionProjectPath, new StudioProject { SourceFile = file, Source = collectionDoc.Source, EntityId = "Cave Pirate Brawler", Identities = collectionDoc.Identities }); var collectionSaved = BehaviorDocument.Load(collectionProjectPath);
 var collectionReopened = new BehaviorDocument(collectionSaved.Source, adapter, collectionSaved.Identities, collectionSaved.SourceFile);
 Check(collectionReopened.Identities.SequenceEqual(collectionDoc.Identities) && collectionReopened.Find(spread.Id).Kind == "Spread", "Collection and spread source identities survive project save and reopen");
+var typedCollections = Doc("new State(new State(\"typed collections\", StudioContextCollections(first: [StudioContextFan(count: 2), .. /* shared list */ StudioContextSharedList], second: [new Shoot(8, count: 3)], third: [new Shoot(8, count: 5)])))");
+var typedCall = Root(typedCollections).StateChildren.Single().Children.Single(); var enumerable = typedCall.Children[0]; var readOnly = typedCall.Children[1]; var concrete = typedCall.Children[2]; var typedFan = enumerable.Children[0]; var typedSpread = enumerable.Children[1];
+Check(typedCall.Children.Count == 3 && typedCall.Children.All(n => n.Argument is { IsArray: false, IsCollection: true, Minimum: 0 } && typedCollections.CanEditChildren(n.Id) && !typedCollections.IsScalarChildSlot(n.Id)) && enumerable.Argument!.CollectionType!.Contains("IEnumerable") && readOnly.Argument!.CollectionType!.Contains("IReadOnlyList") && concrete.Argument!.CollectionType!.Contains("List"), "Actual enumerable, read-only and concrete collection parameters expose independent typed lists rather than scalar children");
+Check(typedCall.Parameters.Count == 0 && !adapter.Validate(typedCollections, "Cave Pirate Brawler").Any(d => d.IsError), "Collection arguments remain structural inputs and retain valid complete source binding");
+typedCollections.MoveNodes([typedFan.Id], readOnly.Id, 1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(typedCollections.Find(readOnly.Id).Children.Last().Id == typedFan.Id && typedCollections.Find(enumerable.Id).Children.Single().Id == typedSpread.Id, "Moving a source helper between different collection targets retains its actual binding and identity");
+var typedSpreadCopy = typedCollections.PasteNodes(concrete.Id, 0, typedCollections.CopyNodes([typedSpread.Id]), d => adapter.Validate(d, "Cave Pirate Brawler")).Single();
+Check(typedSpreadCopy != typedSpread.Id && typedCollections.Find(concrete.Id).Children.First().Kind == "Spread" && typedCollections.Source.Contains(".. /* shared list */ StudioContextSharedList"), "Spreads copy across native enumerable/read-only/concrete target types with retained source comments");
+var typedBefore = typedCollections.Source; var typedRevision = typedCollections.Revision;
+Reject(() => typedCollections.AddChild(readOnly.Id, "new Shoot(\"bad range\")", d => adapter.Validate(d, "Cave Pirate Brawler")), "An invalid collection child overload rejects through the actual source compiler");
+Check(typedCollections.Source == typedBefore && typedCollections.Revision == typedRevision, "Rejected non-array collection edits preserve source and revision atomically");
+typedCollections.LockedNodes.Add(readOnly.Id); Reject(() => typedCollections.DeleteNode(typedFan.Id), "Non-array collection locks protect their contained source children"); typedCollections.LockedNodes.Clear();
+Check(typedCollections.Undo() && typedCollections.Find(concrete.Id).Children.Count == 1 && typedCollections.Redo() && typedCollections.Find(typedSpreadCopy).Kind == "Spread", "Non-array collection edits restore comments, source and identities through undo and redo");
+var optionalEnumerable = Doc("new State(StudioContextEnumerable())"); var optionalList = Root(optionalEnumerable).Children.Single().Children.Single();
+Check(optionalList.ArgumentFromCall && optionalList.Children.Count == 0 && optionalEnumerable.CanEditChildren(optionalList.Id), "A single omitted optional collection exposes an editable unassigned list");
+optionalEnumerable.AddChild(optionalList.Id, "new Shoot(8, count: 6)", d => adapter.Validate(d, "Cave Pirate Brawler")); var optionalChild = optionalEnumerable.Find(optionalList.Id).Children.Single().Id;
+Check(optionalEnumerable.Source.Contains("children:[") && optionalEnumerable.Find(optionalList.Id).Children.Single().Id == optionalChild && !optionalEnumerable.Source.Contains("new Behavior[]"), "Filling an omitted enumerable emits a target-typed collection and retains its slot identity");
+optionalEnumerable.DeleteNode(optionalChild, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(optionalEnumerable.Source.Contains("children:[]") && optionalEnumerable.Find(optionalList.Id).Children.Count == 0, "Deleting the last enumerable child preserves a valid empty collection target");
+var nullEnumerable = Doc("new State(StudioContextEnumerable(null))"); var nullList = Root(nullEnumerable).Children.Single().Children.Single(); nullEnumerable.AddChild(nullList.Id, "new Wander(.2)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(nullEnumerable.Source.Contains("StudioContextEnumerable([") && nullEnumerable.Find(nullList.Id).Children.Single().Kind == "Wander", "A null non-array collection becomes an actual populated collection without changing argument binding");
+var sourceEnumerable = Doc("new State(StudioContextEnumerable(StudioContextThrowingList))"); var generatedEnumerableList = Root(sourceEnumerable).Children.Single().Children.Single();
+Check(generatedEnumerableList.ArgumentRequiresSource && !sourceEnumerable.CanEditChildren(generatedEnumerableList.Id), "Shared/generated collection inputs keep an explicit source boundary without executing a throwing getter");
+var cyclesInput = Doc("new State(StudioContextCycles(children: [new Wander(.2)]))"); var cyclesList = Root(cyclesInput).Children.Single().Children.Single();
+Reject(() => cyclesInput.AddChild(cyclesList.Id, "new Taunt(\"test\")", d => adapter.Validate(d, "Cave Pirate Brawler")), "Read-only CycleBehavior targets reject incompatible native scalar children");
+Reject(() => cyclesInput.AddChild(cyclesList.Id, "..StudioContextSharedList", d => adapter.Validate(d, "Cave Pirate Brawler")), "Read-only CycleBehavior targets reject incompatible spread element types");
+var builtCollection = Doc("new State(new State(\"built collection\", StudioContextBuilt(children: [new Shoot(8, count: 4), ..StudioContextSharedList])))"); var builtList = Root(builtCollection).StateChildren.Single().Children.Single().Children.Single();
+var builtCopy = builtCollection.DuplicateNode(builtList.Children[0].Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(builtCollection.Find(builtList.Id).Children.Select(n => n.Kind).SequenceEqual(["Shoot", "Shoot", "Spread"]) && builtCopy != builtList.Children[0].Id, "An actual source CollectionBuilder target supports type-checked duplication and retained spreads");
+var unbuildable = Doc("new State(StudioContextUnbuildableInput())"); var unbuildableList = Root(unbuildable).Children.Single().Children.Single(); var unbuildableBefore = unbuildable.Source;
+Reject(() => unbuildable.AddChild(unbuildableList.Id, "new Wander(.2)", d => adapter.Validate(d, "Cave Pirate Brawler")), "Enumerable shape alone cannot bypass an unsupported collection construction contract");
+Check(unbuildable.Source == unbuildableBefore, "An unconstructible collection target leaves the original helper call untouched");
+var typedProjectPath = Path.Combine(output, "typed-collections.rbs"); BehaviorDocument.Save(typedProjectPath, new StudioProject { SourceFile = file, Source = typedCollections.Source, EntityId = "Cave Pirate Brawler", Identities = typedCollections.Identities }); var typedSaved = BehaviorDocument.Load(typedProjectPath); var typedReopened = new BehaviorDocument(typedSaved.Source, adapter, typedSaved.Identities, typedSaved.SourceFile);
+Check(typedReopened.Identities.SequenceEqual(typedCollections.Identities) && typedReopened.Find(readOnly.Id).Argument!.CollectionType == readOnly.Argument!.CollectionType, "Typed non-array collection slots and every child identity survive save and reopen");
+var constructorCollections = Doc("new State(new State(\"constructor collections\", new StudioContextCollectionBehavior(first: [new Shoot(8, count: 6)], second: [new Shoot(8, count: 3)])))"); var constructorCollectionCall = Root(constructorCollections).StateChildren.Single().Children.Single(); var constructorFirst = constructorCollectionCall.Children[0]; var constructorSecond = constructorCollectionCall.Children[1];
+Check(constructorCollectionCall.Children.Count == 2 && constructorCollectionCall.Children.All(n => n.Argument is { IsArray: false, IsCollection: true }) && constructorCollections.CanEditChildren(constructorFirst.Id), "Source-defined controller constructors expose their actual non-array collection parameters");
+constructorCollections.AddChild(constructorSecond.Id, "new Shoot(8, count: 2)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(constructorCollections.Find(constructorFirst.Id).Children.Single().Parameters.Single(p => p.Name == "count").Expression == "6" && constructorCollections.Find(constructorSecond.Id).Children.Count == 2, "Editing one custom controller list preserves its other formal input and subtype binding");
 var slotPath = Path.Combine(output, "multi-slot.rbs"); BehaviorDocument.Save(slotPath, new StudioProject { SourceFile = file, Source = optionalSlots.Source, EntityId = "Cave Pirate Brawler", Identities = optionalSlots.Identities }); var savedSlots = BehaviorDocument.Load(slotPath);
 var reopenedSlots = new BehaviorDocument(savedSlots.Source, adapter, savedSlots.Identities, savedSlots.SourceFile);
 Check(reopenedSlots.Identities.SequenceEqual(optionalSlots.Identities) && Root(reopenedSlots).Descendants().Where(n => n.Kind == "ArgumentGroup").All(n => reopenedSlots.CanEditChildren(n.Id)), "Mixed scalar and array slot layouts reopen with all identities and independent editability intact");
@@ -284,6 +347,24 @@ await using (var native = await CompiledRuntime.StartAsync(server, project with 
     await native.AdvanceAsync(new(Y: 1));
     Check(native.Shots.Select(s => s.Count).SequenceEqual([2, 1, 5]) && native.Entities.Single().Phase == "source collections", "Reopened collections expand spreads in the actual native runtime while repeated references retain shared cooldown state");
     native.ExportTrace(Path.Combine(output, "collection-spread-trace.json"));
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = typedReopened.Source, Identities = typedReopened.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Select(s => s.Count).SequenceEqual([1, 3, 2, 5]) && native.Entities.Single().Phase == "typed collections", "Reopened enumerable/read-only/concrete inputs execute the actual helper order and retain shared spread cooldown state");
+    native.ExportTrace(Path.Combine(output, "typed-collection-trace.json"));
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = builtCollection.Source, Identities = builtCollection.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Select(s => s.Count).SequenceEqual([4, 4, 1]), "Duplicated custom collection inputs execute the actual source CollectionBuilder and native attacks");
+    native.ExportTrace(Path.Combine(output, "collection-builder-trace.json"));
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = constructorCollections.Source, Identities = constructorCollections.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Select(s => s.Count).SequenceEqual([3, 2, 6]), "A custom collection controller executes its actual reverse-list tick dispatch instead of a guessed authoring order");
+    native.ExportTrace(Path.Combine(output, "collection-controller-trace.json"));
 }
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));

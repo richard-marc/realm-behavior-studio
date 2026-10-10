@@ -53,6 +53,13 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
     public bool HasSourceContext => true;
     public string FragmentRoot(IReadOnlyList<string> expressions) => adapter.FragmentRoot(expressions);
     public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => adapter.CollectionFragmentRoot(expressions);
+    public string ChildList(string expression, string parameter, IReadOnlyList<string> children)
+    {
+        var source = Expression(expression);
+        if (source != null && Model.GetSymbolInfo(source).Symbol is IMethodSymbol method && method.Parameters.Single(p => p.Name == parameter).Type is { } type && type is not IArrayTypeSymbol && Collection(type))
+            return "[" + string.Join(",\n", children) + "]";
+        return ChildArray(expression, parameter, children);
+    }
     public string ChildArray(string expression, string parameter, IReadOnlyList<string> children)
     {
         var source = Expression(expression);
@@ -82,8 +89,16 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
         return false;
     }
     static bool Child(ITypeSymbol? type) => Native(type, "IStateChildren") || type is INamedTypeSymbol named && named.AllInterfaces.Any(t => Native(t, "IStateChildren"));
-    static ITypeSymbol Element(ITypeSymbol type) => type is IArrayTypeSymbol array ? array.ElementType : type;
-    static string TypeName(ITypeSymbol type) => type is IArrayTypeSymbol array ? TypeName(array.ElementType) + "[]" : type.Name;
+    static ITypeSymbol Element(ITypeSymbol type)
+    {
+        if (type is IArrayTypeSymbol array) return array.ElementType;
+        if (Child(type) || type is not INamedTypeSymbol named) return type;
+        var elements = named.AllInterfaces.Prepend(named).Where(t => t.OriginalDefinition.MetadataName == "IEnumerable`1" && t.ContainingNamespace.ToDisplayString() == "System.Collections.Generic")
+            .Select(t => t.TypeArguments[0]).Distinct<ITypeSymbol>(SymbolEqualityComparer.Default).ToArray();
+        return elements.Length == 1 ? elements[0] : type;
+    }
+    static bool Collection(ITypeSymbol type) => !SymbolEqualityComparer.Default.Equals(type, Element(type));
+    static string TypeName(ITypeSymbol type) => type is IArrayTypeSymbol array ? TypeName(array.ElementType) + "[]" : type is INamedTypeSymbol { IsGenericType: true } ? type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) : type.Name;
     static bool SameType(ITypeSymbol symbol, Type runtime)
     {
         if (symbol is IArrayTypeSymbol array) return runtime.IsArray && array.Rank == runtime.GetArrayRank() && SameType(array.ElementType, runtime.GetElementType()!);
@@ -131,7 +146,8 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
             slots[i] = parameter.Name + (expanded ? "[" + count + "]" : "");
         }
         var children = method.Parameters.Where(p => Child(Element(p.Type)))
-            .Select(p => new ChildArgument(p.Name, Element(p.Type).Name, p.Type is IArrayTypeSymbol, p.IsParams, p.Type is not IArrayTypeSymbol && !p.IsOptional || expression is ObjectCreationExpressionSyntax && type!.Name == "Prioritize" ? 1 : 0)).ToArray();
+            .Select(p => new ChildArgument(p.Name, Element(p.Type).Name, p.Type is IArrayTypeSymbol, p.IsParams, !Collection(p.Type) && !p.IsOptional || expression is ObjectCreationExpressionSyntax && type!.Name == "Prioritize" ? 1 : 0)
+            { CollectionType = p.Type is not IArrayTypeSymbol && Collection(p.Type) ? p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) : null }).ToArray();
         var standalone = RapleAdapter.Binding(text);
         var actualType = method.ContainingType.ToDisplayString().Replace("@", "");
         var nativeType = Native(type, "State") || adapter.Primitives.Any(p => p.Name == type!.Name) && RapleAdapter.NativeTypeName(type!.Name) == type.ToDisplayString().Replace("@", "");
@@ -173,7 +189,7 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
     public bool AcceptsSpread(string text, string parameter, string spreadExpression, string? collectionExpression = null)
     {
         var expression = Expression(text); if (expression == null) return adapter.AcceptsSpread(text, parameter, spreadExpression, collectionExpression);
-        if (Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || method.Parameters.FirstOrDefault(p => p.Name == parameter)?.Type is not IArrayTypeSymbol target) return false;
+        if (Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || method.Parameters.FirstOrDefault(p => p.Name == parameter)?.Type is not { } target || !Collection(target)) return false;
         return Model.ClassifyConversion(expression.SpanStart, SyntaxFactory.ParseExpression("[" + spreadExpression + "]"), target).IsImplicit;
     }
 }

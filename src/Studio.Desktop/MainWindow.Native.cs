@@ -19,14 +19,14 @@ public partial class MainWindow
     {
         chooseChildSlotButton = null;
         if (node.Kind != "ArgumentGroup" || node.Argument is not { } slot) return;
-        var description = node.ArgumentRequiresSource ? "This collection comes from source. Open Source to edit its definition." : slot.IsArray ? node.ArgumentFromCall && !slot.IsParams && node.Children.Count == 0 ? "No list is assigned. Adding a child creates an explicit " + slot.ElementType + " array." : "Ordered " + slot.ElementType + " list. Add a child or organize its contents." : (slot.Minimum == 0 ? "Optional " : "Required ") + slot.ElementType + " child. " + (node.Children.Count == 0 ? "Choose an action to fill this slot." : "Choose an action to replace this child in one edit.");
-        Inspector.Children.Add(new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new(0, 12, 0, 8) });
+        var description = node.ArgumentRequiresSource ? "This collection comes from source. Open Source to edit its definition." : slot.IsCollection ? node.ArgumentFromCall && !slot.IsParams && node.Children.Count == 0 ? "No list is assigned. Adding a child creates an explicit " + slot.ElementType + (slot.IsArray ? " array." : " collection.") : (slot.IsArray ? "Ordered " + slot.ElementType + " list." : slot.ElementType + " inputs in source order.") + " Add a child or organize its contents." : (slot.Minimum == 0 ? "Optional " : "Required ") + slot.ElementType + " child. " + (node.Children.Count == 0 ? "Choose an action to fill this slot." : "Choose an action to replace this child in one edit.");
+        Inspector.Children.Add(new TextBlock { Text = description, ToolTip = slot.CollectionType, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new(0, 12, 0, 8) });
         if (node.ArgumentRequiresSource)
         {
             var source = new Button { Content = "Open Source", Style = (Style)FindResource("QuietButton") };
             source.Click += (_, _) => { WorkspaceTabs.SelectedIndex = 2; SourceEditor.Select(node.Start, node.Length); SourceEditor.Focus(); }; Inspector.Children.Add(source); return;
         }
-        chooseChildSlotButton = new Button { Content = slot.IsArray ? "+ Add child" : node.Children.Count > 0 ? "Replace child" : "Choose child", Style = (Style)FindResource("QuietButton"), IsEnabled = RegionEditable(node) };
+        chooseChildSlotButton = new Button { Content = slot.IsCollection ? "+ Add child" : node.Children.Count > 0 ? "Replace child" : "Choose child", Style = (Style)FindResource("QuietButton"), IsEnabled = RegionEditable(node) };
         chooseChildSlotButton.Click += (_, _) => { LibraryTabs.SelectedIndex = 1; PrimitiveSearch.Text = ""; PrimitiveSearch.Focus(); }; Inspector.Children.Add(chooseChildSlotButton);
     }
     BehaviorNode OwnerPhase(BehaviorNode node) => node.Kind == "State" ? node : OwnerPhase(document.Parent(node.Id) ?? throw new ArgumentException("Select a phase first."));

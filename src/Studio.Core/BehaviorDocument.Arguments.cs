@@ -10,14 +10,14 @@ public sealed partial class BehaviorDocument
         try { ChildContainer(id); return true; } catch (ArgumentException) { return false; }
     }
     public bool CanOrganize(Guid id) => Find(id).Kind is not ("ArgumentGroup" or "Opaque") && Parent(id) is { } parent && CanEditChildren(parent.Id) && ChildContainer(parent.Id).Id == parent.Id;
-    public bool IsScalarChildSlot(Guid id) => CanEditChildren(id) && !Slot(ChildContainer(id)).IsArray;
+    public bool IsScalarChildSlot(Guid id) => CanEditChildren(id) && !Slot(ChildContainer(id)).IsCollection;
     public bool AcceptsChild(Guid id, string expression, bool replace = false)
     {
         try
         {
             var container = ChildContainer(id); var slot = Slot(container);
             var owner = container.Kind == "ArgumentGroup" ? Parent(container.Id)! : container;
-            return (!replace || !slot.IsArray) && (replace || slot.IsArray || container.Children.Count == 0) && (SchemaAt(owner)?.AcceptsChild(Expression(owner), slot.Name, expression, container.Kind == "ArgumentGroup" && !container.ArgumentFromCall ? Expression(container) : null) ?? true);
+            return (!replace || !slot.IsCollection) && (replace || slot.IsCollection || container.Children.Count == 0) && (SchemaAt(owner)?.AcceptsChild(Expression(owner), slot.Name, expression, container.Kind == "ArgumentGroup" && !container.ArgumentFromCall ? Expression(container) : null) ?? true);
         }
         catch (ArgumentException) { return false; }
     }
@@ -29,7 +29,7 @@ public sealed partial class BehaviorDocument
         if (slots.Count != 1) throw new ArgumentException("Select a typed argument list or phase with one known child slot.");
         var group = node.Children.SingleOrDefault(n => n.Kind == "ArgumentGroup");
         if (group != null) return group;
-        if (!slots[0].IsParams && slots[0].IsArray) throw new ArgumentException("Create an explicit array for this child parameter first.");
+        if (!slots[0].IsParams && slots[0].IsCollection) throw new ArgumentException("Create an explicit collection for this child parameter first.");
         return node;
     }
     ChildArgument Slot(BehaviorNode container) => container.Argument ?? SchemaAt(container)?.ChildArguments(Expression(container)).Single() ?? new("children", "IStateChildren", true, true);
@@ -128,7 +128,7 @@ public sealed partial class BehaviorDocument
         }
         var arguments = CallArguments(current); var source = CallArguments(original);
         var slot = Slot(parent);
-        if (!slot.IsArray)
+        if (!slot.IsCollection)
             return RewriteCallSlots(current, original, [(parent, children)]);
         var retained = source.Arguments.Select((a, i) => (a, i)).Where(pair => !parent.Children.Any(c => c.Start == pair.a.Expression.SpanStart)).Select(pair => ArgumentWithSeparatorTrivia(arguments.Arguments[pair.i], source.Arguments, pair.i));
         return WithCallArguments(current, arguments.WithArguments(SyntaxFactory.SeparatedList(retained.Concat(children.Select(SyntaxFactory.Argument)))));
@@ -140,7 +140,7 @@ public sealed partial class BehaviorDocument
         var owner = edits[0].Node.ArgumentFromCall ? Parent(edits[0].Node.Id)! : edits[0].Node;
         var ownerSchema = SchemaAt(owner)!; var names = ownerSchema.ConstructorParameterNames(Expression(owner));
         var slots = ownerSchema.ChildArguments(Expression(owner));
-        var normalize = replacements.Any(e => e.Indices.Length == 0 || !Slot(e.Node).IsArray && e.Children.Count == 0);
+        var normalize = replacements.Any(e => e.Indices.Length == 0 || !Slot(e.Node).IsCollection && e.Children.Count == 0);
         var result = new List<ArgumentSyntax>();
         for (var i = 0; i < arguments.Count; i++)
         {
@@ -158,7 +158,7 @@ public sealed partial class BehaviorDocument
             }
             if (i != replacement.Indices[0]) continue;
             var replacementSlot = Slot(replacement.Node);
-            if (replacementSlot.IsArray)
+            if (replacementSlot.IsCollection)
             {
                 if (normalize || !replacementSlot.IsParams || !names[i].Contains('['))
                 {
@@ -176,11 +176,11 @@ public sealed partial class BehaviorDocument
         foreach (var replacement in replacements.Where(e => e.Indices.Length == 0))
         {
             var slot = Slot(replacement.Node);
-            if (slot.IsArray) result.Add(NamedArray(slot.Name, replacement.Children));
+            if (slot.IsCollection) result.Add(NamedArray(slot.Name, replacement.Children));
             else foreach (var child in replacement.Children) result.Add(NamedArgument(slot.Name, child));
         }
         return WithCallArguments(current, CallArguments(current).WithArguments(SyntaxFactory.SeparatedList(result)));
-        ExpressionSyntax ArrayExpression(string name, IReadOnlyList<ExpressionSyntax> children) => SyntaxFactory.ParseExpression(ownerSchema.ChildArray(Expression(owner), name, children.Select(c => c.ToFullString()).ToArray()));
+        ExpressionSyntax ArrayExpression(string name, IReadOnlyList<ExpressionSyntax> children) => SyntaxFactory.ParseExpression(ownerSchema.ChildList(Expression(owner), name, children.Select(c => c.ToFullString()).ToArray()));
         ArgumentSyntax NamedArray(string name, IReadOnlyList<ExpressionSyntax> children) => NamedArgument(name, ArrayExpression(name, children));
         ArgumentSyntax RetainedArgument(int index, string name)
         {
@@ -193,7 +193,7 @@ public sealed partial class BehaviorDocument
     public Guid ReplaceChild(Guid parentId, string expression, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
         var parent = ChildContainer(parentId); EditableContainer(parent);
-        if (Slot(parent).IsArray) throw new ArgumentException("Replace a scalar child slot; use list operations for an array.");
+        if (Slot(parent).IsCollection) throw new ArgumentException("Replace a scalar child slot; use list operations for a collection.");
         foreach (var child in parent.Children) Editable(child);
         var phases = parent.Children.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").Select(n => StateName(n.Id)).OfType<string>().ToArray();
         if (phases.Length > 0) LiteralReferences(OwningEntity(parent.Id), phases);
