@@ -1,0 +1,15 @@
+bin/
+obj/
+.artifacts/
+*.user
+*.rbs
+*.rbs.recovery
+*-trace.json
+trace.json
+exports/
+settings.local.json
+.env
+.env.*
+!.env.example
+*.log
+unset/

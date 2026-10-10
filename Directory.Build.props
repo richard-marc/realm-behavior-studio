@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ServerRoot Condition="'$(ServerRoot)' == ''">$(MSBuildThisFileDirectory)../raple-realms-7-server</ServerRoot>
+  </PropertyGroup>
+</Project>

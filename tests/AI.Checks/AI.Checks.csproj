@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+ <ItemGroup><ProjectReference Include="../../src/Studio.AI/Studio.AI.csproj"/><ProjectReference Include="../FakeCodex/FakeCodex.csproj" ReferenceOutputAssembly="false"/></ItemGroup>
+</Project>

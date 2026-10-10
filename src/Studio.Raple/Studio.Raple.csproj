@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Studio.Core/Studio.Core.csproj" />
+    <ProjectReference Include="$(ServerRoot)/TKR.WorldServer/TKR.WorldServer.csproj" />
+    <Compile Include="$(ServerRoot)/tests/BossPatternSim/SimEngine.cs" Link="Runtime/SimEngine.cs" />
+  </ItemGroup>
+</Project>

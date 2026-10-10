@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Studio.AI/Studio.AI.csproj" />
+    <Project Path="src/Studio.Core/Studio.Core.csproj" />
+    <Project Path="src/Studio.Desktop/Studio.Desktop.csproj" />
+    <Project Path="src/Studio.Raple/Studio.Raple.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AI.Checks/AI.Checks.csproj" />
+    <Project Path="tests/FakeCodex/FakeCodex.csproj" />
+    <Project Path="tests/Studio.Checks/Studio.Checks.csproj" />
+  </Folder>
+</Solution>

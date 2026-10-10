@@ -1,0 +1,25 @@
+// Original Studio example. Replace the selected entity's root State with this fragment.
+// Requires the locally supplied Cave Pirate Cabin Boy resource and its behavior definition.
+new State(
+    new State("approach",
+        new Follow(speed: 0.5, acquireRange: 12, range: 4),
+        new Shoot(radius: 12, count: 3, shootAngle: 20, projectileIndex: 0, coolDown: 1000),
+        new HpLessTransition(threshold: 0.7, targetState: "helpers")
+    ),
+    new State("helpers",
+        new Wander(speed: 0.2),
+        new Spawn(children: "Cave Pirate Cabin Boy", maxChildren: 2, initialSpawn: 1.0, coolDown: 999999),
+        new Shoot(radius: 12, count: 12, shootAngle: 30, projectileIndex: 0, fixedAngle: 0, rotateAngle: 15, coolDown: 750),
+        new HpLessTransition(threshold: 0.35, targetState: "finale")
+    ),
+    new State("finale",
+        new Shoot(radius: 12, count: 9, shootAngle: 20, projectileIndex: 0, fixedAngle: 0, rotateAngle: 25, coolDown: 600),
+        new State("waiting-minions",
+            new EntityNotExistsTransition(target: "Cave Pirate Cabin Boy", dist: 20, targetState: "last-stand")
+        ),
+        new State("last-stand",
+            new Wander(speed: 0.1),
+            new Shoot(radius: 12, count: 3, shootAngle: 30, projectileIndex: 0, coolDown: 1500)
+        )
+    )
+)

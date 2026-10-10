@@ -1,0 +1,73 @@
+# Raple Realms compatibility report
+
+Inspection and verification date: **2026-10-09**. Scope: the two supplied checkouts, not universal RotMG server compatibility.
+
+| Input | Recorded version |
+| --- | --- |
+| Server | `raple-realms-7-server`, commit `cf8808f581ced01c46bdfc01c03fe7068f0d7131` |
+| Client | `raple-realms-7-client`, commit `8e5e1746b601685f81aa804de118cf85fe7d3c81` |
+| Server resource XML set | SHA-256 `225A448366EA70A02600FF94E44A1DD811B58F4D3E240AEAC86C4C84CE6C726E` |
+| Resource fingerprint definition | Sorted resource-relative file paths (UTF-8, `/` separators), followed by each file's bytes, appended to one SHA-256 stream |
+| Engine target | .NET 8; desktop host uses .NET 10.0.11; original differential capture uses local .NET 8.0.31 |
+| Desktop SDK | .NET SDK 10.0.400, Windows 11 x64 |
+| Codex schema inspected | `codex-cli 0.160.1`, generated with `app-server generate-json-schema --experimental` |
+
+The fingerprint is generated in verification results. The original harness checks applicable client/server projectile XML parity. Studio does not yet persist a complete client-asset manifest or automatically invalidate all cached evidence on source/asset changes; rebuild/restart and rerun verification after changes.
+
+## Source map and actual semantics
+
+Paths below are relative to the supplied server unless explicitly marked client.
+
+| Area | Source / runtime function | Finding and editor impact |
+| --- | --- | --- |
+| Behavior dialect/load | `TKR.WorldServer/logic/BehaviorDb.cs`: Initialize, ctor.Init, ResolveBehavior; `logic/db/BehaviorDb.*.cs` | Compiled C# delegates initialize State trees. There is no XML behavior parser in this runtime. Init resolves states globally by name, associates XML entity IDs with object types, and registers loot. |
+| State model | `logic/State.cs`: constructor, Resolve, ResolveChildren, CommonParent | Separate ordered lists for states, behaviors and transitions. Child declaration ordering is significant. Duplicate names overwrite the name map; Studio rejects duplicates in its editable tree. |
+| Entry/state selection | `core/objects/Entity.cs`: SwitchTo, EnterPendingState | Entering a state recursively selects its first child. Entry callbacks run leaf to ancestors up to the common parent. The first child is not an arbitrary editor-selected phase. |
+| Tick/transition order | `core/objects/Entity.cs`: TickStateCore; `logic/Transition.cs`: Tick | At each active state, transitions are evaluated in declaration order, then that state's actions run. Leaf states precede ancestors. First true transition wins, suppressing ancestor transition checks that tick. Old-state actions still run on the transition tick; exits follow, new entry is pending. The graph preserves these rules. |
+| Timers/defaults | `logic/Cooldown.cs`; `logic/transitions/TimedTransition.cs`; `logic/behaviors/Shoot.cs` | Cooldown has integer milliseconds and optional inclusive variance. Normalization is constructor-specific: Shoot zero normalizes to 1000 ms; Spawn uses Normalize(0). Countdown decrement may finish at zero before the next tick fires. HP gates are strict less-than. |
+| Tick clock/precision | `core/worlds/RootWorldThread.cs`: TICK_TIME_MS; `TickTime.cs` | Nominal 100 ms. DeltaTime is float milliseconds × .001; BehaviourTickTime multiplies it by five. Live ticks may take longer. Positions/angles include float conversions even where constructor inputs are doubles. |
+| RNG | `logic/Behavior.cs`: Random; `logic/Transition.cs`: Random; `core/objects/Enemy.cs`, Character.cs | Behavior and Transition use ThreadStatic Random, seeded by the existing host. Enemy cosmetics, procs and other systems use Random.Shared and remain outside this seed guarantee. Shoot rotation count is instance mutable; fresh definitions per run are required. |
+| XML resources/IDs | `TKR.Shared/resources/Resources.cs`, `XmlData.cs`: Initialize, LoadXmls; `ObjectDesc.cs`, `ProjectileDesc.cs`, `PlayerDesc.cs`, Item.cs, Stat.cs | IDs, object types, projectile indices, stats, tile definitions and resources come from XML. Production also loads `.dat`; this XML directory currently has zero `.dat` files. Opaque C# resource references are retained. |
+| Targeting/movement | `logic/behaviors/Follow.cs`, Wander.cs, Orbit.cs, StayCloseToSpawn.cs; `core/objects/Entity.cs`: GetNearestEntity, ValidateAndMove; `utils/BossLabMovement.cs` | Actual classes execute in the local world. Movement coefficients are runtime coefficients, not tiles/s. Collision maps and lab clipping are reused. |
+| Attack emission | `logic/behaviors/Shoot.cs`: OnStateEntry, TickCore; `core/worlds/World.cs`: BroadcastIfVisible; `core/objects/player/Player.Projectiles.cs`: EnemyShoot | Count, spacing, fixed angle, angle offset, per-volley rotation, predictive aiming, stun/daze and resource lookup remain runtime behavior. Shot packets visible to the simulated player are captured; out-of-visibility emissions are not a global trace. |
+| Projectile movement | server `core/objects/player/Player.Projectiles.cs`: ValidatedProjectile.GetPosition; shared `ProjectileReturn.cs`, ProjectileRadial.cs, ProjectileOrbit.cs; client Projectile.as positionAt | Reused position formulas for supported linear, wave, converging, boomerang, acceleration, radial and return families. Parametric motion uses client X parity, which differs from server validation. Homing, orbit and client-history-dependent angle/zero-velocity families are omitted and reported. |
+| Client projectile responsibility | client `src/com/company/assembleegameclient/objects/Projectile.as`: positionAt, update, getHit; `objects/ProjectileRadial.as`, ProjectileReturn.as | The client updates motion/collisions, checks lifetime/arming delay/cover, and sends playerHit/enemyHit/squareHit/otherHit reports. A server-only behavior executor is insufficient to certify these outcomes. |
+| Collision/interpolation | client Projectile.as update/getHit; `objects/GameObject.as`: radius_; server World.cs / collision census / Player.Projectiles.cs hit handlers | Studio samples client projectile-point collision at 5 ms, with inclusive .5-tile target squares and XML Oryx4HitRadius circular exceptions. The overlay shares that geometry, independent of sprite size, projected at the client's half-tile projectile height. Character art uses the source scale/bottom anchor and directional walk/attack frames; player position advances each WPF display frame. It preserves nearest-target ties, Heart priority, invincible/hidden/paused/stasis exclusions and per-target MultiHit tracking. Tile/cover and lab boundaries are reused. Interpolation, protocol delay, full client render parity, full hittable census/static targets and complete tile edge movement tests remain absent. |
+| Damage/defense | `core/net/stats/StatsManager.cs`: DamageWithDefense, GetDefenseDamage; `core/objects/player/Player.Projectiles.cs`: EnemyHit; Enemy.cs Death | Incoming hits reuse DamageWithDefense; weapon hits execute native Player.EnemyHit and enemy death callbacks. Armor piercing, armored/broken, curse/petrify and integer minimum damage are reused. A 5-damage hit can mitigate to zero. Boss Lab suppresses loot/progression. Full player damage/death lifecycle remains pending. |
+| Conditions | `core/objects/ConditionEffectManager.cs`: AddCondition, Update; `Entity.cs`: Tick | Enemies update their real managers. Studio gives its copied test actor an independent manager and advances its duration clock at fixed enemy ticks. Complete client/server effect interactions and ability effects are unverified. |
+| Player stats/equipment | `core/BaseStatManager.cs`, BoostStatManager.cs, `core/net/stats/StatsManager.cs`; shared PlayerDesc.cs/Stat.cs/Item.cs | Original stat managers use offline base/boost arrays. Studio exposes base HP/speed/defense/attack/dexterity and one XML weapon, applies its IncrementStat bonuses and supported temporary OnShoot boosts. Full class presets, armor/ring loadouts, caps and special class systems remain pending. |
+| Player attack/abilities | client Player.as doShoot/attackFrequency/attackMultiplier; shared Item.cs, OnShootProc.cs; server Player.Projectiles.cs EnemyHit | Client muzzle offset and volley layout, XML projectiles/rate/spread/range, original normal stat formulas and ClientRandom damage, OnShootProcTracker cycles/count/spread overrides, ActivateBoost and status self effects execute locally. 197 of 237 weapon definitions are enabled. Special weapon hit/grenade activations are explicitly disabled; abilities and full protocol bridge remain pending. Cadence and boost expiration quantize to the 5 ms interaction clock; condition expiration uses 100 ms enemy ticks. |
+| Regeneration | `core/objects/player/Player.cs`: HandleRegen | HP carry uses 1+.36×vitality per second, healing/talisman effects; MP uses 1+.24×wisdom plus effects. Carry/ceiling semantics matter. Not currently simulated. |
+| Player movement | client Player.as getMoveSpeed; server StatsManager.GetSpeed / Player.Ground.cs | Studio ports the normal client formula `.004 + speed/75*.0056` tiles/ms, with sampled tile speed. Client speedy factor 1.35 differs from server validation's 1.4. Ascension/custom class formulas and full collision handling remain unsupported. |
+| Spawn/lifecycle | `logic/behaviors/Spawn.cs`; `World.cs`: UpdateLogic, EnterWorld, AddToWorld, RemoveFromWorld; Enemy.cs Death | Actual Spawn executes; queued additions flush after enemy/timer processing. The headless host omits full Player/static/pet/network ticks. Removal overrides use Expunge and are labeled, without normal death/loot callbacks. |
+| Networking | `networking/packets`, `core/net/handlers`, Player.Projectiles.cs; client GameServerConnection code | Real game accepts client hit/position/acknowledgment interactions. Studio has no TCP session, login or latency; packet capture is a local host boundary. Networking equivalence is unverified. |
+| Extensions | `logic/behaviors/BossPattern*`, OwnedLaneEmitters, LockedFollowDistance, DelayedOriginHazards; `logic/oryx4`; BossLab* classes | Source-specific patterns, owned emitters, telegraphs, custom encounter controllers and embedded Oryx4 JS exist. They remain opaque where no explicit Studio adapter exists. No invented primitive is advertised as compatible. |
+| Simple representative | `logic/db/BehaviorDb.PirateCave.cs`: Cave Pirate Brawler | Fully literal tree used for the first import/edit/Play/export and original-runtime comparison. |
+| Complex representatives | `logic/db/BehaviorDb.Gordo.cs`, BehaviorDb.Oryx4.cs, BehaviorDb.EchoAuditor.cs | Nested states, factory helpers, owned entities, custom patterns, encounter controllers and cross-entity mechanics. Imports preserve them; comprehensive visual/runtime support remains pending. |
+
+## Capability matrix
+
+“Preserved” means round-trip source retention, not editable or executable support. “Partial host” means actual constructor/executor reuse with the documented test-player and collision boundary. Verification is per scenario, never inferred from import.
+
+| Feature | Import | Visual edit | Export | Simulate | Verification |
+| --- | --- | --- | --- | --- | --- |
+| Literal State hierarchy | Yes | Names, properties, append child | Compiler gated | Actual State executor | Brawler and acceptance traces |
+| Shoot/Follow/Wander | Yes | Existing and optional parameters | Compiler gated | Actual classes | Brawler compiled-tree and .NET 8 capture comparison |
+| HP/time/proximity transitions | Yes | Typed parameters/references | Compiler gated | Partial host | HP strict boundary/nested/minion checks; not all types independently verified |
+| Spawn / entity conditions | Yes | Constructor parameter edits | Compiler gated | Actual Spawn / condition class | Two-helper acceptance scenario |
+| Rotating Shoot patterns | Yes | Constructor parameters | Compiler gated | Actual rotation field | Executed in acceptance; broad pattern/client fidelity pending |
+| Wrapper/group primitives | Preserved | Parameters/children where understood | Compiler gated | Explicit whitelist only | Per-primitive verification pending |
+| Arbitrary helper/custom expressions | Preserved as opaque | Advanced source | Compiler gated | Blocked | Not verified |
+| Resource XML | Loaded through XmlData | Read-only projectile summary | Resource export absent | Uses original descriptors | Upstream harness parity/formula tests; complete asset manifest pending |
+| Game player | Source located | HP/speed/defense test preset only | Test settings in `.rbs` | Damageable proxy | Repeatability tests only; full game fidelity pending |
+| Client hit/interpolation/network | Not an editable document | Debug overlays only | Not exported | Sampled collision proxy | No full-client differential verification |
+| Custom telegraphs/shared controllers/JS | Preserved | Source only | Compiler gated | Unsupported unless explicitly adapted | Not verified |
+| AI proposed parameter patches | Same document | Preview/Apply | Same compiler gate | Candidate bounded runs | Offline contract and core patch tests; live account test pending |
+
+## Current guardrails and limitations
+
+Unknown C# is retained; simulation refuses to bind unsupported expressions/classes. Unsupported projectile motion produces explicit omitted-motion events and non-verified coverage. Emission attribution selects a node only when the active state's matching Shoot is unambiguous; parent/inherited/multiple-match provenance may remain unknown.
+
+Duplicate state names and literal missing state/entity/projectile references are diagnosed. Full unreachable-state, conflicting-transition and unintended-loop analysis is pending. Visual edits reject invalid literal types/ranges and stale proposals; advanced source gets syntax/reference checking immediately and full compilation on export.
+
+The 100 ms enemy/5 ms sampled interaction timing is a controlled test scenario. It omits real tick overrun, network latency, client frames and unseeded systems. The complete acceptance encounter cannot yet pass full loadout/ability/player accuracy acceptance and must not be called verified accurate.
