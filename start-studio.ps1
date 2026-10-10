@@ -9,6 +9,8 @@ try {
     $studioSourceRoots = @((Join-Path $PSScriptRoot 'src'), (Join-Path $ServerRoot 'TKR.WorldServer'), (Join-Path $ServerRoot 'TKR.Shared'))
     $studioSourceFiles = @(Get-ChildItem -LiteralPath $studioSourceRoots -Recurse -File | Where-Object { $_.Extension -in '.cs', '.xaml', '.csproj' -and $_.FullName -notmatch '[\\/](obj|bin|\.artifacts)[\\/]' })
     $studioSourceFiles += Get-Item -LiteralPath (Join-Path $PSScriptRoot 'Directory.Build.props')
+    $studioSourceFiles += Get-Item -LiteralPath (Join-Path $PSScriptRoot 'Directory.Build.targets')
+    $studioSourceFiles += Get-Item -LiteralPath (Join-Path $ServerRoot 'tests/BossPatternSim/SimEngine.cs')
     $studioSourceFiles = $studioSourceFiles | Sort-Object FullName
     foreach ($studioFile in $studioSourceFiles) { $studioSourceHash.AppendData([Text.Encoding]::UTF8.GetBytes($studioFile.FullName)); $studioSourceHash.AppendData([IO.File]::ReadAllBytes($studioFile.FullName)) }
     $studioVersion = [BitConverter]::ToString($studioSourceHash.GetHashAndReset()).Replace('-', '').Substring(0,12).ToLowerInvariant()
