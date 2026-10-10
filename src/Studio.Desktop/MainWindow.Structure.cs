@@ -40,7 +40,7 @@ public partial class MainWindow
             renamePhaseButton = new Button { Content = "Rename", Margin = new(6, 0, 0, 0), IsEnabled = RegionEditable(node) }; renamePhaseButton.Click += RenameSelectedPhase; Grid.SetColumn(renamePhaseButton, 1); row.Children.Add(renamePhaseButton); Inspector.Children.Add(row);
         }
         var parent = document.Parent(node.Id);
-        if (parent?.Kind != "State") return;
+        if (parent == null || !document.CanOrganize(node.Id)) return;
         var editable = RegionEditable(node); var siblings = parent.Children.ToList(); var index = siblings.FindIndex(n => n.Id == node.Id);
         var panel = new StackPanel(); var tools = new Grid();
         tools.ColumnDefinitions.Add(new()); for (var i = 0; i < 3; i++) tools.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -83,6 +83,12 @@ public partial class MainWindow
             foreach (var child in item.Items.OfType<TreeViewItem>()) if (Search(child) is { } found) { item.IsExpanded = true; return found; }
             return null;
         }
-        foreach (var item in BehaviorTree.Items.OfType<TreeViewItem>()) if (Search(item) is { } found) { found.IsSelected = true; if (WorkspaceTabs.SelectedIndex == 1) found.BringIntoView(); break; }
+        foreach (var item in BehaviorTree.Items.OfType<TreeViewItem>()) if (Search(item) is { } found)
+        {
+            var scroll = FindScrollViewer(BehaviorTree); var horizontal = scroll?.HorizontalOffset ?? 0;
+            found.IsSelected = true;
+            if (WorkspaceTabs.SelectedIndex == 1) { found.BringIntoView(); scroll?.ScrollToHorizontalOffset(horizontal); }
+            break;
+        }
     }
 }

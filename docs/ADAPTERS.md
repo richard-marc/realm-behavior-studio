@@ -12,8 +12,8 @@ Studio.Raple owns dialect discovery/import, constructor metadata, source/resourc
 
 1. Read its actual constructor overloads, defaults, units, entry/exit/tick/death behavior and state storage. Trace any server/client/resource dependencies.
 2. Let the reflection catalog expose its constructor metadata for browsing. Browsable does not imply simulatable.
-3. Add a deliberate binding strategy. The current interpreter accepts literals, negative literals, enums, Cooldown and whitelisted `new` expressions; method calls, factories, variables and arbitrary code remain opaque.
-4. Add reference/type/range validation that preserves runtime units and meaningful defaults. Preserve input order and opaque source.
+3. Add a deliberate binding strategy. The current interpreter accepts C# constants, casts, enum expressions, native arrays, Cooldown conversions and whitelisted `new` expressions; method calls, factories, variables and arbitrary code remain opaque.
+4. Supply ChildArgument slot types/cardinality/runtime minimums and callback dispatch from actual source. Explicit arrays keep their concrete element restriction, and view containers must never become runtime primitives. Add reference/type/range validation that preserves runtime units and meaningful defaults. Preserve input order and opaque source.
 5. Check headless host support for every dependency, including networking, initialized player/account systems, visibility and client hit reporting. Do not whitelist a primitive whose required host systems do not exist.
 6. Add independent compiled original-tree/event evidence, timing boundaries and relevant client/formula results. Record tolerance, runtime revisions and resource versions.
 7. Update the five separate capability indicators: import, visual edit, export, simulate, verify. Never promote the final two based solely on syntax import or compiler success.

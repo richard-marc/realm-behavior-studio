@@ -112,6 +112,7 @@ public partial class MainWindow : Window
         TreeViewItem Item(BehaviorNode n)
         {
             var item = new TreeViewItem { Header = n.Label, Tag = n, IsExpanded = !CollapsedNodes.Contains(n.Id) };
+            if (n.Kind == "ArgumentGroup") { item.Foreground = EncounterViewport.Brush("#92969F"); item.ToolTip = "Native " + n.Argument!.ElementType + " argument list. Select its contents to edit, reorder or drag compatible behaviors."; }
             item.Expanded += (_, e) => { if (e.OriginalSource == item) { CollapsedNodes.Remove(n.Id); SyncCollapsedGraph(); } };
             item.Collapsed += (_, e) => { if (e.OriginalSource == item) { CollapsedNodes.Add(n.Id); SyncCollapsedGraph(); } };
             foreach (var child in n.Children) item.Items.Add(Item(child)); return item;
@@ -136,7 +137,7 @@ public partial class MainWindow : Window
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Label, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 6), TextWrapping = TextWrapping.Wrap });
             Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind + " · source line " + (document.Source[..selectedNode.Start].Count(c => c == '\n') + 1), Foreground = Brushes.LightSlateGray });
             var primitive = adapter.Primitives.FirstOrDefault(p => p.Name == selectedNode.Kind);
-            Inspector.Children.Add(new TextBlock { Text = primitive?.Simulatable == true || selectedNode.Kind == "State" ? "Source runtime" : "Preserved source · preview unavailable", ToolTip = "Complete source is retained. Export is checked by the original compiler. Simulation coverage is partial; complete encounter verification remains pending.", FontSize = 11, Foreground = EncounterViewport.Brush("#91A69D"), Margin = new(0, 12, 0, 10) });
+            Inspector.Children.Add(new TextBlock { Text = selectedNode.Kind == "ArgumentGroup" ? "Native typed argument list" : primitive?.Simulatable == true || selectedNode.Kind == "State" ? "Source runtime" : "Preserved source · preview unavailable", ToolTip = "Complete source is retained. Export is checked by the original compiler. Simulation coverage is partial; complete encounter verification remains pending.", FontSize = 11, Foreground = EncounterViewport.Brush("#91A69D"), Margin = new(0, 12, 0, 10) });
             var locked = new CheckBox { Content = "Lock this region", IsChecked = document.LockedNodes.Contains(id) };
             locked.Checked += (_, _) => { document.LockedNodes.Add(id); UpdateOrganizeButtons(); }; locked.Unchecked += (_, _) => { document.LockedNodes.Remove(id); UpdateOrganizeButtons(); }; Inspector.Children.Add(locked);
             AddOrganizeControls(selectedNode);
@@ -167,7 +168,7 @@ public partial class MainWindow : Window
                 if (operations.Length == 0) return;
                 document.Apply(new(document.Revision, "Edit " + selectedNode.Label, operations), d => adapter.Validate(d, selectedEntity!.Id)); Changed(id);
             });
-            if (selectedNode.Kind != "State") Inspector.Children.Add(apply);
+            if (selectedNode.Kind is not ("State" or "ArgumentGroup")) Inspector.Children.Add(apply);
             if (selectedNode.Kind == "State")
             {
                 var add = new Button { Content = "+ Add child phase" };

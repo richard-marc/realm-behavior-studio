@@ -84,7 +84,7 @@ Reject(() => rejected.DuplicateNode(Phase(rejected, "opening").Id, _ => [new("Re
 Check(rejected.Source == rejectedSource && IdentitySet(rejected) == rejectedIds && rejected.Revision == rejectedRevision, "Validation failure retains the prior source, revision and identities");
 var opaque = Fresh(); opaque.AddChild(Phase(opaque, "opening").Id, "new Prioritize(new Wander(speed: 0.1))");
 var grouped = Root(opaque).Descendants().Single(n => n.Kind == "Prioritize");
-Reject(() => opaque.DeleteNode(grouped.Children[0].Id), "Grouped constructor arguments are preserved until their structural schema is supported");
+Reject(() => opaque.DeleteNode(grouped.Children[0].Id), "Prioritize must retain at least one native cycle child");
 var dynamicReference = Fresh(); dynamicReference.ReplaceSource(dynamicReference.Source.Replace("targetState: @\"loop\"", "targetState: NextPhase"));
 Reject(() => dynamicReference.RenameState(Phase(dynamicReference, "loop").Id, "changed", Validate), "Dynamic phase references require source editing instead of a partial rename");
 var savedDir = Path.GetFullPath(".artifacts/structure"); Directory.CreateDirectory(savedDir);

@@ -18,7 +18,7 @@ public sealed partial class BehaviorDocument
     BehaviorNode StructuralParent(BehaviorNode node)
     {
         var parent = Parent(node.Id) ?? throw new ArgumentException("The encounter root cannot be duplicated, moved or deleted.");
-        if (parent.Kind != "State") throw new ArgumentException("Organize nodes directly inside a phase. Grouped constructor arguments require source editing.");
+        if (!CanOrganize(node.Id)) throw new ArgumentException("Select a behavior in a known native child slot. Argument lists and opaque expressions are edited through their contents or source.");
         return parent;
     }
     void LiteralReferences(EntityBehavior entity, IEnumerable<string> affectedNames)
@@ -54,77 +54,17 @@ public sealed partial class BehaviorDocument
     }
     public Guid DuplicateNode(Guid id, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
-        var node = Find(id); var parent = StructuralParent(node); Editable(node);
-        var entity = OwningEntity(id); var stateNodes = node.Descendants().Where(n => n.Kind == "State").ToArray();
-        var taken = entity.Root.Descendants().Where(n => n.Kind == "State").Select(n => StateName(n.Id)).Where(n => n != null).ToHashSet(StringComparer.Ordinal);
-        var rename = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var state in stateNodes)
-        {
-            var name = StateName(state.Id) ?? throw new ArgumentException("Name every phase in this branch before duplicating it.");
-            if (rename.ContainsKey(name)) throw new ArgumentException("Resolve duplicate phase names before duplicating this branch.");
-            var candidate = name + "-copy"; var suffix = 2;
-            while (taken.Contains(candidate)) candidate = name + "-copy-" + suffix++;
-            taken.Add(candidate); rename.Add(name, candidate);
-        }
-        if (rename.Count > 0) LiteralReferences(entity, rename.Keys);
-        var expression = Expression(node);
-        var edits = new List<(int Start, int Length, string Text)>();
-        foreach (var descendant in node.Descendants())
-            foreach (var parameter in descendant.Parameters)
-            {
-                var value = LiteralString(parameter.Expression);
-                if (value == null || !rename.TryGetValue(value, out var newName) || !(descendant.Kind == "State" && parameter == descendant.Parameters.First() || parameter.Name == "targetState")) continue;
-                edits.Add((parameter.Start - node.Start, parameter.Length, SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(newName)).ToFullString()));
-            }
-        foreach (var edit in edits.OrderByDescending(e => e.Start)) expression = expression.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Text);
-        BehaviorNode Clone(BehaviorNode original) => original with { Id = Guid.NewGuid(), Children = original.Children.Select(Clone).ToArray() };
-        var clone = Clone(node); var siblings = parent.Children.ToList(); var index = siblings.FindIndex(n => n.Id == id); siblings.Insert(index + 1, clone);
-        var tree = CSharpSyntaxTree.ParseText(Source).GetRoot(); var creation = Creation(tree, parent);
-        var argument = creation.ArgumentList!.Arguments.Single(a => a.Expression.SpanStart == node.Start);
-        var inserted = SyntaxFactory.Argument(SyntaxFactory.ParseExpression(expression)).WithTriviaFrom(argument);
-        var updated = creation.WithArgumentList(creation.ArgumentList.WithArguments(creation.ArgumentList.Arguments.Insert(creation.ArgumentList.Arguments.IndexOf(argument) + 1, inserted)));
-        CommitStructure(tree.ReplaceNode(creation, updated).ToFullString(), new() { [parent.Id] = siblings }, validate);
-        return clone.Id;
+        var parent = StructuralParent(Find(id)); var index = parent.Children.ToList().FindIndex(n => n.Id == id);
+        return PasteNodes(parent.Id, index + 1, CopyNodes([id]), validate).Single();
     }
     public void MoveNode(Guid id, int direction, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
         if (direction is not (-1 or 1)) throw new ArgumentOutOfRangeException(nameof(direction));
-        var node = Find(id); var parent = StructuralParent(node); Editable(node);
-        var siblings = parent.Children.ToList(); var index = siblings.FindIndex(n => n.Id == id); var next = index + direction;
-        if (next < 0 || next >= siblings.Count) return;
-        Editable(siblings[next]);
-        var tree = CSharpSyntaxTree.ParseText(Source).GetRoot(); var creation = Creation(tree, parent); var arguments = creation.ArgumentList!.Arguments;
-        var sourceIndex = arguments.IndexOf(arguments.Single(a => a.Expression.SpanStart == node.Start));
-        var targetIndex = arguments.IndexOf(arguments.Single(a => a.Expression.SpanStart == siblings[next].Start));
-        // Replace by index: identical expressions are still separate, stable editor nodes.
-        var reordered = arguments.ToArray(); (reordered[sourceIndex], reordered[targetIndex]) = (reordered[targetIndex], reordered[sourceIndex]);
-        var updated = creation.WithArgumentList(creation.ArgumentList.WithArguments(SyntaxFactory.SeparatedList(reordered, arguments.GetSeparators())));
-        (siblings[index], siblings[next]) = (siblings[next], siblings[index]);
-        CommitStructure(tree.ReplaceNode(creation, updated).ToFullString(), new() { [parent.Id] = siblings }, validate);
+        var parent = StructuralParent(Find(id)); var index = parent.Children.ToList().FindIndex(n => n.Id == id);
+        if (index + direction < 0 || index + direction >= parent.Children.Count) return;
+        MoveNodes([id], parent.Id, index + (direction == 1 ? 2 : -1), validate);
     }
-    public Guid DeleteNode(Guid id, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
-    {
-        var node = Find(id); var parent = StructuralParent(node); Editable(node);
-        var entity = OwningEntity(id); var removed = node.Descendants().Select(n => n.Id).ToHashSet();
-        var phaseNames = node.Descendants().Where(n => n.Kind == "State").Select(n => StateName(n.Id)).Where(n => n != null).Cast<string>().ToHashSet(StringComparer.Ordinal);
-        if (phaseNames.Count > 0) LiteralReferences(entity, phaseNames);
-        var nodes = new List<BehaviorNode> { node };
-        foreach (var reference in entity.Root.Descendants().Where(n => !removed.Contains(n.Id) && n.Parameters.Any(p => p.Name == "targetState" && phaseNames.Contains(LiteralString(p.Expression) ?? ""))))
-        {
-            if (!reference.Kind.EndsWith("Transition", StringComparison.Ordinal)) throw new ArgumentException("Update the action referencing this phase before deleting it.");
-            Editable(reference); StructuralParent(reference); nodes.Add(reference);
-        }
-        var orders = nodes.GroupBy(n => Parent(n.Id)!).ToDictionary(g => g.Key.Id, g => g.Key.Children.Where(n => !g.Any(deleted => deleted.Id == n.Id)).ToList());
-        var tree = CSharpSyntaxTree.ParseText(Source).GetRoot(); var parents = nodes.GroupBy(n => Parent(n.Id)!).ToDictionary(g => Creation(tree, g.Key), g => g.Select(n => n.Start).ToHashSet());
-        var changed = tree.ReplaceNodes(parents.Keys, (original, current) =>
-        {
-            var arguments = current.ArgumentList!.Arguments;
-            var indices = original.ArgumentList!.Arguments.Select((a, i) => (a, i)).Where(pair => parents[original].Contains(pair.a.Expression.SpanStart)).Select(pair => pair.i);
-            foreach (var index in indices.OrderDescending()) arguments = arguments.RemoveAt(index);
-            return current.WithArgumentList(current.ArgumentList.WithArguments(arguments));
-        }).ToFullString();
-        CommitStructure(changed, orders, validate); return parent.Id;
-    }
+    public Guid DeleteNode(Guid id, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null) => DeleteNodes([id], validate);
     static ObjectCreationExpressionSyntax Creation(SyntaxNode tree, BehaviorNode node) => tree.DescendantNodes().OfType<ObjectCreationExpressionSyntax>().Single(c => c.SpanStart == node.Start && c.Span.Length == node.Length);
     void CommitStructure(string changed, Dictionary<Guid, List<BehaviorNode>> orders, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {

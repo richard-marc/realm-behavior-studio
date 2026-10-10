@@ -48,12 +48,25 @@ public sealed partial class RapleAdapter
         var phase = document.Find(phaseId);
         if (phase.Kind != "State") throw new ArgumentException("Select a phase for lifecycle actions.");
         var phases = document.Entities.SelectMany(e => e.Root.Descendants()).Where(n => n.Kind == "State" && (n.Id == phaseId || phase.Path.StartsWith(n.Path + "/", StringComparison.Ordinal))).OrderByDescending(n => n.Path.Length);
-        return phases.SelectMany(owner => owner.Children.Where(n => EngineAssembly.GetTypes().Any(t => t.Name == n.Kind && typeof(Behavior).IsAssignableFrom(t)))
+        return phases.SelectMany(owner => owner.StateChildren.Where(n => EngineAssembly.GetTypes().Any(t => t.Name == n.Kind && typeof(Behavior).IsAssignableFrom(t)))
             .Select(node => new LifecycleAction(node, owner, owner.Id != phaseId, Callbacks(node.Kind)))).ToArray();
+    }
+    public IReadOnlyList<NativeCallback> EffectiveCallbacks(BehaviorDocument document, BehaviorNode node)
+    {
+        var callbacks = Callbacks(node.Kind).ToArray();
+        for (var parent = document.Parent(node.Id); parent != null && parent.Kind != "State"; parent = document.Parent(parent.Id))
+        {
+            if (parent.Kind == "ArgumentGroup") continue;
+            callbacks = parent.Kind switch {
+                "OnDeathBehavior" => callbacks.Where(c => c.Stage == "Entry").Select(c => c with { Stage = "Death" }).ToArray(),
+                "Prioritize" or "Timed" => callbacks.Where(c => c.Stage is "Entry" or "Ongoing").ToArray(),
+                _ => [] };
+        }
+        return callbacks;
     }
     public IReadOnlyList<NativeOverload> Overloads(string name) => EngineAssembly.GetTypes().Where(t => t.Name == name && typeof(IStateChildren).IsAssignableFrom(t))
         .SelectMany(t => t.GetConstructors()).OrderBy(c => c.GetParameters().Length).Select(c => new NativeOverload(name,
             name + "(" + string.Join(", ", c.GetParameters().Select(p => (p.GetCustomAttribute<ParamArrayAttribute>() != null ? "params " : "") + FriendlyType(p.ParameterType) + " " + p.Name + (p.HasDefaultValue ? " = " + FormatDefault(p) : ""))) + ")",
-            c.GetParameters().Select(p => new PrimitiveParameter(p.Name!, FriendlyType(p.ParameterType), p.HasDefaultValue ? FormatDefault(p) : p.GetCustomAttribute<ParamArrayAttribute>() != null ? "empty array" : "required", Unit(p.Name!), Explain(p.Name!))).ToArray())).ToArray();
+            c.GetParameters().Select(p => new PrimitiveParameter(p.Name!, FriendlyType(p.ParameterType), p.HasDefaultValue ? FormatDefault(p) : p.GetCustomAttribute<ParamArrayAttribute>() != null && name != "Prioritize" ? "empty array" : "required", Unit(p.Name!), Explain(p.Name!))).ToArray())).ToArray();
     static string FriendlyType(Type type) => type.IsArray ? FriendlyType(type.GetElementType()!) + "[]" : Nullable.GetUnderlyingType(type) is { } inner ? FriendlyType(inner) + "?" : type.Name switch { "Int32" => "int", "Double" => "double", "Single" => "float", "Boolean" => "bool", "String" => "string", _ => type.Name };
 }

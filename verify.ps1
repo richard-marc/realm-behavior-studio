@@ -33,6 +33,9 @@ try {
     & dotnet run --project tests/Schema.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/schema-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/schema-checks.log' -Tail 25; throw 'Native schema checks failed.' }
     Get-Content '.artifacts/schema-checks.log' -Tail 1
+    & dotnet run --project tests/Argument.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/argument-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/argument-checks.log' -Tail 25; throw 'Grouped argument checks failed.' }
+    Get-Content '.artifacts/argument-checks.log' -Tail 1
     & dotnet run --project tests/AI.Checks *> '.artifacts/ai-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/ai-checks.log' -Tail 25; throw 'AI contract checks failed.' }
     Get-Content '.artifacts/ai-checks.log' -Tail 1

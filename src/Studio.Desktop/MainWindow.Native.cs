@@ -17,8 +17,9 @@ public partial class MainWindow
     BehaviorNode OwnerPhase(BehaviorNode node) => node.Kind == "State" ? node : OwnerPhase(document.Parent(node.Id) ?? throw new ArgumentException("Select a phase first."));
     void AddLifecycleControls(BehaviorNode node)
     {
+        if (node.Kind == "ArgumentGroup") { lifecycleRows.Clear(); lifecyclePanel = null; return; }
         lifecycleRows.Clear(); var body = new StackPanel();
-        var actions = node.Kind == "State" ? adapter.PhaseActions(document, node.Id) : [new LifecycleAction(node, OwnerPhase(node), false, adapter.Callbacks(node.Kind))];
+        var actions = node.Kind == "State" ? adapter.PhaseActions(document, node.Id) : [new LifecycleAction(node, OwnerPhase(node), false, adapter.EffectiveCallbacks(document, node))];
         foreach (var stage in new[] { "Entry", "Ongoing", "Exit", "Death" })
         {
             var members = actions.Where(a => a.Callbacks.Any(c => c.Stage == stage)).ToArray();
@@ -40,7 +41,9 @@ public partial class MainWindow
     }
     void BeginNativeCreation(Primitive primitive)
     {
-        var owner = OwnerPhase(selectedNode ?? throw new ArgumentException("Select a phase first."));
+        var focus = selectedNode ?? throw new ArgumentException("Select a phase or argument list first.");
+        var target = document.CanEditChildren(focus.Id) ? focus : document.Parent(focus.Id) is { } parent && document.CanEditChildren(parent.Id) ? parent : OwnerPhase(focus);
+        var owner = document.ChildContainer(target.Id);
         var overloads = adapter.Overloads(primitive.Name);
         if (overloads.Count == 0) throw new ArgumentException("No native constructor is available.");
         ParametersTab.IsSelected = true; Inspector.Children.Clear();
@@ -65,9 +68,11 @@ public partial class MainWindow
             var supplied = choice.Parameters.Where(p => !string.IsNullOrWhiteSpace(constructorInputs[p.Name].Text)).Select(p => p.Name + ": " + constructorInputs[p.Name].Text.Trim());
             constructorPreview.Text = "new " + choice.Name + "(" + string.Join(", ", supplied) + ")";
             var binding = RapleAdapter.Binding(constructorPreview.Text);
-            createNativeButton.IsEnabled = missing.Length == 0 && binding.Errors.Length == 0 && !binding.RequiresContext && RegionEditable(owner);
+            var compatible = document.AcceptsChild(owner.Id, constructorPreview.Text);
+            createNativeButton.IsEnabled = missing.Length == 0 && binding.Errors.Length == 0 && !binding.RequiresContext && RegionEditable(owner) && compatible;
             message.Text = missing.Length > 0 ? "Enter " + string.Join(", ", missing.Select(p => p.Name)) + "." : binding.Errors.FirstOrDefault() ?? (binding.RequiresContext ? "This value requires source context. Edit it in Source." : primitive.Simulatable ? "Uses the game constructor. Blank optional fields keep its defaults." : "Source editing is supported; this primitive has no local simulation coverage yet.");
             message.Foreground = EncounterViewport.Brush(createNativeButton.IsEnabled && primitive.Simulatable ? "#979DA7" : "#DAAE84");
+            if (missing.Length == 0 && binding.Errors.Length == 0 && !binding.RequiresContext && !compatible) message.Text = "This constructor cannot be inserted into " + owner.Label + ". Choose a compatible child or a different destination.";
         }
         constructorChoices.SelectionChanged += (_, _) =>
         {
@@ -92,9 +97,11 @@ public partial class MainWindow
     {
         if (kind == "State" && parameter.Name == "name") return PhaseLiteral(NextPhaseName());
         if (kind == "Taunt" && parameter.Name == "text") return "new[] { \"Ready.\" }";
+        if (kind == "Prioritize" && parameter.Name == "children") return "new CycleBehavior[] { new Wander(.3) }";
+        if (kind == "OnDeathBehavior" && parameter.Name == "behavior") return "new ConditionEffectBehavior(ConditionEffectIndex.Invulnerable)";
         if (parameter.Default != "required") return "";
         return parameter.Name switch {
-            "radius" => "8", "speed" => "0.3", "time" => "3000", "threshold" => "0.7", "coolDown" or "cooldown" => "new Cooldown(1000, 0)",
+            "radius" => "8", "speed" => "0.3", "time" or "period" => "3000", "threshold" => "0.7", "coolDown" or "cooldown" => "new Cooldown(1000, 0)",
             "targetState" => document.StateName(owner.Id) is { } name ? PhaseLiteral(name) : "",
             "effect" => "ConditionEffectIndex.Invulnerable", _ => "" };
     }

@@ -3,6 +3,10 @@
  <sys:Double x:Key="{x:Static SystemParameters.HorizontalScrollBarHeightKey}">9</sys:Double>
  <SolidColorBrush x:Key="Canvas" Color="#101113"/>
  <SolidColorBrush x:Key="Panel" Color="#18191C"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#18191C"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#18191C"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#E8E9EC"/>
+ <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#E8E9EC"/>
  <SolidColorBrush x:Key="Surface" Color="#222428"/>
  <SolidColorBrush x:Key="Line" Color="#2B2D32"/>
  <SolidColorBrush x:Key="Ink" Color="#E8E9EC"/>

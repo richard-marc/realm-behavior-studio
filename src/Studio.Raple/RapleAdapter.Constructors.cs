@@ -35,6 +35,18 @@ public sealed partial class RapleAdapter
         }
         return binding.Constructor.GetParameters().FirstOrDefault(p => p.Name == name)?.ParameterType;
     }
+    public IReadOnlyList<ChildArgument> ChildArguments(string expression) => Binding(expression).Constructor?.GetParameters()
+        .Where(p => typeof(IStateChildren).IsAssignableFrom(p.ParameterType.IsArray ? p.ParameterType.GetElementType()! : p.ParameterType))
+        .Select(p => new ChildArgument(p.Name!, (p.ParameterType.IsArray ? p.ParameterType.GetElementType()! : p.ParameterType).Name, p.ParameterType.IsArray, p.GetCustomAttribute<ParamArrayAttribute>() != null, !p.ParameterType.IsArray || Binding(expression).Constructor!.DeclaringType!.Name == "Prioritize" ? 1 : 0)).ToArray() ?? [];
+    static string CSharpTypeName(Type type) => string.Join(".", type.FullName!.Replace('+', '.').Split('.').Select(part => SyntaxFacts.GetKeywordKind(part) == Microsoft.CodeAnalysis.CSharp.SyntaxKind.None ? part : "@" + part));
+    public string? ArrayElementType(string expression) => ConstructorSchema.Value.ValueInfo(expression).Type?.GetElementType() is { } type ? CSharpTypeName(type) : null;
+    public bool AcceptsChild(string expression, string parameter, string childExpression, string? arrayExpression = null)
+    {
+        var p = Binding(expression).Constructor?.GetParameters().SingleOrDefault(p => p.Name == parameter);
+        var element = arrayExpression == null ? null : ConstructorSchema.Value.ValueInfo(arrayExpression).Type?.GetElementType();
+        var childType = ConstructorSchema.Value.ValueInfo(childExpression).Type;
+        return p != null && childType != null && ConstructorSchema.Value.CanConvert("default(global::" + CSharpTypeName(childType) + ")", element ?? (p.ParameterType.IsArray ? p.ParameterType.GetElementType()! : p.ParameterType));
+    }
     public IReadOnlyList<PrimitiveParameter> ParametersFor(BehaviorDocument document, BehaviorNode node)
     {
         var binding = Binding(document.Expression(node));

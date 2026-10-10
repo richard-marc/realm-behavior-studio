@@ -55,7 +55,8 @@ public sealed class StateGraph : FrameworkElement
         foreach (var state in states)
         {
             var transitions = collapsed.Contains(state.Id) ? [] : analysis.Transitions.Where(t => t.OwnerId == state.Id).ToArray();
-            var rect = new Rect(20 + Math.Max(0, state.Path.Count(c => c == '/') - 1) * 20, y, 320, 94 + transitions.Length * 32);
+            var depth = allStates.Count(ancestor => state.Path.StartsWith(ancestor.Path + "/", StringComparison.Ordinal));
+            var rect = new Rect(20 + depth * 20, y, 320, 94 + transitions.Length * 32);
             locations[state.Id] = rect;
             for (var i = 0; i < transitions.Length; i++) transitionRows[transitions[i].Node.Id] = new(rect.Left + 8, rect.Top + 86 + i * 32, rect.Width - 16, 30);
             y = rect.Bottom + 20;
@@ -65,7 +66,7 @@ public sealed class StateGraph : FrameworkElement
         foreach (var state in states)
         {
             var from = locations[state.Id];
-            foreach (var child in state.Children.Where(c => c.Kind == "State"))
+            foreach (var child in state.StateChildren.Where(c => c.Kind == "State"))
             {
                 if (!locations.TryGetValue(child.Id, out var to)) continue; var x = from.Left + 8;
                 dc.DrawLine(neutral, new(x, from.Bottom), new(x, to.Top + 40)); dc.DrawLine(neutral, new(x, to.Top + 40), new(to.Left, to.Top + 40));
@@ -83,7 +84,7 @@ public sealed class StateGraph : FrameworkElement
         }
         var initial = new HashSet<Guid>();
         if (!analysis.Diagnostics.Any(d => d.Message.StartsWith("Reachability analysis is incomplete", StringComparison.Ordinal)))
-            for (BehaviorNode? entry = root; entry != null; entry = entry.Children.FirstOrDefault(n => n.Kind == "State")) initial.Add(entry.Id);
+            for (BehaviorNode? entry = root; entry != null; entry = entry.StateChildren.FirstOrDefault(n => n.Kind == "State")) initial.Add(entry.Id);
         foreach (var state in states)
         {
             var rect = locations[state.Id]; var activeState = state.Label == active;
@@ -92,9 +93,9 @@ public sealed class StateGraph : FrameworkElement
             Text(dc, state.Id == root.Id ? "ENCOUNTER" : "PHASE", new(rect.Left + 14, rect.Top + 11), 10, "#858B95", 180);
             if (initial.Contains(state.Id)) Text(dc, "ENTRY", new(rect.Right - 52, rect.Top + 11), 10, "#91A69D", 40);
             Text(dc, state.Id == root.Id && state.Label == "Root" ? "Root behavior" : state.Label, new(rect.Left + 14, rect.Top + 30), 15, "#E8E9EC", 290);
-            var actions = string.Join(" · ", state.Children.Where(n => n.Kind != "State" && !n.Kind.EndsWith("Transition")).Select(n => n.Kind));
-            if (actions.Length == 0) actions = state.Children.Any(n => n.Kind == "State") ? "Contains nested phases" : "No actions";
-            if (collapsed.Contains(state.Id)) actions = $"+ {state.Children.Count} items · collapsed";
+            var actions = string.Join(" · ", state.StateChildren.Where(n => n.Kind != "State" && !n.Kind.EndsWith("Transition")).Select(n => n.Kind));
+            if (actions.Length == 0) actions = state.StateChildren.Any(n => n.Kind == "State") ? "Contains nested phases" : "No actions";
+            if (collapsed.Contains(state.Id)) actions = $"+ {state.StateChildren.Count} items · collapsed";
             Text(dc, actions, new(rect.Left + 14, rect.Top + 61), 11, "#92969F", 290);
             foreach (var edge in analysis.Transitions.Where(t => t.OwnerId == state.Id && !collapsed.Contains(state.Id)))
             {

@@ -16,7 +16,7 @@ public sealed partial class BehaviorDocument
     }
     void EditableContainer(BehaviorNode parent)
     {
-        if (parent.Kind != "State") throw new ArgumentException("Choose a phase as the destination.");
+        if (ChildContainer(parent.Id).Id != parent.Id) throw new ArgumentException("Choose the typed argument list as the destination.");
         if (LockedNodes.Select(Find).Any(locked => parent.Path == locked.Path || parent.Path.StartsWith(locked.Path + "/", StringComparison.Ordinal)))
             throw new InvalidOperationException("The destination phase or an ancestor is locked.");
     }
@@ -28,7 +28,7 @@ public sealed partial class BehaviorDocument
     }
     public IReadOnlyList<Guid> PasteNodes(Guid parentId, int index, BehaviorClipboard clipboard, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
-        var parent = Find(parentId); EditableContainer(parent);
+        var parent = ChildContainer(parentId); parentId = parent.Id; EditableContainer(parent);
         if (index < 0 || index > parent.Children.Count) throw new ArgumentOutOfRangeException(nameof(index));
         if (clipboard.Version != 1 || clipboard.Expressions == null || clipboard.Expressions.Count is < 1 or > 256 || clipboard.Expressions.Sum(e => e?.Length ?? 0) > 2_000_000)
             throw new ArgumentException("Unsupported or oversized behavior clipboard.");
@@ -55,7 +55,7 @@ public sealed partial class BehaviorDocument
     }
     public void MoveNodes(IEnumerable<Guid> ids, Guid parentId, int index, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
-        var nodes = NormalizeSelection(ids); var target = Find(parentId); EditableContainer(target);
+        var nodes = NormalizeSelection(ids); var target = ChildContainer(parentId); parentId = target.Id; EditableContainer(target);
         if (index < 0 || index > target.Children.Count) throw new ArgumentOutOfRangeException(nameof(index));
         var entity = OwningEntity(parentId);
         foreach (var node in nodes)
@@ -82,16 +82,16 @@ public sealed partial class BehaviorDocument
     public Guid GroupNodes(IEnumerable<Guid> ids, string name, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
         var nodes = NormalizeSelection(ids); var parent = StructuralParent(nodes[0]); EditableContainer(parent);
+        if (!PhaseContainer(parent)) throw new ArgumentException("Group into a phase only within another phase's child list.");
         foreach (var node in nodes) { Editable(node); if (StructuralParent(node).Id != parent.Id) throw new ArgumentException("Group nodes that share one phase."); }
         if (string.IsNullOrWhiteSpace(name) || OwningEntity(parent.Id).Root.Descendants().Any(n => StateName(n.Id) == name)) throw new ArgumentException("Choose a unique, non-empty phase name.");
         var siblings = parent.Children.ToList(); var positions = nodes.Select(n => siblings.FindIndex(s => s.Id == n.Id)).ToArray();
         if (positions[^1] - positions[0] + 1 != positions.Length) throw new ArgumentException("Select adjacent nodes to preserve their source order when grouping.");
-        var tree = CSharpSyntaxTree.ParseText(Source).GetRoot(); var parentArguments = Creation(tree, parent).ArgumentList!.Arguments;
+        var tree = CSharpSyntaxTree.ParseText(Source).GetRoot(); var parentExpressions = ChildExpressions(tree);
         var groupCreation = (ObjectCreationExpressionSyntax)SyntaxFactory.ParseExpression("new State(" + SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(name)).ToFullString() + ")");
         var selectedArguments = nodes.Select(node =>
         {
-            var argumentIndex = parentArguments.IndexOf(parentArguments.Single(a => a.Expression.SpanStart == node.Start));
-            return ArgumentWithSeparatorTrivia(parentArguments[argumentIndex], parentArguments, argumentIndex);
+            return SyntaxFactory.Argument(parentExpressions[node.Id]);
         });
         groupCreation = groupCreation.WithArgumentList(groupCreation.ArgumentList!.WithArguments(SyntaxFactory.SeparatedList(groupCreation.ArgumentList.Arguments.Concat(selectedArguments)))).NormalizeWhitespace();
         var group = new BehaviorNode(Guid.NewGuid(), "", "State", name, 0, 0, [], nodes);
@@ -103,6 +103,7 @@ public sealed partial class BehaviorDocument
     {
         var group = Find(id); if (group.Kind != "State") throw new ArgumentException("Select a grouped phase.");
         var parent = StructuralParent(group); Editable(group); EditableContainer(parent);
+        if (!PhaseContainer(parent)) throw new ArgumentException("Ungroup a phase only within another phase's child list.");
         var entity = OwningEntity(id); var name = StateName(id) ?? ""; LiteralReferences(entity, [name]);
         if (entity.Root.Descendants().Any(n => n.Parameters.Any(p => p.Name == "targetState" && LiteralString(p.Expression) == name)))
             throw new ArgumentException("Reroute transitions targeting this phase before ungrouping it.");
@@ -132,28 +133,30 @@ public sealed partial class BehaviorDocument
     void RewriteChildren(Dictionary<Guid, List<BehaviorNode>> orders, Dictionary<Guid, ArgumentSyntax> additions, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
         var tree = CSharpSyntaxTree.ParseText(Source).GetRoot();
-        var creations = orders.Keys.ToDictionary(id => Creation(tree, Find(id)), id => id);
-        var arguments = new Dictionary<Guid, ArgumentSyntax>(additions);
-        foreach (var parent in Entities.SelectMany(e => e.Root.Descendants()).Where(n => n.Kind == "State"))
+        var containers = orders.Keys.ToDictionary(id => NodeExpression(tree, Find(id)), id => id);
+        var expressions = ChildExpressions(tree);
+        foreach (var addition in additions) expressions[addition.Key] = addition.Value.Expression.WithTriviaFrom(addition.Value);
+        foreach (var order in orders)
         {
-            var list = Creation(tree, parent).ArgumentList!.Arguments;
-            foreach (var child in parent.Children)
-            {
-                var index = list.IndexOf(list.Single(a => a.Expression.SpanStart == child.Start));
-                arguments[child.Id] = ArgumentWithSeparatorTrivia(list[index], list, index);
-            }
+            var parent = Find(order.Key); var slot = Slot(parent);
+            if (order.Value.Count < slot.Minimum || !slot.IsArray && order.Value.Count != 1)
+                throw new ArgumentException($"{parent.Label}.{slot.Name} requires {(slot.IsArray ? "at least " + slot.Minimum : "exactly one")} child.");
+            var owner = parent.Kind == "ArgumentGroup" ? Parent(parent.Id)! : parent;
+            foreach (var child in order.Value)
+                if (child.Kind == "ArgumentGroup" || child.Kind != "Opaque" && schema != null && !schema.AcceptsChild(Expression(owner), slot.Name, expressions[child.Id].ToString(), parent.Kind == "ArgumentGroup" ? Expression(parent) : null))
+                    throw new ArgumentException($"{child.Label} is not compatible with {parent.Label}.{slot.Name} ({slot.ElementType}).");
         }
-        var changed = tree.ReplaceNodes(creations.Keys, (original, current) =>
+        var changed = tree.ReplaceNodes(containers.Keys, (original, current) =>
         {
-            var parent = Find(creations[original]); var originalList = original.ArgumentList!.Arguments; var currentList = current.ArgumentList!.Arguments;
+            var parent = Find(containers[original]);
+            var sourceChildren = ContainerExpressions(original, parent).ToArray(); var rewrittenChildren = ContainerExpressions(current, parent).ToArray();
             foreach (var child in parent.Children)
             {
-                var index = originalList.IndexOf(originalList.Single(a => a.Expression.SpanStart == child.Start));
-                arguments[child.Id] = ArgumentWithSeparatorTrivia(currentList[index], originalList, index);
+                var index = Array.FindIndex(sourceChildren, e => e.SpanStart == child.Start);
+                var updated = rewrittenChildren[index];
+                expressions[child.Id] = updated.WithTriviaFrom(expressions[child.Id]);
             }
-            var retained = originalList.Select((a, i) => (a, i)).Where(pair => !parent.Children.Any(c => c.Start == pair.a.Expression.SpanStart)).Select(pair => ArgumentWithSeparatorTrivia(currentList[pair.i], originalList, pair.i));
-            var reordered = retained.Concat(orders[parent.Id].Select(n => arguments[n.Id]));
-            return current.WithArgumentList(current.ArgumentList.WithArguments(SyntaxFactory.SeparatedList(reordered)));
+            return RewriteContainer(current, original, parent, orders[parent.Id].Select(n => expressions[n.Id]).ToArray());
         }).ToFullString();
         CommitStructure(changed, orders, validate);
     }

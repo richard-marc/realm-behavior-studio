@@ -11,9 +11,9 @@ public record PhaseAnalysis(IReadOnlyList<PhaseTransition> Transitions, IReadOnl
 // Conservative authoring analysis, not a prediction of HP, timers or world conditions.
 public static class BehaviorAnalysis
 {
-    static readonly HashSet<string> Known = ["State", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
+    static readonly HashSet<string> Known = ["State", "ArgumentGroup", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
         "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
-        "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown"];
+        "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
     static double? Number(BehaviorNode node, string parameter)
     {
@@ -55,7 +55,7 @@ public static class BehaviorAnalysis
         var edges = new List<PhaseTransition>(); var diagnostics = new List<DocumentDiagnostic>();
         foreach (var state in states)
         {
-            var transitions = state.Children.Where(n => n.Kind.EndsWith("Transition", StringComparison.Ordinal)).ToArray();
+            var transitions = state.StateChildren.Where(n => n.Kind.EndsWith("Transition", StringComparison.Ordinal)).ToArray();
             for (var i = 0; i < transitions.Length; i++)
             {
                 var node = transitions[i]; var expression = Expression(node, "targetState");
@@ -72,11 +72,11 @@ public static class BehaviorAnalysis
         else
         {
             var parent = new Dictionary<Guid, BehaviorNode>();
-            foreach (var state in states) foreach (var child in state.Children.Where(n => n.Kind == "State")) parent[child.Id] = state;
+            foreach (var state in states) foreach (var child in state.StateChildren.Where(n => n.Kind == "State")) parent[child.Id] = state;
             var reachable = new HashSet<Guid>(); var pending = new Queue<BehaviorNode>();
             void Enter(BehaviorNode state)
             {
-                while (state.Children.FirstOrDefault(n => n.Kind == "State") is { } child) state = child;
+                while (state.StateChildren.FirstOrDefault(n => n.Kind == "State") is { } child) state = child;
                 pending.Enqueue(state);
             }
             Enter(root);

@@ -76,7 +76,7 @@ public partial class MainWindow
             if (dragStart is not { } start || e.LeftButton != MouseButtonState.Pressed || dragStarted || nodeSelection.Count == 0) return;
             var point = e.GetPosition(BehaviorTree);
             if (Math.Abs(point.X - start.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(point.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-            if (nodeSelection.Any(id => document.Parent(id)?.Kind != "State" || !RegionEditable(document.Find(id)))) return;
+            if (nodeSelection.Any(id => !document.CanOrganize(id) || !RegionEditable(document.Find(id)))) return;
             dragStarted = true;
             DragDrop.DoDragDrop(BehaviorTree, DragData(new NodeDrag(document.Revision, selectedEntity!.Id, nodeSelection.ToArray())), DragDropEffects.Move | DragDropEffects.Copy);
             dragStart = null; RefreshSelectionVisuals();
@@ -113,8 +113,8 @@ public partial class MainWindow
     {
         var header = item.Template.FindName("PART_Header", item) as FrameworkElement;
         var height = (header?.ActualHeight ?? 20) + item.Padding.Top + item.Padding.Bottom;
-        if (node.Kind == "State" && y >= height * .25 && y <= height * .75) return (node, node.Children.Count);
-        var parent = document.Parent(node.Id); if (parent?.Kind != "State") return (node.Kind == "State" ? node : null, node.Children.Count);
+        if (document.CanEditChildren(node.Id) && y >= height * .25 && y <= height * .75) return (document.ChildContainer(node.Id), document.ChildContainer(node.Id).Children.Count);
+        var parent = document.Parent(node.Id); if (parent == null || !document.CanOrganize(node.Id)) return (document.CanEditChildren(node.Id) ? document.ChildContainer(node.Id) : null, document.CanEditChildren(node.Id) ? document.ChildContainer(node.Id).Children.Count : 0);
         return (parent, parent.Children.ToList().FindIndex(n => n.Id == node.Id) + (y > height * .5 ? 1 : 0));
     }
     void ApplyNodeDrop(NodeDrag drag, Guid destination, int index, bool copy)
@@ -156,7 +156,7 @@ public partial class MainWindow
     void PasteSelectedNodes() => Try(() =>
     {
         var clipboard = readNodeClipboard() ?? throw new ArgumentException("Copy phases or actions from Studio first.");
-        var target = selectedNode?.Kind == "State" ? selectedNode : selectedNode == null ? null : document.Parent(selectedNode.Id);
+        var target = selectedNode != null && document.CanEditChildren(selectedNode.Id) ? document.ChildContainer(selectedNode.Id) : selectedNode == null ? null : document.Parent(selectedNode.Id);
         if (target == null) return;
         ChangedSelection(document.PasteNodes(target.Id, target.Children.Count, clipboard, d => adapter.Validate(d, selectedEntity!.Id)));
     });
@@ -179,7 +179,7 @@ public partial class MainWindow
     void CloseCommands() { CommandPanel.Visibility = Visibility.Collapsed; BehaviorTree.Focus(); }
     IEnumerable<AuthoringCommand> AvailableCommands()
     {
-        var canEdit = nodeSelection.Count > 0 && nodeSelection.All(id => document.Parent(id)?.Kind == "State" && RegionEditable(document.Find(id)));
+        var canEdit = nodeSelection.Count > 0 && nodeSelection.All(id => document.CanOrganize(id) && RegionEditable(document.Find(id)));
         yield return new("Copy selection", "Ctrl+C", CopySelectedNodes, canEdit);
         yield return new("Paste into focused phase", "Ctrl+V · independent nodes and unique phase names", PasteSelectedNodes, selectedNode != null);
         yield return new("Group selection into phase", "Ctrl+G · adjacent siblings; changes phase entry/inheritance", GroupSelectedNodes, canEdit);
@@ -197,8 +197,8 @@ public partial class MainWindow
         {
             var id = node.Id;
             yield return new("Go to " + node.Label, node.Kind + " · " + node.Path, () => SelectNode(id));
-            if (canEdit && node.Kind == "State" && !nodeSelection.Any(selected => node.Path == document.Find(selected).Path || node.Path.StartsWith(document.Find(selected).Path + "/", StringComparison.Ordinal)))
-                yield return new("Move selection into " + node.Label, "Append in source order · one undo", () => Try(() => { var ids = nodeSelection.ToArray(); document.MoveNodes(ids, id, document.Find(id).Children.Count, d => adapter.Validate(d, selectedEntity!.Id)); ChangedSelection(ids); }));
+            if (canEdit && document.CanEditChildren(node.Id) && document.ChildContainer(node.Id).Id == node.Id && !nodeSelection.Any(selected => node.Path == document.Find(selected).Path || node.Path.StartsWith(document.Find(selected).Path + "/", StringComparison.Ordinal)))
+                yield return new("Move selection into " + node.Label, "Append in source order · one undo", () => Try(() => { var ids = nodeSelection.ToArray(); document.MoveNodes(ids, id, document.ChildContainer(id).Children.Count, d => adapter.Validate(d, selectedEntity!.Id)); ChangedSelection(ids); }));
         }
     }
     void CommandSearchChanged(object sender, TextChangedEventArgs e) { if (document != null) PopulateCommands(); }
@@ -226,7 +226,7 @@ public partial class MainWindow
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             if (e.Key == Key.C) CopySelectedNodes(); else if (e.Key == Key.V) PasteSelectedNodes(); else if (e.Key == Key.G) GroupSelectedNodes();
-            else if (e.Key == Key.A) { nodeSelection.Clear(); nodeSelection.UnionWith(EncounterRoot.Descendants().Where(n => n.Id != EncounterRoot.Id).Select(n => n.Id)); RefreshSelectionVisuals(); }
+            else if (e.Key == Key.A) { nodeSelection.Clear(); nodeSelection.UnionWith(EncounterRoot.Descendants().Where(n => n.Id != EncounterRoot.Id && document.CanOrganize(n.Id)).Select(n => n.Id)); RefreshSelectionVisuals(); }
             else return false;
         }
         else if (e.Key == Key.Delete) DeleteSelectedNodes(); else return false;

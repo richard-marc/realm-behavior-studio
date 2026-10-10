@@ -24,7 +24,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     // Explicit scope, independent of the reflection catalog. Constructors outside this list remain opaque.
     static readonly HashSet<string> Supported = ["State", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit",
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityNotExistsTransition",
-        "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown"];
+        "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root)
     {
@@ -52,6 +52,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "rotateAngle" => "Degrees added per volley. Shoot stores its rotation count on the behavior instance.",
         "projectileIndex" => "Index in this entity's resource XML; it is not a projectile object type.",
         "speed" => "Passed unchanged to the runtime; this is not tiles per second.",
+        "period" => "Timed subtracts the native tick duration once for EACH child, in source order. Completion/reset can happen within that loop; this is not a single wall-clock duration shared by all children.",
         "targetState" => "Exact state name; duplicate state names are ambiguous in the runtime's global name map.",
         _ => "Constructor parameter from the supplied runtime. Expressions beyond literal values may require advanced source editing."
     };
@@ -77,9 +78,12 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                 yield return new("Duplicate state name: " + group.Key, group.First().Id);
             foreach (var n in nodes)
             {
+                if (n.Kind == "ArgumentGroup") continue;
                 if (n.Kind == "Opaque") yield return new("Visual structure is incomplete; the original expression is retained.", n.Id, false);
                 else if (!Supported.Contains(n.Kind)) yield return new($"{n.Kind} is preserved in export; Studio cannot simulate it yet.", n.Id, false);
                 var binding = Binding(document.Expression(n));
+                if (n.Kind == "Prioritize" && n.Children.Sum(c => c.Kind == "ArgumentGroup" ? c.Children.Count : 1) == 0 && n.Parameters.All(p => p.Name != "children"))
+                    yield return new("Prioritize requires at least one cycle behavior for native execution.", n.Id);
                 if (binding.RequiresContext && n.Kind != "Opaque") yield return new($"{n.Kind} requires source context for complete constructor binding.", n.Id, false);
                 else if (binding.Errors.Length > 0 && n.Kind != "Opaque") foreach (var error in binding.Errors.Distinct()) yield return new(n.Kind + ": " + error, n.Id);
                 foreach (var p in n.Parameters)
@@ -147,7 +151,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         }
         if (expr is ObjectCreationExpressionSyntax creation)
         {
-            var name = creation.Type.ToString().Split('.').Last().Replace("global::", "");
+            var name = creation.Type.GetLastToken().ValueText;
             if (!Supported.Contains(name)) throw new NotSupportedException(name + " is preserved, but not yet supported in the Studio runtime adapter.");
             var result = EvaluateConstructor(creation, RuntimeType(name));
             if (!expected.IsInstanceOfType(result) && !type.IsInstanceOfType(result)) throw new ArgumentException("Constructor result does not match " + expected.Name);

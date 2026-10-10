@@ -12,6 +12,8 @@ The refreshed workspace uses a graphite theme, matching dark dropdowns, separate
 
 Select an action and **Add to state** to choose a real game constructor, fill its fields and inspect the source preview. Overloads, named arguments, arrays and optional defaults follow C# rules. Repeated arguments such as Taunt messages have separate editable fields. A phase's collapsed **Lifecycle** view shows its native callbacks and inherited parent actions; select a row to edit the original action. Factory calls and source variables still require Source editing and may prevent local simulation.
 
+Native child arrays appear as quieter rows such as **children · 2**. Select their contents to edit, reorder, duplicate, copy/paste or drag compatible actions into another typed list. The editor preserves the array's actual type and rejects incompatible children. Select a list or wrapper when adding a child. Prioritize starts with an editable native Wander child. Timed and OnDeathBehavior use the game's real callback rules; the lifecycle inspector shows the child's actual dispatch stage.
+
 Entity thumbnails, enemies, the Wizard test character and projectiles use the supplied client's actual PNG sheets. Studio reads the client texture registrations and resolves the source XML's texture indices, including hex indices and animated character cells. Pixel art stays crisp while zooming. Sprites are loaded from the private client checkout, not bundled into the public application. Unsupported/missing texture registrations show a placeholder; alternate skins, procedural rendering and full client animation parity remain incomplete.
 
 ```powershell

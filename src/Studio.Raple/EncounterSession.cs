@@ -229,7 +229,7 @@ public sealed class EncounterSession
     {
         var root = document.Entities.First(e => e.EntityId == entityId).Root;
         var phase = root.Descendants().FirstOrDefault(n => n.Kind == "State" && n.Label == state) ?? root;
-        var matches = phase.Children.Where(n => n.Kind == "Shoot" && (n.Parameters.FirstOrDefault(p => p.Name == "projectileIndex")?.Expression ?? "0") == index.ToString()).ToArray();
+        var matches = phase.StateChildren.Where(n => n.Kind == "Shoot" && (n.Parameters.FirstOrDefault(p => p.Name == "projectileIndex")?.Expression ?? "0") == index.ToString()).ToArray();
         return matches.Length == 1 ? matches[0].Id : null; // Ambiguous emission provenance is not guessed.
     }
     public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, events = Events, shots = Shots, playerShots = PlayerShots, inputs = Inputs }, BehaviorDocument.JsonOptions));

@@ -9,6 +9,8 @@ public record Parameter(string Name, string Expression, int Start, int Length);
 public sealed record BehaviorNode(Guid Id, string Path, string Kind, string Label, int Start, int Length,
     IReadOnlyList<Parameter> Parameters, IReadOnlyList<BehaviorNode> Children)
 {
+    public ChildArgument? Argument { get; init; }
+    public IReadOnlyList<BehaviorNode> StateChildren => Kind == "State" ? Children.SelectMany(n => n.Kind == "ArgumentGroup" ? n.Children : [n]).ToArray() : Children;
     public IEnumerable<BehaviorNode> Descendants() => new[] { this }.Concat(Children.SelectMany(n => n.Descendants()));
     public override string ToString() => Label;
 }
@@ -71,11 +73,11 @@ public sealed partial class BehaviorDocument
         {
             if (call.Expression is not MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Init" } || call.ArgumentList.Arguments.Count < 2) continue;
             if (call.ArgumentList.Arguments[0].Expression is not LiteralExpressionSyntax id || !id.IsKind(SyntaxKind.StringLiteralExpression)) continue;
-            if (call.ArgumentList.Arguments[1].Expression is not ObjectCreationExpressionSyntax creation || creation.Type.ToString().Split('.').Last().Replace("global::", "") != "State") continue;
+            if (call.ArgumentList.Arguments[1].Expression is not ObjectCreationExpressionSyntax creation || creation.Type.GetLastToken().ValueText != "State") continue;
             var entityId = id.Token.ValueText;
             BehaviorNode Read(ObjectCreationExpressionSyntax c, string path)
             {
-                var kind = c.Type.ToString().Split('.').Last().Replace("global::", "");
+                var kind = c.Type.GetLastToken().ValueText;
                 var pars = schema?.ConstructorParameterNames(c.ToString()) ?? names(kind);
                 var args = c.ArgumentList?.Arguments ?? default;
                 var parameters = new List<Parameter>();
@@ -83,13 +85,24 @@ public sealed partial class BehaviorDocument
                 var index = 0;
                 foreach (var arg in args)
                 {
-                    if (arg.Expression is ObjectCreationExpressionSyntax child && (schema?.IsChildArgument(c.ToString(), index) ?? child.Type.ToString().Split('.').Last() != "Cooldown"))
+                    var childArgument = schema?.IsChildArgument(c.ToString(), index) == true;
+                    var initializer = arg.Expression switch { ArrayCreationExpressionSyntax a => a.Initializer, ImplicitArrayCreationExpressionSyntax a => a.Initializer, _ => null };
+                    if (childArgument && initializer != null)
+                    {
+                        var groupPath = path + "/" + children.Count;
+                        var argumentName = (index < pars.Length ? pars[index] : arg.NameColon?.Name.Identifier.ValueText)?.Split('[')[0];
+                        var slot = schema!.ChildArguments(c.ToString()).Single(p => p.Name == argumentName);
+                        var elements = initializer.Expressions.Select((element, i) => element is ObjectCreationExpressionSyntax creation ? Read(creation, groupPath + "/" + i) : Opaque(element, groupPath + "/" + i)).ToArray();
+                        var oldGroup = identities.FirstOrDefault(n => n.Path == groupPath && !usedIdentities.Contains(n.Id) && (n.Kind == "ArgumentGroup" || n.Kind == "Opaque" && n.Signature == arg.Expression.ToString()));
+                        if (oldGroup != null) usedIdentities.Add(oldGroup.Id);
+                        children.Add(new BehaviorNode(oldGroup?.Id ?? Guid.NewGuid(), groupPath, "ArgumentGroup", slot.Name + " · " + elements.Length, arg.Expression.SpanStart, arg.Expression.Span.Length, [], elements) { Argument = slot });
+                    }
+                    else if (arg.Expression is ObjectCreationExpressionSyntax child && (childArgument || schema == null && child.Type.ToString().Split('.').Last() != "Cooldown"))
                         children.Add(Read(child, path + "/" + children.Count));
                     else if (kind == "State" && arg.Expression is not LiteralExpressionSyntax { Token.Value: string })
                     {
                         var opaquePath = path + "/" + children.Count;
-                        var oldOpaque = identities.FirstOrDefault(n => n.Path == opaquePath && n.Kind == "Opaque");
-                        children.Add(new(oldOpaque?.Id ?? Guid.NewGuid(), opaquePath, "Opaque", "Opaque: " + arg.Expression.ToString(), arg.Expression.SpanStart, arg.Expression.Span.Length, [], []));
+                        children.Add(Opaque(arg.Expression, opaquePath));
                     }
                     else parameters.Add(new(arg.NameColon?.Name.Identifier.ValueText ?? (index < pars.Length ? pars[index] : "$" + index),
                         arg.Expression.ToString(), arg.Expression.SpanStart, arg.Expression.Span.Length));
@@ -100,6 +113,12 @@ public sealed partial class BehaviorDocument
                 if (old != null) usedIdentities.Add(old.Id);
                 var label = kind == "State" ? (parameters.Where(p => p.Name is "name" or "$0").Select(p => LiteralString(p.Expression)).FirstOrDefault(v => v != null) ?? "Root") : kind;
                 return new(old?.Id ?? Guid.NewGuid(), path, kind, label, c.SpanStart, c.Span.Length, parameters, children);
+            }
+            BehaviorNode Opaque(ExpressionSyntax expression, string path)
+            {
+                var old = identities.FirstOrDefault(n => n.Path == path && n.Kind == "Opaque" && !usedIdentities.Contains(n.Id));
+                if (old != null) usedIdentities.Add(old.Id);
+                return new(old?.Id ?? Guid.NewGuid(), path, "Opaque", "Opaque: " + expression, expression.SpanStart, expression.Span.Length, [], []);
             }
             result.Add(new(entityId, call.SpanStart, Read(creation, entityId + "/root")));
         }
@@ -159,15 +178,13 @@ public sealed partial class BehaviorDocument
     }
     public void AddChild(Guid parentId, string expression, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
-        var parent = Find(parentId);
-        if (parent.Kind != "State") throw new ArgumentException("Select a state to add an action or child phase.");
-        if (LockedNodes.Select(Find).Any(locked => parent.Path == locked.Path || parent.Path.StartsWith(locked.Path + "/"))) throw new InvalidOperationException("This state or an ancestor is locked.");
-        var c = (ObjectCreationExpressionSyntax)SyntaxFactory.ParseExpression(Expression(parent));
+        var parent = ChildContainer(parentId); EditableContainer(parent);
         var child = SyntaxFactory.ParseExpression(expression);
         if (child.ContainsDiagnostics || child is not ObjectCreationExpressionSyntax) throw new ArgumentException("Invalid behavior expression.");
-        var position = parent.Start + c.ArgumentList!.CloseParenToken.SpanStart;
-        var prefix = c.ArgumentList.Arguments.Count > 0 ? "," : "";
-        Commit(Source.Insert(position, prefix + "\n                    " + expression + "\n                "), Identities, validate);
+        var fragment = new BehaviorDocument("class Fragment { void Build() { db.Init(\"__fragment__\", new State(" + expression + ")); } }", names, schema: schema);
+        var node = fragment.Entities.Single().Root.Children.Single();
+        var children = parent.Children.ToList(); children.Add(node);
+        RewriteChildren(new() { [parent.Id] = children }, new() { [node.Id] = SyntaxFactory.Argument(child) }, validate);
     }
     public bool Undo() => Restore(undo, redo);
     static bool VisualValue(ExpressionSyntax expression) => expression switch

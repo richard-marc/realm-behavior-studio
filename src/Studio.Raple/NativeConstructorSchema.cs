@@ -16,7 +16,8 @@ public record ConstructorBinding(ConstructorInfo? Constructor, string[] SlotName
 // Public signature mirrors exist only in an un-emitted semantic compilation. No game/user code runs during binding.
 public sealed class NativeConstructorSchema
 {
-    static bool NativeName(string name, Type type) => name.Replace("global::", "") is var clean && (clean == type.Name || clean == type.FullName?.Replace('+', '.'));
+    static string ShortName(string name) => SyntaxFactory.ParseName(name).GetLastToken().ValueText;
+    static bool NativeName(string name, Type type) => string.Concat(SyntaxFactory.ParseName(name).DescendantTokens().Select(t => t.ValueText)).Replace("global::", "") is var clean && (clean == type.Name || clean == type.FullName?.Replace('+', '.'));
     static readonly CSharpParseOptions ParseOptions = new(LanguageVersion.CSharp12);
     readonly Dictionary<string, Type> types;
     readonly Dictionary<Type, string> enumNames;
@@ -133,7 +134,7 @@ public sealed class NativeConstructorSchema
         {
             if (syntax is ArrayTypeSyntax array) return array.WithElementType(MirrorType(array.ElementType));
             if (syntax is NullableTypeSyntax nullable) return nullable.WithElementType(MirrorType(nullable.ElementType));
-            var name = syntax.ToString().Split('.').Last().Replace("global::", "");
+            var name = ShortName(syntax.ToString());
             return types.TryGetValue(name, out var type) && NativeName(syntax.ToString(), type) || enums.Any(e => e.Value == name && NativeName(syntax.ToString(), e.Key)) ? SyntaxFactory.ParseTypeName("Studio.NativeSchema." + name).WithTriviaFrom(syntax) : syntax;
         }
         public override SyntaxNode? VisitCastExpression(CastExpressionSyntax node) => ((CastExpressionSyntax)base.VisitCastExpression(node)!).WithType(MirrorType(node.Type));
@@ -141,20 +142,20 @@ public sealed class NativeConstructorSchema
         public override SyntaxNode? VisitDefaultExpression(DefaultExpressionSyntax node) => node.WithType(MirrorType(node.Type));
         public override SyntaxNode? VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
         {
-            var name = node.Expression.ToString().Split('.').Last().Replace("global::", "");
+            var name = ShortName(node.Expression.ToString());
             return enums.Any(e => e.Value == name && NativeName(node.Expression.ToString(), e.Key)) ? node.WithExpression(SyntaxFactory.ParseExpression("Studio.NativeSchema." + name)) : base.VisitMemberAccessExpression(node);
         }
         public override SyntaxNode? VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
         {
             var current = (ObjectCreationExpressionSyntax)base.VisitObjectCreationExpression(node)!;
-            var name = node.Type.ToString().Split('.').Last().Replace("global::", "");
+            var name = ShortName(node.Type.ToString());
             return types.TryGetValue(name, out var type) && NativeName(node.Type.ToString(), type) ? current.WithType(SyntaxFactory.ParseTypeName("Studio.NativeSchema." + name).WithTriviaFrom(current.Type)).WithAdditionalAnnotations(new SyntaxAnnotation("native-call", node.ToString())) : current;
         }
     }
     ConstructorBinding BindCore(string expression)
     {
         if (SyntaxFactory.ParseExpression(expression) is not ObjectCreationExpressionSyntax original || original.ContainsDiagnostics) return new(null, [], [], [], ["Invalid constructor expression."]);
-        var name = original.Type.ToString().Split('.').Last().Replace("global::", "");
+        var name = ShortName(original.Type.ToString());
         if (!types.TryGetValue(name, out var runtime) || !NativeName(original.Type.ToString(), runtime)) return new(null, [], [], [], [], true);
         var rewritten = (ExpressionSyntax)new MirrorNames(types, enumNames).Visit(original)!;
         var marker = new SyntaxAnnotation("binding");
@@ -168,7 +169,7 @@ public sealed class NativeConstructorSchema
         {
             var originalExpression = nested.GetAnnotations("native-call").Single().Data!;
             var nestedOriginal = (ObjectCreationExpressionSyntax)SyntaxFactory.ParseExpression(originalExpression);
-            var nestedName = nestedOriginal.Type.ToString().Split('.').Last().Replace("global::", "");
+            var nestedName = ShortName(nestedOriginal.Type.ToString());
             cache.TryAdd(originalExpression, DescribeBinding(types[nestedName], nestedOriginal, nested, model, allDiagnostics));
         }
         return DescribeBinding(runtime, original, call, model, allDiagnostics);
