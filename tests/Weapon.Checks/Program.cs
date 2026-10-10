@@ -93,4 +93,15 @@ var recorded = new EncounterSession(adapter, doc, "Cave Pirate Brawler", 7, new(
 foreach (var entry in splitRun.Inputs) recorded.Advance(entry.Input, entry.DurationMs);
 Check(recorded.PlayerY == splitRun.PlayerY && JsonSerializer.Serialize(recorded.PlayerShots) == JsonSerializer.Serialize(splitRun.PlayerShots), "Replay records retain display-frame input durations");
 File.WriteAllText(Path.Combine(outDir, "catalog.json"), JsonSerializer.Serialize(weapons, BehaviorDocument.JsonOptions));
+var ghostProjectiles = EnemyProjectiles.ForEntity("Ghost Ship");
+Check(ghostProjectiles.Select(p => p.Index).SequenceEqual([0, 1]) && ghostProjectiles[1] is { TextureId: "Giant Cannonball", MinDamage: 250, MaxDamage: 250, LifetimeMs: 4000, Speed: 65 }, "Enemy projectile catalog retains real XML IDs, textures, damage, lifetime and speed without renumbering");
+Check(EnemyProjectiles.ForEntity("Cave Pirate Brawler").Single() is { Index: 0, TextureId: "Blade", MinDamage: 5 } && EnemyProjectiles.ForEntity("No such enemy").Count == 0, "Projectile choices belong to the requested XML owner and unknown entities never borrow another catalog");
+var ghostXml = XElement.Load(Path.Combine(adapter.ServerRoot, "TKR.Shared/resources/xml/characters/TK_Characters_chars16x16rEncounters.xml")).Elements("Object").Single(e => (string?)e.Attribute("id") == "Ghost Ship");
+Check(ghostXml.Elements("Projectile").Select(e => (int)e.Attribute("id")!).SequenceEqual(ghostProjectiles.Select(p => p.Index)) && ghostXml.Elements("Projectile").All(e => ghostProjectiles.Single(p => p.Index == (int)e.Attribute("id")!).TextureId == (string)e.Element("ObjectId")!), "Picker IDs and texture references agree with the supplied XML file independently of its native descriptor lookup");
+var ghostDoc = new BehaviorDocument("class Fixture { void Build() { db.Init(\"Ghost Ship\", new State(new Shoot(8, projectileIndex: 1, fixedAngle: 0, coolDown: 100))); } }", adapter);
+using (var ghostSession = new EncounterSession(adapter, ghostDoc, "Ghost Ship", 7, new()))
+{
+    ghostSession.Step(new());
+    Check(ghostSession.Shots.Single() is { Index: 1, Damage: 250 } && ghostSession.Projectiles.Single().TextureId == "Giant Cannonball", "Selected XML index executes the real Ghost Ship projectile packet, damage and texture through native Shoot");
+}
 Console.WriteLine($"{count} collision/weapon checks passed.");

@@ -449,6 +449,13 @@ Check(adapter.ReadShootPattern(getterAttack, Root(getterAttack).Children.Single(
 var getterFallback = Doc("new State(new Shoot(5, defaultAngle: StudioContextAttackAngle))");
 Check(adapter.ReadShootPattern(getterFallback, Root(getterFallback).Children.Single()) == null, "Visual fallback angles refuse unknown getters rather than inventing a direction when no target is in range");
 Check(adapter.ReadShootPattern(shadowed, Root(shadowed).Children.Single()) == null, "A source alias to another native behavior cannot expose false Shoot handles");
+Check(adapter.HasKnownProjectileOwner(sourceAttack, "Cave Pirate Brawler", sourceAttackNode) && adapter.ReadProjectileIndex(sourceAttack, sourceAttackNode) == 0, "Compiler-bound native attacks expose their actual encounter owner and omitted XML index");
+var independentIndex = Doc("new State(new Shoot(8, fixedAngle: StudioContextAttackAngle, projectileIndex: StudioContextCount - 3))"); var independentShot = Root(independentIndex).Children.Single();
+Check(adapter.ReadShootPattern(independentIndex, independentShot) == null && adapter.ReadProjectileIndex(independentIndex, independentShot) == 1, "Projectile index constants resolve independently of unknown geometry getters without executing source");
+var unknownIndex = Doc("new State(new Shoot(8, projectileIndex: (int)StudioContextAttackAngle))");
+Check(adapter.ReadProjectileIndex(unknownIndex, Root(unknownIndex).Children.Single()) == null, "Unknown projectile getters remain source expressions rather than silently selecting index zero");
+var unknownOwner = Doc("new State(StudioContextWrap(new Shoot(8)))"); var unownedShot = Root(unknownOwner).Descendants().Single(n => n.Kind == "Shoot");
+Check(!adapter.HasKnownProjectileOwner(unknownOwner, "Cave Pirate Brawler", unownedShot), "Source helper dispatch does not invent a projectile owner for nested actions");
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));
 Console.WriteLine($"{checks.Count} source-context checks passed.");

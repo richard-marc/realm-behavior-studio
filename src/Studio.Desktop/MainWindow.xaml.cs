@@ -162,6 +162,7 @@ public partial class MainWindow : Window
             AddOrganizeControls(selectedNode);
             AddArgumentControls(selectedNode);
             AddAttackControls(selectedNode);
+            AddProjectileControls(selectedNode);
             AddTransitionSummary(id);
             AddLifecycleControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();

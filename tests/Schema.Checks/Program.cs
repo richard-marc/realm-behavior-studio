@@ -132,4 +132,8 @@ using (var noTargetSession = new EncounterSession(adapter, noTargetFan, "Cave Pi
 }
 attackDoc.Apply(new(attackDoc.Revision, "Visual aim", [new(attackNode.Id, "fixedAngle", "180")]), d => adapter.Validate(d, "Cave Pirate Brawler"));
 Check(attackDoc.Find(attackNode.Id).Parameters.Single(p => p.Name == "fixedAngle").Expression == "180" && attackDoc.Undo() && attackDoc.Source == editedAttack, "Visual attack parameter commits use the same typed document validation, identity and single undo as the inspector");
+Check(adapter.HasKnownProjectileOwner(attackDoc, "Cave Pirate Brawler", attackNode) && adapter.ReadProjectileIndex(attackDoc, attackNode) == 0, "Native State actions retain their XML host and the real omitted projectile-index default");
+var ownedWrapper = Doc("new State(new Timed(1000, new Shoot(8, projectileIndex: 2)))"); var ownedShot = ownedWrapper.Entities.Single().Root.Descendants().Single(n => n.Kind == "Shoot");
+Check(adapter.HasKnownProjectileOwner(ownedWrapper, "Cave Pirate Brawler", ownedShot) && adapter.ReadProjectileIndex(ownedWrapper, ownedShot) == 2, "Known native wrapper dispatch retains host ownership and an explicit projectile index");
+Check(!adapter.HasKnownProjectileOwner(ownedWrapper, "Ghost Ship", ownedShot) && !adapter.IsNativeShoot(ownedWrapper, ownedWrapper.Entities.Single().Root), "Projectile selection rejects a foreign encounter owner and a non-Shoot primitive");
 Console.WriteLine($"{count} native schema checks passed.");

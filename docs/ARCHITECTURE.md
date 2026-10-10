@@ -64,6 +64,10 @@ The test actor has an independent real ConditionEffectManager, native Inventory 
 
 AI simulations stop an active interactive run, bind a candidate document and run a bounded stationary scenario. This avoids introducing a second run into the shared RNG context. Entity/projectile/time limits are checked at simulation boundaries. Replay inputs include their sample duration (default 100 ms for older records) so display-frame input boundaries can be reproduced; UI seeking/snapshots/checkpoints are pending.
 
+## Projectile resources
+
+The enemy projectile picker reads the real native XmlData ObjectDesc.Projectiles dictionary without renumbering indices. It retains raw damage/lifetime/speed and texture references; displayed base speed follows the client's Speed/10 tiles-per-second conversion. It displays source motion/effects and the existing local playback limitation. Owner inference is limited to genuine native State/Timed/Prioritize/OnDeathBehavior dispatch and typed list boundaries; source factories/custom controllers keep their owner boundary. Projectile-index constants resolve independently of other unknown Shoot arguments. Browsing never writes source or executes getters. Use projectile validates the owner/index again, then applies one typed revision/lock-checked document patch and preserves save/undo identities.
+
 ## AI
 
 Studio.AI owns its own persistent host ID and account registrations; tokens are Windows DPAPI protected. Existing registrations retain their issued OAuth client ID. Refresh and sign-out serialize using an exclusive per-registration file lock and reread the latest stored rotating credentials.
