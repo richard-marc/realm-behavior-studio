@@ -218,6 +218,7 @@ public partial class MainWindow : Window
     }
     void UpdateSession()
     {
+        Viewport.FrameRemainderMs = accumulator;
         Viewport.InvalidateVisual(); Graph.ActivePhase = session?.Entities.FirstOrDefault(e => e.Name == selectedEntity?.Id)?.Phase; UpdatePlayButton();
         if (session != null) { Coverage.ToolTip = session.Coverage; Coverage.Text = session.Coverage.Contains("Unsupported") ? "Unsupported motion · see console" : "Client hit geometry · 5 ms samples"; }
         TimerInfo.Text = session?.InspectTimers(); FilterEvents(this, null!);

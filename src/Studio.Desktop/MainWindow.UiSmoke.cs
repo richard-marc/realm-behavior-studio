@@ -71,6 +71,35 @@ public partial class MainWindow
         for (var i = 0; i < 5; i++) session!.Step(new(Attack: true, AimX: 64.5, AimY: 64.5)); UpdateSession(); UpdateLayout();
         Check(session!.PlayerShots.Count > 0 && sprites.Get(session.Weapon.Id) != null, "Weapon equipped in the live viewport has real shots and a client sprite");
         Check(session.Projectiles.All(p => sprites.Get(p.TextureId) != null), "Weapon projectiles resolve their XML textures");
+        var motionView = new Studio.Raple.EntityView(1, "Wizard", 1, 2, 100, 100, "moving", new(.5), new(0, 0, 1, 2, 100, 100));
+        Check(EncounterViewport.EntityPosition(motionView, 125) == new Point(.25, .5) && EncounterViewport.EntityPosition(motionView, 150) == new Point(.5, 1), "Enemy presentation follows the client's linear tick-position blend");
+        Check(EncounterViewport.EntityPosition(motionView, 50) == new Point(0, 0) && EncounterViewport.EntityPosition(motionView, 250) == new Point(1, 2), "Enemy motion clamps to tick endpoints without extrapolating");
+        Check(EncounterViewport.EntityPosition(motionView with { Motion = null }, 150) == new Point(1, 2), "New entities appear at their spawn position without blending from the origin");
+        StartSession(); running = false; Playback.SelectedIndex = 2;
+        var enemyFrames = new List<(double Ms, Point Rendered, Point Runtime)>();
+        for (var i = 0; i < 12; i++)
+        {
+            AdvancePlayback(1000d / 60, new()); var enemy = session!.Entities.First(e => e.Name == selectedEntity!.Id);
+            enemyFrames.Add((session.Ms + Viewport.FrameRemainderMs, EncounterViewport.EntityPosition(enemy, session.Ms + Viewport.FrameRemainderMs), new(enemy.X, enemy.Y)));
+        }
+        Check(enemyFrames.Select(f => f.Rendered).Distinct().Count() == 12 && enemyFrames.Select(f => f.Runtime).Distinct().Count() <= 3, "Enemy moves on all 12 simulated 60Hz frames while runtime movement stays on enemy ticks");
+        var frameDeltas = enemyFrames.Zip(enemyFrames.Skip(1), (a, b) => (b.Rendered - a.Rendered).Length).ToArray();
+        var tickDelta = enemyFrames.Zip(enemyFrames.Skip(1), (a, b) => (b.Runtime - a.Runtime).Length).Max();
+        Check(frameDeltas.Max() < tickDelta * .3, "Tick boundaries preserve smooth enemy movement rather than full-tick jumps");
+        File.WriteAllText(Path.Combine(output, "enemy-motion.json"), JsonSerializer.Serialize(enemyFrames.Select(f => new { ms = f.Ms, renderX = f.Rendered.X, renderY = f.Rendered.Y, runtimeX = f.Runtime.X, runtimeY = f.Runtime.Y }), BehaviorDocument.JsonOptions));
+        Pause(this, new()); var pausedMs = session!.Ms; var pausedRemainder = Viewport.FrameRemainderMs;
+        var pausedEntity = session.Entities.First(); var pausedPosition = EncounterViewport.EntityPosition(pausedEntity, pausedMs + pausedRemainder);
+        for (var i = 0; i < 5; i++) { Advance(this, EventArgs.Empty); Viewport.InvalidateVisual(); UpdateLayout(); }
+        Check(session.Ms == pausedMs && Viewport.FrameRemainderMs == pausedRemainder && EncounterViewport.EntityPosition(session.Entities.First(), session.Ms + Viewport.FrameRemainderMs) == pausedPosition, "Pause freezes the enemy's displayed pose and simulation time");
+        StartSession(); Playback.SelectedIndex = 4; AdvancePlayback(50, new());
+        var caughtUp = session!.Entities.First(e => e.Name == selectedEntity!.Id);
+        Check(caughtUp.Motion is { TickMs: 100 } && EncounterViewport.EntityPosition(caughtUp, session.Ms + Viewport.FrameRemainderMs) == new Point(caughtUp.X, caughtUp.Y), "Catch-up frames retain the final enemy tick segment and reach its endpoint");
+        StartSession(); Playback.SelectedIndex = 0;
+        var fractionalFrames = new List<Point>();
+        for (var i = 0; i < 12; i++) { AdvancePlayback(1000d / 60, new()); fractionalFrames.Add(EncounterViewport.EntityPosition(session!.Entities.First(), session.Ms + Viewport.FrameRemainderMs)); }
+        Check(fractionalFrames.Skip(1).Distinct().Count() == 11, "Quarter-speed enemy motion uses fractional frame time between 5ms samples");
+        StartSession();
+        Check(Viewport.FrameRemainderMs == 0 && session!.Entities.All(e => e.Motion == null), "Restart clears enemy motion and fractional time from the previous run");
         StartSession(); running = false; Playback.SelectedIndex = 2;
         var positions = new HashSet<float>(); var startY = session!.PlayerY;
         for (var i = 0; i < 12; i++) { AdvancePlayback(1000d / 60, new(Y: 1)); positions.Add(session.PlayerY); }

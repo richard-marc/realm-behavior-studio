@@ -14,7 +14,7 @@ namespace Studio.Raple;
 
 public record EncounterInput(double X = 0, double Y = 0, bool Attack = false, double AimX = 64.5, double AimY = 64.5);
 public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null);
-public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox);
+public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox, EntityMotion? Motion = null);
 public record BulletView(float X, float Y, int OwnerId, int ProjectileIndex, Guid? NodeId, string TextureId, double Angle, bool Friendly);
 public record ReplayInput(long Ms, EncounterInput Input, int DurationMs = 100);
 public record Emission(long Ms, int OwnerId, int Index, int Count, int BulletId, float X, float Y, float Angle, float AngleIncrement, int Damage);
@@ -28,6 +28,7 @@ public sealed class EncounterSession
     readonly BehaviorDocument document;
     readonly List<Bullet> bullets = [];
     readonly Dictionary<int, string> lastStates = [];
+    readonly Dictionary<int, EntityMotion> motions = [];
     readonly PlayerPreset preset;
     readonly string entityId;
     readonly int seed;
@@ -60,7 +61,7 @@ public sealed class EncounterSession
     public string Coverage { get; private set; } = "Real enemy executor · XML weapons · client hit geometry / 5 ms samples";
     public List<Emission> PlayerShots { get; } = [];
     public IReadOnlyList<EntityView> Entities => engine.World.Enemies.Values.Where(e => !e.Dead)
-        .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType))).ToArray();
+        .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id))).ToArray();
     public IReadOnlyList<BulletView> Projectiles => bullets.Where(b => !b.Removed).Select(b => new BulletView(b.X, b.Y, b.Owner, b.Index, b.Node, b.Desc.ObjectId, b.Path.Angle, b.Friendly)).ToArray();
     sealed class Bullet
     {
@@ -161,11 +162,15 @@ public sealed class EncounterSession
             // Enemy step is fixed independently of rendering and playback speed.
             if (Ms % SimEngine.TickMs == 0)
             {
+                var beforeTick = engine.World.Enemies.Values.ToDictionary(e => e.Id, e => (e.X, e.Y));
                 var dying = engine.World.Enemies.Values.Where(e => e.HP == 0 && !e.Dead).ToArray();
                 engine.Actor.HP = Math.Max(1, PlayerHp); engine.Tick(Ms);
+                motions.Clear();
                 foreach (var dead in dying.Where(e => e.Dead)) Add("death", dead.ObjectDesc.IdName + " killed by weapon; native death callbacks executed.");
                 foreach (var e in engine.World.Enemies.Values)
                 {
+                    var from = beforeTick.GetValueOrDefault(e.Id, (e.X, e.Y));
+                    motions[e.Id] = new(from.X, from.Y, e.X, e.Y, Ms, SimEngine.TickMs);
                     var current = e.CurrentState?.Name ?? "";
                     if (!lastStates.TryGetValue(e.Id, out var previous)) Add("spawn", e.ObjectDesc.IdName);
                     if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}", FindState(current));

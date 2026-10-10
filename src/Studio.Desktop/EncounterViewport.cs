@@ -8,7 +8,13 @@ using Studio.Raple;
 namespace Studio.Desktop;
 public sealed class EncounterViewport : FrameworkElement
 {
-    public EncounterSession? Session { get; set; }
+    EncounterSession? session;
+    public EncounterSession? Session
+    {
+        get => session;
+        set { if (ReferenceEquals(session, value)) return; session = value; facings.Clear(); FrameRemainderMs = 0; InvalidateVisual(); }
+    }
+    public double FrameRemainderMs { get; set; }
     public ClientSprites? Sprites { get; set; }
     public string PreviewEntity { get; set; } = "Cave Pirate Brawler";
     public bool ShowHitboxes { get; set; }
@@ -16,7 +22,7 @@ public sealed class EncounterViewport : FrameworkElement
     public event Action<Guid>? Selected;
     double scale = 32; Vector pan; Point? drag;
     readonly HashSet<Key> keys = [];
-    readonly Dictionary<int, (float X, float Y, long Moved, bool Left)> positions = [];
+    readonly Dictionary<int, double> facings = [];
     static readonly Dictionary<string, SolidColorBrush> brushes = [];
     Point World(Point p) => new((p.X - ActualWidth / 2 - pan.X) / scale + 64.5, (p.Y - ActualHeight / 2 - pan.Y) / scale + 64.5);
     Point Screen(double x, double y) => new((x - 64.5) * scale + ActualWidth / 2 + pan.X, (y - 64.5) * scale + ActualHeight / 2 + pan.Y);
@@ -28,7 +34,12 @@ public sealed class EncounterViewport : FrameworkElement
     internal static Rect CharacterBounds(Point ground, double tile, double size, BitmapSource image, double elevation = 0) =>
         new(ground.X - image.PixelWidth * tile * size / 20, ground.Y - (elevation + .02) * tile - image.PixelHeight * tile * size / 10,
             image.PixelWidth * tile * size / 10, image.PixelHeight * tile * size / 10);
-    public void ResetCamera() { scale = 32; pan = new(); positions.Clear(); InvalidateVisual(); }
+    internal static Point EntityPosition(EntityView entity, double ms)
+    {
+        var point = entity.Motion?.At(ms) ?? (entity.X, entity.Y);
+        return new(point.Item1, point.Item2);
+    }
+    public void ResetCamera() { scale = 32; pan = new(); InvalidateVisual(); }
     public EncounterViewport()
     {
         ClipToBounds = true; Focusable = true; RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.NearestNeighbor);
@@ -76,21 +87,25 @@ public sealed class EncounterViewport : FrameworkElement
             Text(dc, "Ready to simulate", new(18, 18), 13, Brush("#A4AAB3"));
             Text(dc, "Press Play  ·  WASD to move  ·  mouse to aim", new(18, ActualHeight - 32), 12, Brush("#686F7B")); return;
         }
-        foreach (var e in session.Entities.OrderBy(e => e.Y))
+        var renderMs = session.Ms + FrameRemainderMs;
+        var entities = session.Entities;
+        foreach (var stale in facings.Keys.Where(id => !entities.Any(e => e.Id == id)).ToArray()) facings.Remove(stale);
+        foreach (var e in entities.OrderBy(e => EntityPosition(e, renderMs).Y))
         {
-            var p = Screen(e.X, e.Y); var previous = positions.GetValueOrDefault(e.Id, (e.X, e.Y, -1000, false));
-            var moved = Math.Abs(e.X - previous.X) + Math.Abs(e.Y - previous.Y) > .0001;
-            var left = moved && Math.Abs(e.X - previous.X) > .0001 ? e.X < previous.X : previous.Left;
-            positions[e.Id] = (e.X, e.Y, moved ? session.Ms : previous.Moved, left);
-            var frame = session.Ms - positions[e.Id].Moved < 200 ? 1 + (int)(session.Ms / 180 % 2) : 0;
-            DrawCharacter(dc, e.Name, p, frame == 0 ? SpriteAction.Stand : SpriteAction.Walk, session.Ms / 360d % 1, left ? Math.PI : 0);
+            var world = EntityPosition(e, renderMs); var p = Screen(world.X, world.Y);
+            var vx = e.Motion?.VelocityX ?? 0; var vy = e.Motion?.VelocityY ?? 0;
+            var moved = Math.Abs(vx) > .00001 || Math.Abs(vy) > .00001;
+            if (Math.Abs(vx) > .00001 || Math.Abs(vy) > .00001) facings[e.Id] = Math.Atan2(vy, vx);
+            var period = moved ? (int)(.5 / Math.Sqrt(vx * vx + vy * vy)) : 0;
+            if (moved) period += 400 - period % 400;
+            DrawCharacter(dc, e.Name, p, moved ? SpriteAction.Walk : SpriteAction.Stand, moved ? renderMs / period % 1 : 0, facings.GetValueOrDefault(e.Id));
             var width = Math.Clamp(scale * .8 * Sprites!.Size(e.Name), 26, 90);
             var image = Sprites.Get(e.Name); var bounds = image == null ? new Rect(p.X - 12, p.Y - 24, 24, 24) : CharacterBounds(p, scale, Sprites.Size(e.Name), image, Sprites.Elevation(e.Name));
             var top = bounds.Top - 10;
             dc.DrawRoundedRectangle(Brush("#303039"), null, new(p.X - width / 2, top, width, 3), 1.5, 1.5);
             var hpWidth = width * Math.Clamp(e.Hp / (double)Math.Max(1, e.MaxHp), 0, 1);
             if (hpWidth > 0) dc.DrawRoundedRectangle(Brush("#C1B2E9"), null, new(p.X - width / 2, top, hpWidth, 3), 1.5, 1.5);
-            if (ShowHitboxes) DrawHitbox(dc, HitScreen(e.X, e.Y), e.Hitbox, "#B3A1D6");
+            if (ShowHitboxes) DrawHitbox(dc, HitScreen(world.X, world.Y), e.Hitbox, "#B3A1D6");
         }
         var projectiles = session.Projectiles;
         foreach (var b in projectiles)
