@@ -10,6 +10,8 @@ public sealed record BehaviorNode(Guid Id, string Path, string Kind, string Labe
     IReadOnlyList<Parameter> Parameters, IReadOnlyList<BehaviorNode> Children)
 {
     public ChildArgument? Argument { get; init; }
+    public bool ArgumentFromCall { get; init; }
+    public bool ArgumentRequiresSource { get; init; }
     public IReadOnlyList<BehaviorNode> StateChildren => Kind == "State" ? Children.SelectMany(n => n.Kind == "ArgumentGroup" ? n.Children : [n]).ToArray() : Children;
     public IEnumerable<BehaviorNode> Descendants() => new[] { this }.Concat(Children.SelectMany(n => n.Descendants()));
     public override string ToString() => Label;
@@ -62,7 +64,8 @@ public sealed partial class BehaviorDocument
         Parse(identities?.ToList() ?? []);
         if (Diagnostics.Any(d => d.IsError)) throw new ArgumentException(string.Join("\n", Diagnostics.Select(d => d.Message)));
     }
-    public List<NodeIdentity> Identities => Entities.SelectMany(e => e.Root.Descendants()).Select(n => new NodeIdentity(n.Id, n.Path, n.Kind, Expression(n))).ToList();
+    string IdentitySignature(BehaviorNode node) => (node.ArgumentFromCall ? "$slot:" + node.Argument!.Name + "|" : "") + Expression(node);
+    public List<NodeIdentity> Identities => Entities.SelectMany(e => e.Root.Descendants()).Select(n => new NodeIdentity(n.Id, n.Path, n.Kind, IdentitySignature(n))).ToList();
     public BehaviorNode Find(Guid id) => Entities.SelectMany(e => e.Root.Descendants()).FirstOrDefault(n => n.Id == id)
         ?? throw new ArgumentException("The selected element is no longer in this revision.");
     public string Expression(BehaviorNode n) => Source.Substring(n.Start, n.Length);
@@ -83,21 +86,29 @@ public sealed partial class BehaviorDocument
             if (creation is not ObjectCreationExpressionSyntax { Type: { } type } || type.GetLastToken().ValueText != "State")
                 if (schema?.At(creation.SpanStart).DescribeExpression(creation.ToString())?.IsState != true) continue;
             var entityId = id.Token.ValueText;
-            BehaviorNode Read(ExpressionSyntax c, string path)
+            BehaviorNode Read(ExpressionSyntax c, string path, string? legacyPath = null)
             {
                 var scoped = schema?.At(c.SpanStart);
                 var description = scoped?.DescribeExpression(c.ToString());
-                if (c is not ObjectCreationExpressionSyntax && description == null) return Opaque(c, path);
+                if (c is not ObjectCreationExpressionSyntax && description == null) return Opaque(c, path, legacyPath);
                 var kind = description?.Kind ?? (c is ObjectCreationExpressionSyntax constructor ? constructor.Type.GetLastToken().ValueText : "Opaque");
                 var pars = scoped?.ConstructorParameterNames(c.ToString()) ?? names(kind);
                 var args = c switch { ObjectCreationExpressionSyntax constructorCall => constructorCall.ArgumentList?.Arguments ?? default,
                     InvocationExpressionSyntax factoryCall => factoryCall.ArgumentList.Arguments, _ => default };
                 var parameters = new List<Parameter>();
                 var children = new List<BehaviorNode>();
+                var slots = scoped?.ChildArguments(c.ToString()) ?? [];
+                var multipleSlots = slots.Count > 1;
+                var legacyPaths = new Dictionary<int, string>();
                 var index = 0;
                 foreach (var arg in args)
                 {
                     var childArgument = scoped?.IsChildArgument(c.ToString(), index) == true;
+                    if (childArgument && multipleSlots)
+                    {
+                        legacyPaths[index] = path + "/" + legacyPaths.Count;
+                        index++; continue;
+                    }
                     var initializer = arg.Expression switch { ArrayCreationExpressionSyntax a => a.Initializer, ImplicitArrayCreationExpressionSyntax a => a.Initializer, _ => null };
                     if (childArgument && initializer != null)
                     {
@@ -120,16 +131,39 @@ public sealed partial class BehaviorDocument
                         arg.Expression.ToString(), arg.Expression.SpanStart, arg.Expression.Span.Length));
                     index++;
                 }
+                if (multipleSlots)
+                    foreach (var slot in slots)
+                    {
+                        var supplied = args.Select((arg, i) => (arg, i)).Where(p => p.i < pars.Length && pars[p.i].Split('[')[0] == slot.Name).ToArray();
+                        var backing = supplied.Length == 1 ? supplied[0].arg.Expression : null;
+                        var initializer = backing switch { ArrayCreationExpressionSyntax a => a.Initializer, ImplicitArrayCreationExpressionSyntax a => a.Initializer, _ => null };
+                        var fromCall = initializer == null;
+                        var nullArray = slot.IsArray && backing?.IsKind(SyntaxKind.NullLiteralExpression) == true;
+                        var unassignedArray = slot.IsArray && (nullArray || supplied.Length == 0 && !slot.IsParams);
+                        var requiresSource = fromCall && slot.IsArray && !nullArray && supplied.Length > 0 && (!slot.IsParams || supplied.Any(p => !pars[p.i].Contains('[')));
+                        var groupPath = path + "/" + children.Count;
+                        var expression = fromCall ? c : backing!;
+                        var signature = (fromCall ? "$slot:" + slot.Name + "|" : "") + expression;
+                        var matching = identities.Where(n => n.Kind == "ArgumentGroup" && n.Signature == signature && !usedIdentities.Contains(n.Id)).ToArray();
+                        var oldGroup = matching.Length == 1 ? matching[0] : identities.FirstOrDefault(n => n.Path == groupPath && n.Kind == "ArgumentGroup" && !usedIdentities.Contains(n.Id) && (!fromCall || n.Signature?.StartsWith("$slot:" + slot.Name + "|", StringComparison.Ordinal) == true));
+                        if (oldGroup == null && nullArray) oldGroup = identities.FirstOrDefault(n => n.Path == legacyPaths[supplied[0].i] && n.Kind == "Opaque" && n.Signature == "null" && !usedIdentities.Contains(n.Id));
+                        if (oldGroup != null) usedIdentities.Add(oldGroup.Id);
+                        var elements = initializer != null
+                            ? initializer.Expressions.Select((element, i) => Read(element, groupPath + "/" + i, legacyPaths[supplied[0].i] + "/" + i)).ToArray()
+                            : nullArray ? [] : supplied.Select((p, i) => Read(p.arg.Expression, groupPath + "/" + i, legacyPaths[p.i])).ToArray();
+                        children.Add(new BehaviorNode(oldGroup?.Id ?? Guid.NewGuid(), groupPath, "ArgumentGroup", slot.Name + " · " + (requiresSource ? "source" : unassignedArray ? "unassigned" : elements.Length.ToString()), expression.SpanStart, expression.Span.Length, [], elements) { Argument = slot, ArgumentFromCall = fromCall, ArgumentRequiresSource = requiresSource });
+                    }
                 var matches = identities.Where(n => n.Kind == kind && n.Signature == c.ToString() && n.Path.StartsWith(entityId + "/") && !usedIdentities.Contains(n.Id)).ToArray();
-                var old = matches.Length == 1 ? matches[0] : identities.FirstOrDefault(n => n.Path == path && (n.Kind == kind || (kind is "Factory" or "Reference") && n.Kind == "Opaque" && n.Signature == c.ToString()) && !usedIdentities.Contains(n.Id));
+                var legacy = legacyPath == null ? null : identities.FirstOrDefault(n => n.Path == legacyPath && n.Signature == c.ToString() && n.Kind == kind && !usedIdentities.Contains(n.Id));
+                var old = matches.Length == 1 ? matches[0] : legacy ?? identities.FirstOrDefault(n => n.Path == path && (n.Kind == kind || (kind is "Factory" or "Reference") && n.Kind == "Opaque" && n.Signature == c.ToString()) && !usedIdentities.Contains(n.Id));
                 if (old != null) usedIdentities.Add(old.Id);
                 var stateName = parameters.FirstOrDefault(p => p.Name is "name" or "$0");
                 var label = kind == "State" ? stateName == null ? "Root" : LiteralString(stateName.Expression) ?? "State · " + stateName.Expression : description?.Label ?? kind;
                 return new(old?.Id ?? Guid.NewGuid(), path, kind, label, c.SpanStart, c.Span.Length, parameters, children);
             }
-            BehaviorNode Opaque(ExpressionSyntax expression, string path)
+            BehaviorNode Opaque(ExpressionSyntax expression, string path, string? legacyPath = null)
             {
-                var old = identities.FirstOrDefault(n => n.Path == path && n.Kind == "Opaque" && !usedIdentities.Contains(n.Id));
+                var old = identities.FirstOrDefault(n => legacyPath != null && n.Path == legacyPath && n.Kind == "Opaque" && n.Signature == expression.ToString() && !usedIdentities.Contains(n.Id)) ?? identities.FirstOrDefault(n => n.Path == path && n.Kind == "Opaque" && !usedIdentities.Contains(n.Id));
                 if (old != null) usedIdentities.Add(old.Id);
                 return new(old?.Id ?? Guid.NewGuid(), path, "Opaque", "Opaque: " + expression, expression.SpanStart, expression.Span.Length, [], []);
             }

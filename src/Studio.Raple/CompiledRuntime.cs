@@ -79,7 +79,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             var schema = new SourceBehaviorSchema(adapter, compilation.Compiler!, project.SourceFile);
             var document = new BehaviorDocument(project.Source, schema, project.Identities);
             var bindings = document.Entities.SelectMany(e => e.Root.Descendants()).Select(n => (Node: n, Description: document.SchemaAt(n)?.DescribeExpression(document.Expression(n))))
-                .Where(p => p.Description != null).Select(p => new RuntimeSourceBinding(p.Node.Start, document.Expression(p.Node), p.Description!)).ToArray();
+                .Where(p => p.Description != null).Select(p => new RuntimeSourceBinding(p.Node.Start, document.Expression(p.Node), p.Description!)).DistinctBy(b => (b.Start, b.Expression)).ToArray();
             return (Project: project with { Identities = document.Identities }, Bindings: bindings);
         }, cancellation).ConfigureAwait(false);
         project = prepared.Project;

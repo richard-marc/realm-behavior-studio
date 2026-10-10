@@ -21,9 +21,11 @@ public partial class MainWindow
             static readonly TKR.WorldServer.logic.behaviors.Shoot StudioPreviewShared = new TKR.WorldServer.logic.behaviors.Shoot(8, count: 2, coolDown: 200);
             static State StudioPreviewRoot(int count = 4, double speed = .3) => new State(new State("native preview", StudioPreviewFan(count), new TKR.WorldServer.logic.behaviors.Follow(speed, range: 1)));
             static TKR.WorldServer.logic.behaviors.Shoot StudioPreviewFan(int count) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: count, coolDown: 200);
+            static TKR.WorldServer.logic.behaviors.Timed StudioPreviewSlots(TKR.WorldServer.logic.Behavior lead = null, params TKR.WorldServer.logic.Behavior[] tail) => new TKR.WorldServer.logic.behaviors.Timed(1000, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(System.Linq.Enumerable.Where(new[] { lead }, b => b != null), tail)));
         } }
         """;
         RunSourceStructureUiSmoke(source, root, helpers, output, check);
+        RunMultipleSlotUiSmoke(source, root, helpers, output, check);
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);
         Changed(); var factory = document.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
         check(factory.Kind == "Factory" && factory.Parameters.Single().Name == "count", "Desktop discovers the imported source helper as the encounter root");
@@ -106,5 +108,33 @@ public partial class MainWindow
         duplicateStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(selectedNode!.Kind == "Reference" && selectedNode.Id != reference.Id && document.Expression(selectedNode) == "StudioPreviewShared", "Desktop Duplicate preserves shared-reference syntax without expanding its definition");
         UpdateLayout(); CaptureView(this, Path.Combine(output, "source-structure.png"));
+    }
+    void RunMultipleSlotUiSmoke(string source, BehaviorNode root, string helpers, string output, Action<bool, string> check)
+    {
+        const string expression = "new State(new State(\"slot preview\", StudioPreviewSlots(new Shoot(8, count: 2), new Wander(.2), new Shoot(8, count: 3))))";
+        document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity!.SourceFile);
+        Changed(); WorkspaceTabs.SelectedIndex = 1;
+        var call = EncounterRoot.Children.Single().Children.Single(); var lead = call.Children[0]; var tail = call.Children[1]; var oldLead = lead.Children.Single();
+        check(call.Children.Select(n => n.Argument?.Name).SequenceEqual(["lead", "tail"]) && TreeItems().Count(i => ((BehaviorNode)i.Tag).Id == lead.Id || ((BehaviorNode)i.Tag).Id == tail.Id) == 2, "Desktop hierarchy exposes separate scalar and params slots from the actual source helper");
+        SelectNode(lead.Id);
+        check(chooseChildSlotButton?.Content is string label && label == "Replace child", "Occupied scalar slot offers a clear Replace child action");
+        chooseChildSlotButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(LibraryTabs.SelectedIndex == 1 && selectedNode!.Id == lead.Id, "Slot chooser opens the action library while retaining its exact destination");
+        Primitives.SelectedItem = adapter.Primitives.Single(p => p.Name == "Shoot"); UseActionButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(createNativeButton?.IsEnabled == true && Equals(createNativeButton.Content, "Replace child"), "Selected action opens a type-checked replacement form for the scalar slot");
+        constructorInputs["count"].Text = "5"; createNativeButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); var replacement = selectedNode!.Id;
+        check(replacement != oldLead.Id && document.Find(lead.Id).Children.Single().Id == replacement && selectedNode.Parameters.Single(p => p.Name == "count").Expression == "5" && document.Find(tail.Id).Children.Count == 2, "Desktop replacement commits the new child without disturbing the helper's other list");
+        Undo(this, new()); check(document.Find(lead.Id).Children.Single().Id == oldLead.Id, "Desktop replacement Undo restores the original scalar child identity");
+        SelectNode(oldLead.Id); deleteStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(selectedNode!.Id == lead.Id && document.Find(lead.Id).Children.Count == 0 && Equals(chooseChildSlotButton!.Content, "Choose child"), "Deleting an optional scalar child reveals an empty slot that can be filled again");
+        BeginNativeCreation(adapter.Primitives.Single(p => p.Name == "Wander")); createNativeButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); var newLead = selectedNode!.Id;
+        check(document.Find(lead.Id).Children.Single().Id == newLead && selectedNode.Kind == "Wander" && document.Find(tail.Id).Children.Count == 2, "Desktop creation fills an omitted scalar slot while preserving later params arguments");
+        SelectNode(lead.Id); var locked = Inspector.Children.OfType<CheckBox>().Single(); locked.IsChecked = true;
+        check(chooseChildSlotButton!.IsEnabled == false, "Locking a child slot immediately disables its chooser"); locked.IsChecked = false;
+        SelectAuthoringNode(newLead, System.Windows.Input.ModifierKeys.None); UpdateLayout();
+        var item = TreeItems().Single(i => ((BehaviorNode)i.Tag).Id == tail.Id); var data = DragData(new NodeDrag(document.Revision, selectedEntity.Id, [newLead]));
+        item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DragOverEvent)); item.RaiseEvent(SyntheticDragEvent(data, item, new Point(35, 14), DragDrop.DropEvent));
+        check(document.Find(lead.Id).Children.Count == 0 && document.Find(tail.Id).Children.Last().Id == newLead, "Routed desktop drop moves an optional scalar child into the independent native list");
+        SelectNode(lead.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "multiple-child-slots.png")); LibraryTabs.SelectedIndex = 0;
     }
 }

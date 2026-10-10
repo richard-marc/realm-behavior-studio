@@ -19,13 +19,13 @@
    <Grid x:Name="EditorGrid">
     <Grid.ColumnDefinitions><ColumnDefinition x:Name="LibraryColumn" Width="230" MinWidth="175"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*" MinWidth="420"/><ColumnDefinition Width="10"/><ColumnDefinition x:Name="InspectorColumn" Width="310" MinWidth="260"/></Grid.ColumnDefinitions>
     <Border Background="{StaticResource Panel}" CornerRadius="10" Padding="12">
-     <TabControl>
+     <TabControl x:Name="LibraryTabs">
       <TabItem Header="Entities"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
        <Grid><TextBox x:Name="Search" Tag="Search entities" TextChanged="SearchChanged" Padding="30,8,10,8" Margin="0,0,0,12" ToolTip="Search entities"/><TextBlock Text="⌕" FontSize="19" Foreground="{StaticResource Muted}" Margin="10,3,0,0" IsHitTestVisible="False"/></Grid>
        <TextBlock x:Name="LibraryCount" Grid.Row="1" Style="{StaticResource Label}" Margin="4,0,0,10"/>
        <ListBox x:Name="Library" Grid.Row="2" SelectionChanged="EntitySelected"><ListBox.ItemTemplate><DataTemplate><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="36"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Image Source="{Binding Converter={StaticResource Sprite}}" Width="26" Height="26" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" HorizontalAlignment="Left"/><TextBlock Grid.Column="1" Text="{Binding Id}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Id}"/></Grid></DataTemplate></ListBox.ItemTemplate></ListBox>
       </Grid></TabItem>
-      <TabItem Header="Actions"><DockPanel><TextBox x:Name="PrimitiveSearch" Tag="Find an action" DockPanel.Dock="Top" TextChanged="PrimitiveSearchChanged" ToolTip="Search behavior constructors" Margin="0,0,0,12"/><Button DockPanel.Dock="Bottom" Content="＋ Add to state" Click="AddPrimitive" Margin="0,10,0,0"/><ListBox x:Name="Primitives" DisplayMemberPath="Name"/></DockPanel></TabItem>
+      <TabItem Header="Actions"><DockPanel><TextBox x:Name="PrimitiveSearch" Tag="Find an action" DockPanel.Dock="Top" TextChanged="PrimitiveSearchChanged" ToolTip="Search behavior constructors" Margin="0,0,0,12"/><Button x:Name="UseActionButton" DockPanel.Dock="Bottom" Content="＋ Use action" Click="AddPrimitive" Margin="0,10,0,0"/><ListBox x:Name="Primitives" DisplayMemberPath="Name"/></DockPanel></TabItem>
      </TabControl>
     </Border>
     <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ToolTip="Resize library"/>

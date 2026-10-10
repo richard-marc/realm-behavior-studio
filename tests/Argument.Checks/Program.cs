@@ -75,6 +75,14 @@ var single = Doc("new State(new OnDeathBehavior(behavior: new ConditionEffectBeh
 Reject(() => single.DuplicateNode(effect.Id, Validate), "Scalar callback wrapper cannot receive a second child");
 Reject(() => single.DeleteNode(effect.Id, Validate), "Required scalar callback wrapper cannot lose its child");
 Check(adapter.EffectiveCallbacks(single, effect).Select(c => c.Stage).SequenceEqual(["Death"]), "Death wrapper dispatches its child's entry callback at death without forwarding exit or ongoing");
+var replacement = single.ReplaceChild(wrapper.Id, "new ConditionEffectBehavior(ConditionEffectIndex.Armored)", Validate);
+Check(replacement != effect.Id && single.Find(wrapper.Id).Children.Single().Id == replacement && single.Source.Contains("behavior:"), "Scalar native wrapper replacement preserves named syntax and the wrapper identity");
+Check(single.Undo() && single.Find(effect.Id).Kind == "ConditionEffectBehavior", "Scalar wrapper replacement restores the original child through one undo");
+var optional = Doc("new State(new Dash())"); var dash = Root(optional).Children.Single();
+optional.AddChild(dash.Id, "new Wander(.2)", Validate);
+Check(optional.Find(dash.Id).Children.Single().Kind == "Wander" && optional.Source.Contains("movement:"), "An omitted optional native scalar slot receives its actual named child argument");
+optional.DeleteNode(optional.Find(dash.Id).Children.Single().Id, Validate);
+Check(optional.Find(dash.Id).Children.Count == 0 && optional.Source.Contains("new Dash()"), "Deleting an optional native scalar child restores its genuine omitted default");
 var timed = Doc("new State(new Timed(300, new Shoot(8), new Wander(.1)))");
 var session = new EncounterSession(adapter, timed, "Cave Pirate Brawler", 7, new());
 var boss = (Enemy)typeof(EncounterSession).GetField("boss", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(session)!;

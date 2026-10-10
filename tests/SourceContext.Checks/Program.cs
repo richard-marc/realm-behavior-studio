@@ -22,6 +22,12 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     static State StudioContextShared { get { throw new System.InvalidOperationException("authoring must not execute this getter"); } }
     static readonly TKR.WorldServer.logic.behaviors.Shoot StudioContextSharedAction = new TKR.WorldServer.logic.behaviors.Shoot(8, count: 3, fixedAngle: 90, coolDown: 200);
     static TKR.WorldServer.logic.behaviors.Timed StudioContextWrap(params TKR.WorldServer.logic.Behavior[] children) => new TKR.WorldServer.logic.behaviors.Timed(1000, children);
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextLists(TKR.WorldServer.logic.Behavior[] first, TKR.WorldServer.logic.Behavior[] second, int period = 1000) => new TKR.WorldServer.logic.behaviors.Timed(period, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(first, second)));
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextSlots(TKR.WorldServer.logic.Behavior lead, int period = 1000, params TKR.WorldServer.logic.Behavior[] tail) => new TKR.WorldServer.logic.behaviors.Timed(period, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(new[] { lead }, tail)));
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextOptional(TKR.WorldServer.logic.Behavior left = null, TKR.WorldServer.logic.Behavior right = null, params TKR.WorldServer.logic.Behavior[] tail) => new TKR.WorldServer.logic.behaviors.Timed(1000, System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(System.Linq.Enumerable.Where(new[] { left, right }, b => b != null), tail)));
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextKeywordSlot(TKR.WorldServer.logic.Behavior @event = null, params TKR.WorldServer.logic.Behavior[] tail) => StudioContextOptional(@event, tail: tail);
+    static TKR.WorldServer.logic.behaviors.Timed StudioContextOptionalArrays(TKR.WorldServer.logic.Behavior[] first = null, TKR.WorldServer.logic.Behavior[] second = null) => StudioContextLists(first ?? new TKR.WorldServer.logic.Behavior[0], second ?? new TKR.WorldServer.logic.Behavior[0]);
+    static readonly TKR.WorldServer.logic.Behavior[] StudioContextSharedList = new TKR.WorldServer.logic.Behavior[] { new TKR.WorldServer.logic.behaviors.Shoot(8) };
     static State StudioContextMessages(params string[] text) => new State(string.Join("-", text));
     static State StudioContextKeyword(int @event = 1) => new State(@event.ToString());
     static State StudioContextAmbiguous(int count, double speed = 1) => new State(count.ToString());
@@ -29,6 +35,12 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     sealed class StudioContextDerivedState : State { public StudioContextDerivedState() : base("derived source") { } }
     static StudioContextDerivedState StudioContextDerived() => new StudioContextDerivedState();
     static State StudioContextCounter(int count = -1, string target = "label") => new State(target + count);
+    sealed class StudioContextPairBehavior : TKR.WorldServer.logic.Behavior {
+        readonly TKR.WorldServer.logic.Behavior first, second;
+        public StudioContextPairBehavior(TKR.WorldServer.logic.Behavior first, TKR.WorldServer.logic.Behavior second) { this.first = first; this.second = second; }
+        protected override void OnStateEntry(TKR.WorldServer.core.objects.Entity host, TKR.WorldServer.core.worlds.TickTime time, ref object state) { first.OnStateEntry(host, time); second.OnStateEntry(host, time); }
+        protected override void TickCore(TKR.WorldServer.core.objects.Entity host, TKR.WorldServer.core.worlds.TickTime time, ref object state) { second.Tick(host, time); first.Tick(host, time); }
+    }
 } }
 """;
 BehaviorDocument Doc(string expression) => new(original.Remove(sourceRoot.Start, sourceRoot.Length).Insert(sourceRoot.Start, expression) + helpers, adapter, sourceFile: file);
@@ -98,6 +110,66 @@ Reject(() => grouped.AddChild(group.Id, "new TimedTransition(100, \"hidden\")", 
 grouped.DeleteNodes([shoot.Id, wander.Id], d => adapter.Validate(d, "Cave Pirate Brawler"));
 Check(grouped.Find(group.Id).Children.Count == 0 && grouped.Source.Contains("Behavior[]"), "Empty factory array preserves its explicit native element type");
 Check(grouped.Undo() && grouped.Find(group.Id).Children.Count == 2, "Factory child structure restores atomically through undo");
+var multiArrays = Doc("new State(new State(\"multi lists\", StudioContextLists(second: new TKR.WorldServer.logic.Behavior[] { new Shoot(8, count: 5) }, first: new TKR.WorldServer.logic.Behavior[] { new Shoot(8, count: 2), new Wander(StudioContextSpeed) }, period: 800)))");
+var listsCall = Root(multiArrays).Children.Single().Children.Single(); var firstList = listsCall.Children[0]; var secondList = listsCall.Children[1];
+Check(listsCall.Children.Select(n => n.Argument?.Name).SequenceEqual(["first", "second"]) && !multiArrays.CanEditChildren(listsCall.Id) && listsCall.Children.All(n => multiArrays.CanEditChildren(n.Id)), "Multiple native array parameters expose independently addressable lists with actual formal names");
+var movedWander = firstList.Children[1]; multiArrays.MoveNodes([movedWander.Id], secondList.Id, 1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(multiArrays.Find(firstList.Id).Children.Count == 1 && multiArrays.Find(secondList.Id).Children.Last().Id == movedWander.Id && multiArrays.Find(listsCall.Id).Parameters.Single().Expression == "800", "Cross-slot moves preserve both list identities, unrelated scalar arguments and native subtype constraints");
+var secondCopy = multiArrays.PasteNodes(secondList.Id, 0, multiArrays.CopyNodes([firstList.Children[0].Id]), d => adapter.Validate(d, "Cave Pirate Brawler")).Single();
+Check(secondCopy != firstList.Children[0].Id && multiArrays.Find(secondList.Id).Children.Count == 3 && multiArrays.Source.Contains("second:") && multiArrays.Source.Contains("first:"), "Multi-list paste creates fresh identities while preserving out-of-order named array arguments");
+var slotDoc = Doc("new State(new State(\"multi slots\", StudioContextSlots(new Shoot(8, count: 2), 600, new Shoot(8, count: 3), /* tail comment */ new Wander(StudioContextSpeed))))");
+var slotsCall = Root(slotDoc).Children.Single().Children.Single(); var leadSlot = slotsCall.Children[0]; var tailSlot = slotsCall.Children[1]; var lead = leadSlot.Children.Single(); var tail = tailSlot.Children[0];
+Check(leadSlot.ArgumentFromCall && tailSlot.ArgumentFromCall && slotDoc.IsScalarChildSlot(leadSlot.Id) && !slotDoc.IsScalarChildSlot(tailSlot.Id) && tailSlot.Children.Count == 2, "Scalar and expanded params child slots remain separate named containers");
+slotDoc.MoveNode(tail.Id, 1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(slotDoc.Find(tailSlot.Id).Children.Last().Id == tail.Id && slotDoc.Find(leadSlot.Id).Children.Single().Id == lead.Id && slotDoc.Source.Contains("/* tail comment */") && slotDoc.Find(slotsCall.Id).Parameters.Single().Expression == "600", "Expanded params reorder preserves another scalar child, argument comments and the helper's timer");
+var beforeRequired = slotDoc.Source;
+Reject(() => slotDoc.DeleteNode(lead.Id, d => adapter.Validate(d, "Cave Pirate Brawler")), "A required scalar source slot cannot lose its child");
+Reject(() => slotDoc.AddChild(leadSlot.Id, "new Shoot(8)", d => adapter.Validate(d, "Cave Pirate Brawler")), "A scalar source slot cannot acquire a second child");
+Check(slotDoc.Source == beforeRequired && slotDoc.AcceptsChild(leadSlot.Id, "StudioContextFan()", replace: true) && !slotDoc.AcceptsChild(leadSlot.Id, "new TimedTransition(100, \"multi slots\")", replace: true), "Scalar replacement preflight uses actual source child types without altering the document");
+var replacementLead = slotDoc.ReplaceChild(leadSlot.Id, "StudioContextFan(count: 7)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(replacementLead != lead.Id && slotDoc.Find(leadSlot.Id).Children.Single().Id == replacementLead && slotDoc.Find(tailSlot.Id).Children.Last().Id == tail.Id, "Scalar replacement commits one native child with a fresh identity while retaining sibling slots");
+Check(slotDoc.Undo() && slotDoc.Find(leadSlot.Id).Children.Single().Id == lead.Id && slotDoc.Redo() && slotDoc.Find(replacementLead).Kind == "Factory", "Scalar replacement restores complete source and identities through one undo/redo");
+slotDoc.LockedNodes.Add(replacementLead); Reject(() => slotDoc.ReplaceChild(leadSlot.Id, "new Wander(.2)"), "Scalar replacement respects a lock on the existing child's region"); slotDoc.LockedNodes.Clear();
+var optionalSlots = Doc("new State(new State(\"optional slots\", StudioContextOptional(new Shoot(8, count: 2), new Wander(.2), new Shoot(8, count: 3))))");
+var optionalCall = Root(optionalSlots).Children.Single().Children.Single(); var leftSlot = optionalCall.Children[0]; var rightSlot = optionalCall.Children[1]; var optionalTail = optionalCall.Children[2]; var rightChild = rightSlot.Children.Single(); var optionalAttack = optionalTail.Children.Single();
+optionalSlots.DeleteNode(leftSlot.Children.Single().Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(optionalSlots.Find(leftSlot.Id).Children.Count == 0 && optionalSlots.Find(rightSlot.Id).Children.Single().Id == rightChild.Id && optionalSlots.Source.Contains("right:") && optionalSlots.Source.Contains("tail:new global::TKR.WorldServer.logic.Behavior[]"), "Removing an optional positional child preserves the remaining arguments' actual binding with named slots");
+optionalSlots.MoveNodes([rightChild.Id], leftSlot.Id, 0, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(optionalSlots.Find(leftSlot.Id).Children.Single().Id == rightChild.Id && optionalSlots.Find(rightSlot.Id).Children.Count == 0 && optionalSlots.Find(optionalTail.Id).Children.Single().Id == optionalAttack.Id, "Moving between two optional scalar slots sharing one call rewrites both atomically");
+optionalSlots.MoveNodes([optionalAttack.Id], rightSlot.Id, 0, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(optionalSlots.Find(rightSlot.Id).Children.Single().Id == optionalAttack.Id && optionalSlots.Find(optionalTail.Id).Children.Count == 0, "Moving an array child into an omitted scalar slot retains nested array edits and every identity");
+var namedComments = Doc("new State(StudioContextOptional(left: new Shoot(8), right /* retain slot comment */ : new Wander(.2), tail: new TKR.WorldServer.logic.Behavior[] { new Shoot(8) }))"); var commentCall = Root(namedComments).Children.Single();
+namedComments.DeleteNode(commentCall.Children[0].Children.Single().Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(namedComments.Source.Contains("right /* retain slot comment */ :") && namedComments.Find(commentCall.Id).Children[1].Children.Single().Kind == "Wander", "Optional slot normalization preserves existing named-argument comments and their actual binding");
+var emptySlots = Doc("new State(StudioContextOptional())"); var emptyCall = Root(emptySlots).Children.Single(); var emptyTail = emptyCall.Children[2];
+emptySlots.AddChild(emptyTail.Id, "StudioContextFan(count: 6)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(emptySlots.Find(emptyTail.Id).Children.Single().Kind == "Factory" && emptySlots.Find(emptyCall.Id).Children.Take(2).All(n => n.Children.Count == 0), "An omitted params slot can be populated without accidentally binding to an earlier optional scalar");
+var optionalArrays = Doc("new State(StudioContextOptionalArrays(second /* array slot note */ : null))"); var optionalArrayCall = Root(optionalArrays).Children.Single(); var missingArray = optionalArrayCall.Children[0]; var nullArray = optionalArrayCall.Children[1];
+Check(optionalArrayCall.Children.All(n => n.Children.Count == 0 && optionalArrays.CanEditChildren(n.Id) && n.Label.Contains("unassigned")), "Missing and null optional array slots remain visibly unassigned and independently editable");
+optionalArrays.AddChild(missingArray.Id, "StudioContextFan(count: 4)", d => adapter.Validate(d, "Cave Pirate Brawler")); optionalArrays.AddChild(nullArray.Id, "new Wander(.2)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(optionalArrays.Find(missingArray.Id).Children.Single().Kind == "Factory" && optionalArrays.Find(nullArray.Id).Children.Single().Kind == "Wander" && optionalArrayCall.Children.All(n => !optionalArrays.Find(n.Id).ArgumentFromCall) && optionalArrays.Source.Contains("second /* array slot note */ :"), "Filling missing and null array slots materializes actual typed arrays while preserving slot identities and named-argument comments");
+var keywordSlots = Doc("new State(StudioContextKeywordSlot())"); var eventSlot = Root(keywordSlots).Children.Single().Children[0];
+keywordSlots.AddChild(eventSlot.Id, "new Wander(.2)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(keywordSlots.Source.Contains("@event:") && keywordSlots.Find(eventSlot.Id).Children.Single().Kind == "Wander", "Inserting omitted scalar child parameters escapes actual C# keyword names");
+var sharedLists = Doc("new State(StudioContextLists(StudioContextSharedList, new TKR.WorldServer.logic.Behavior[] { new Wander(.2) }))"); var sharedListCall = Root(sharedLists).Children.Single();
+Check(sharedListCall.Children[0].ArgumentRequiresSource && !sharedLists.CanEditChildren(sharedListCall.Children[0].Id) && sharedLists.CanEditChildren(sharedListCall.Children[1].Id), "Shared generated collections stay explicit source regions while independent literal lists remain editable");
+var identicalSlots = Doc("new State(StudioContextSlots(new Shoot(8), 1000, new Shoot(8), new Shoot(8)))"); var identicalCall = Root(identicalSlots).Children.Single();
+var legacySlotIds = Enumerable.Range(0, 3).Select(_ => Guid.NewGuid()).ToArray();
+var legacySlotIdentities = identicalSlots.Identities.Where(i => !i.Path.StartsWith(identicalCall.Path + "/", StringComparison.Ordinal)).Concat(legacySlotIds.Select((legacyId, i) => new NodeIdentity(legacyId, identicalCall.Path + "/" + i, "Shoot", "new Shoot(8)"))).ToArray();
+var legacySlots = new BehaviorDocument(identicalSlots.Source, adapter, legacySlotIdentities, file); var upgradedSlots = Root(legacySlots).Children.Single().Children;
+Check(upgradedSlots.SelectMany(n => n.Children).Select(n => n.Id).SequenceEqual(legacySlotIds), "Older flat multi-slot identities upgrade correctly even for three identical child expressions");
+legacySlots.LockedNodes.Add(legacySlotIds[1]); Reject(() => Edit(legacySlots, legacySlots.Find(legacySlotIds[1]), "count", "3"), "An upgraded flat child lock still protects its precise source region");
+var oldSharedId = Guid.NewGuid(); var oldSharedIdentities = sharedLists.Identities.Where(i => !i.Path.StartsWith(sharedListCall.Path + "/", StringComparison.Ordinal)).Append(new NodeIdentity(oldSharedId, sharedListCall.Path + "/0", "Opaque", "StudioContextSharedList"));
+var upgradedShared = new BehaviorDocument(sharedLists.Source, adapter, oldSharedIdentities, file);
+Check(upgradedShared.Find(oldSharedId).Kind == "Opaque" && upgradedShared.Parent(oldSharedId)!.ArgumentRequiresSource, "Legacy opaque shared-list identities survive the new named slot boundary");
+var cloneSlots = slotDoc.DuplicateNode(slotsCall.Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(slotDoc.Find(cloneSlots).Children.Select(n => n.Argument?.Name).SequenceEqual(["lead", "tail"]) && slotDoc.Find(cloneSlots).Descendants().All(n => !slotDoc.Find(slotsCall.Id).Descendants().Any(old => old.Id == n.Id)), "Duplicating a multi-slot helper retains every named container and gives the complete copy fresh identities");
+slotDoc.DeleteNode(cloneSlots, d => adapter.Validate(d, "Cave Pirate Brawler"));
+var constructorSlots = Doc("new State(new State(\"constructor slots\", new StudioContextPairBehavior(new Shoot(8, count: 2), new Shoot(8, count: 4))))");
+var pairConstructor = Root(constructorSlots).Children.Single().Children.Single(); var firstScalar = pairConstructor.Children[0]; var secondScalar = pairConstructor.Children[1]; var secondScalarChild = secondScalar.Children.Single();
+Check(pairConstructor.Kind.EndsWith(".StudioContextPairBehavior") && pairConstructor.Children.Select(n => n.Argument?.Name).SequenceEqual(["first", "second"]) && adapter.NeedsCompiledRuntime(constructorSlots, "Cave Pirate Brawler"), "Source-defined native constructors expose multiple scalar slots using their actual constructor symbols");
+constructorSlots.ReplaceChild(firstScalar.Id, "new Shoot(8, count: 6)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(constructorSlots.Find(secondScalar.Id).Children.Single().Id == secondScalarChild.Id && constructorSlots.Find(firstScalar.Id).Children.Single().Parameters.Single(p => p.Name == "count").Expression == "6", "Replacing one source-constructor slot preserves the other slot's identity and argument");
 var structural = Doc("new State(StudioContextWrap(children: new TKR.WorldServer.logic.Behavior[] { StudioContextFan(/* preserve count */ StudioContextCount), StudioContextSharedAction }), new Timed(500, new Wander(StudioContextSpeed)))");
 var structuralRoot = Root(structural); var sourceWrap = structuralRoot.Children[0]; var sourceList = sourceWrap.Children.Single(); var leafFactory = sourceList.Children[0]; var sharedAction = sourceList.Children[1]; var timed = structuralRoot.Children[1];
 Check(structural.CanOrganize(sourceWrap.Id) && structural.CanOrganize(leafFactory.Id) && structural.CanOrganize(sharedAction.Id) && !structural.CanOrganize(structuralRoot.Id), "Typed source helpers and shared references expose structural editing while encounter roots stay fixed");
@@ -135,6 +207,9 @@ var phase = Doc("new State(new State(\"visible\", new Shoot(8)), StudioContextFa
 Reject(() => phase.RenameState(Root(phase).Children[0].Id, "renamed"), "Visible phase rename refuses to guess hidden helper references");
 Reject(() => factory.ReplaceSource(factory.Source.Replace("count: count", "count: StudioNoSuchCount")), "Compiler errors in a helper body reject complete source replacement");
 var output = Path.GetFullPath(".artifacts/source-context"); Directory.CreateDirectory(output);
+var slotPath = Path.Combine(output, "multi-slot.rbs"); BehaviorDocument.Save(slotPath, new StudioProject { SourceFile = file, Source = optionalSlots.Source, EntityId = "Cave Pirate Brawler", Identities = optionalSlots.Identities }); var savedSlots = BehaviorDocument.Load(slotPath);
+var reopenedSlots = new BehaviorDocument(savedSlots.Source, adapter, savedSlots.Identities, savedSlots.SourceFile);
+Check(reopenedSlots.Identities.SequenceEqual(optionalSlots.Identities) && Root(reopenedSlots).Descendants().Where(n => n.Kind == "ArgumentGroup").All(n => reopenedSlots.CanEditChildren(n.Id)), "Mixed scalar and array slot layouts reopen with all identities and independent editability intact");
 var structuralProject = new StudioProject { SourceFile = file, Source = structural.Source, EntityId = "Cave Pirate Brawler", Identities = structural.Identities, Seed = 7 };
 var structuralPath = Path.Combine(output, "source-structure.rbs"); BehaviorDocument.Save(structuralPath, structuralProject); var structuralSaved = BehaviorDocument.Load(structuralPath);
 var structuralReopened = new BehaviorDocument(structuralSaved.Source, adapter, structuralSaved.Identities, structuralSaved.SourceFile);
@@ -163,6 +238,18 @@ await using (var native = await CompiledRuntime.StartAsync(server, project with 
 {
     await native.AdvanceAsync(new(Y: 1));
     Check(native.Shots.Count == 2 && native.Shots.All(s => s.Count == 2) && native.Entities.Single().Phase == "source duplicate", "Duplicated source helpers execute two real native attacks inside the original phase");
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = slotDoc.Source, Identities = slotDoc.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Select(s => s.Count).SequenceEqual([7, 3]) && native.Entities.Single().Phase == "multi slots", "Replaced scalar and reordered params slots execute the actual helper's native callback and attack order");
+    native.ExportTrace(Path.Combine(output, "multi-slot-trace.json"));
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = constructorSlots.Source, Identities = constructorSlots.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Select(s => s.Count).SequenceEqual([4, 6]), "Source-defined multi-slot constructor executes its actual reverse tick dispatch without an invented wrapper model");
+    native.ExportTrace(Path.Combine(output, "constructor-slot-trace.json"));
 }
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));

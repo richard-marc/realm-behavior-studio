@@ -10,20 +10,21 @@ public sealed partial class BehaviorDocument
         try { ChildContainer(id); return true; } catch (ArgumentException) { return false; }
     }
     public bool CanOrganize(Guid id) => Find(id).Kind is not ("ArgumentGroup" or "Opaque") && Parent(id) is { } parent && CanEditChildren(parent.Id) && ChildContainer(parent.Id).Id == parent.Id;
-    public bool AcceptsChild(Guid id, string expression)
+    public bool IsScalarChildSlot(Guid id) => CanEditChildren(id) && !Slot(ChildContainer(id)).IsArray;
+    public bool AcceptsChild(Guid id, string expression, bool replace = false)
     {
         try
         {
             var container = ChildContainer(id); var slot = Slot(container);
             var owner = container.Kind == "ArgumentGroup" ? Parent(container.Id)! : container;
-            return (slot.IsArray || container.Children.Count == 0) && (SchemaAt(owner)?.AcceptsChild(Expression(owner), slot.Name, expression, container.Kind == "ArgumentGroup" ? Expression(container) : null) ?? true);
+            return (!replace || !slot.IsArray) && (replace || slot.IsArray || container.Children.Count == 0) && (SchemaAt(owner)?.AcceptsChild(Expression(owner), slot.Name, expression, container.Kind == "ArgumentGroup" && !container.ArgumentFromCall ? Expression(container) : null) ?? true);
         }
         catch (ArgumentException) { return false; }
     }
     public BehaviorNode ChildContainer(Guid id)
     {
         var node = Find(id);
-        if (node.Kind == "ArgumentGroup") return node;
+        if (node.Kind == "ArgumentGroup") return !node.ArgumentRequiresSource ? node : throw new ArgumentException("This generated/shared child collection requires source editing.");
         var slots = SchemaAt(node)?.ChildArguments(Expression(node)) ?? (node.Kind == "State" ? [new ChildArgument("children", "IStateChildren", true, true)] : []);
         if (slots.Count != 1) throw new ArgumentException("Select a typed argument list or phase with one known child slot.");
         var group = node.Children.SingleOrDefault(n => n.Kind == "ArgumentGroup");
@@ -52,7 +53,13 @@ public sealed partial class BehaviorDocument
         InvocationExpressionSyntax call => call.WithArgumentList(arguments),
         _ => throw new ArgumentException("This expression has no editable argument list.")
     };
-    IEnumerable<ExpressionSyntax> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => node.Kind == "ArgumentGroup" ? Initializer(expression).Expressions : CallArguments(expression).Arguments.Select(a => a.Expression);
+    int[] CallSlotIndices(BehaviorNode node)
+    {
+        var owner = node.ArgumentFromCall ? Parent(node.Id)! : node;
+        var names = SchemaAt(owner)!.ConstructorParameterNames(Expression(owner));
+        return names.Select((name, index) => (name, index)).Where(p => p.name.Split('[')[0] == Slot(node).Name).Select(p => p.index).ToArray();
+    }
+    IEnumerable<ExpressionSyntax> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => node.Kind != "ArgumentGroup" ? CallArguments(expression).Arguments.Select(a => a.Expression) : node.ArgumentFromCall ? CallSlotIndices(node).Select(i => CallArguments(expression).Arguments[i].Expression) : Initializer(expression).Expressions;
     ExpressionSyntax WithSeparator(ExpressionSyntax expression, SeparatedSyntaxList<ExpressionSyntax> list, int index)
     {
         if (index >= list.SeparatorCount) return expression;
@@ -65,7 +72,7 @@ public sealed partial class BehaviorDocument
         foreach (var parent in Entities.SelectMany(e => e.Root.Descendants()).Where(n => CanEditChildren(n.Id) && ChildContainer(n.Id).Id == n.Id))
         {
             var expression = NodeExpression(tree, parent);
-            if (parent.Kind == "ArgumentGroup")
+            if (parent.Kind == "ArgumentGroup" && !parent.ArgumentFromCall)
             {
                 var list = Initializer(expression).Expressions;
                 foreach (var child in parent.Children) { var index = list.IndexOf(list.Single(e => e.SpanStart == child.Start)); result[child.Id] = WithSeparator(list[index], list, index); }
@@ -82,6 +89,7 @@ public sealed partial class BehaviorDocument
     {
         if (parent.Kind == "ArgumentGroup")
         {
+            if (parent.ArgumentFromCall) return RewriteCallSlots(current, original, [(parent, children)]);
             var initializer = Initializer(current).WithExpressions(SyntaxFactory.SeparatedList(children));
             if (current is ArrayCreationExpressionSyntax array) return array.WithInitializer(initializer);
             var implicitArray = (ImplicitArrayCreationExpressionSyntax)current;
@@ -92,11 +100,76 @@ public sealed partial class BehaviorDocument
         var arguments = CallArguments(current); var source = CallArguments(original);
         var slot = Slot(parent);
         if (!slot.IsArray)
-        {
-            var index = source.Arguments.IndexOf(source.Arguments.Single(a => parent.Children.Any(c => c.Start == a.Expression.SpanStart)));
-            return WithCallArguments(current, arguments.WithArguments(arguments.Arguments.Replace(arguments.Arguments[index], arguments.Arguments[index].WithExpression(children.Single()))));
-        }
+            return RewriteCallSlots(current, original, [(parent, children)]);
         var retained = source.Arguments.Select((a, i) => (a, i)).Where(pair => !parent.Children.Any(c => c.Start == pair.a.Expression.SpanStart)).Select(pair => ArgumentWithSeparatorTrivia(arguments.Arguments[pair.i], source.Arguments, pair.i));
         return WithCallArguments(current, arguments.WithArguments(SyntaxFactory.SeparatedList(retained.Concat(children.Select(SyntaxFactory.Argument)))));
+    }
+    ExpressionSyntax RewriteCallSlots(ExpressionSyntax current, ExpressionSyntax original, IReadOnlyList<(BehaviorNode Node, IReadOnlyList<ExpressionSyntax> Children)> edits)
+    {
+        var source = CallArguments(original); var arguments = CallArguments(current).Arguments;
+        var replacements = edits.Select(e => (e.Node, e.Children, Indices: CallSlotIndices(e.Node))).ToArray();
+        var owner = edits[0].Node.ArgumentFromCall ? Parent(edits[0].Node.Id)! : edits[0].Node;
+        var ownerSchema = SchemaAt(owner)!; var names = ownerSchema.ConstructorParameterNames(Expression(owner));
+        var slots = ownerSchema.ChildArguments(Expression(owner));
+        var normalize = replacements.Any(e => e.Indices.Length == 0 || !Slot(e.Node).IsArray && e.Children.Count == 0);
+        var result = new List<ArgumentSyntax>();
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var replacement = replacements.FirstOrDefault(e => e.Indices.Contains(i));
+            if (replacement.Node == null)
+            {
+                var name = names[i].Split('[')[0]; var slot = slots.FirstOrDefault(s => s.Name == name);
+                if (normalize && slot?.IsParams == true && names[i].Contains('['))
+                {
+                    var indices = names.Select((n, j) => (n, j)).Where(p => p.n.Split('[')[0] == name).Select(p => p.j).ToArray();
+                    if (indices[0] == i) result.Add(NamedArray(name, indices.Select(j => ArgumentWithSeparatorTrivia(arguments[j], source.Arguments, j).Expression.WithTriviaFrom(ArgumentWithSeparatorTrivia(arguments[j], source.Arguments, j))).ToArray()));
+                }
+                else result.Add(RetainedArgument(i, name));
+                continue;
+            }
+            if (i != replacement.Indices[0]) continue;
+            var replacementSlot = Slot(replacement.Node);
+            if (replacementSlot.IsArray)
+            {
+                if (normalize || !replacementSlot.IsParams || !names[i].Contains('['))
+                {
+                    var retained = RetainedArgument(i, replacementSlot.Name);
+                    result.Add(retained.WithExpression(ArrayExpression(replacementSlot.Name, replacement.Children)).WithTriviaFrom(retained));
+                }
+                else result.AddRange(replacement.Children.Select(SyntaxFactory.Argument));
+            }
+            else if (replacement.Children.Count > 0)
+            {
+                var retained = RetainedArgument(i, replacementSlot.Name);
+                result.Add(retained.WithExpression(replacement.Children.Single()).WithTriviaFrom(retained));
+            }
+        }
+        foreach (var replacement in replacements.Where(e => e.Indices.Length == 0))
+        {
+            var slot = Slot(replacement.Node);
+            if (slot.IsArray) result.Add(NamedArray(slot.Name, replacement.Children));
+            else foreach (var child in replacement.Children) result.Add(NamedArgument(slot.Name, child));
+        }
+        return WithCallArguments(current, CallArguments(current).WithArguments(SyntaxFactory.SeparatedList(result)));
+        ExpressionSyntax ArrayExpression(string name, IReadOnlyList<ExpressionSyntax> children) => SyntaxFactory.ParseExpression(ownerSchema.ChildArray(Expression(owner), name, children.Select(c => c.ToFullString()).ToArray()));
+        ArgumentSyntax NamedArray(string name, IReadOnlyList<ExpressionSyntax> children) => NamedArgument(name, ArrayExpression(name, children));
+        ArgumentSyntax RetainedArgument(int index, string name)
+        {
+            var retained = ArgumentWithSeparatorTrivia(arguments[index], source.Arguments, index);
+            return normalize && retained.NameColon == null ? retained.WithNameColon(SyntaxFactory.NameColon(SyntaxFactory.IdentifierName(EscapeIdentifier(name)))) : retained;
+        }
+        static ArgumentSyntax NamedArgument(string name, ExpressionSyntax expression) => SyntaxFactory.Argument(expression).WithNameColon(SyntaxFactory.NameColon(SyntaxFactory.IdentifierName(EscapeIdentifier(name))));
+    }
+    static string EscapeIdentifier(string name) => SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None ? "@" + name : name;
+    public Guid ReplaceChild(Guid parentId, string expression, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
+    {
+        var parent = ChildContainer(parentId); EditableContainer(parent);
+        if (Slot(parent).IsArray) throw new ArgumentException("Replace a scalar child slot; use list operations for an array.");
+        foreach (var child in parent.Children) Editable(child);
+        var phases = parent.Children.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").Select(n => StateName(n.Id)).OfType<string>().ToArray();
+        if (phases.Length > 0) LiteralReferences(OwningEntity(parent.Id), phases);
+        ValidateChildExpression(expression); var (_, fragment) = ChildFragment(parent, [expression]); var replacement = fragment.Children.Single();
+        RewriteChildren(new() { [parent.Id] = [replacement] }, new() { [replacement.Id] = SyntaxFactory.Argument(SyntaxFactory.ParseExpression(expression)) }, validate);
+        return replacement.Id;
     }
 }

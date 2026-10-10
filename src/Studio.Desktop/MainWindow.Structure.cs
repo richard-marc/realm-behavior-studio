@@ -23,6 +23,7 @@ public partial class MainWindow
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;
         if (deleteStructureButton != null) deleteStructureButton.IsEnabled = editable;
+        if (chooseChildSlotButton != null) chooseChildSlotButton.IsEnabled = editable;
         if (document.Parent(selectedNode.Id) is not { } parent) return;
         var siblings = parent.Children.ToList(); var index = siblings.FindIndex(n => n.Id == selectedNode.Id);
         if (upStructureButton != null) upStructureButton.IsEnabled = editable && index > 0 && RegionEditable(siblings[index - 1]);

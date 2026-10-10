@@ -159,30 +159,36 @@ public sealed partial class BehaviorDocument
     void RewriteChildren(Dictionary<Guid, List<BehaviorNode>> orders, Dictionary<Guid, ArgumentSyntax> additions, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
         var tree = CSharpSyntaxTree.ParseText(Source).GetRoot();
-        var containers = orders.Keys.ToDictionary(id => NodeExpression(tree, Find(id)), id => id);
+        var containers = orders.Keys.GroupBy(id => NodeExpression(tree, Find(id))).ToDictionary(g => g.Key, g => g.ToArray());
         var expressions = ChildExpressions(tree);
         foreach (var addition in additions) expressions[addition.Key] = addition.Value.Expression.WithTriviaFrom(addition.Value);
         foreach (var order in orders)
         {
             var parent = Find(order.Key); var slot = Slot(parent);
-            if (order.Value.Count < slot.Minimum || !slot.IsArray && order.Value.Count != 1)
-                throw new ArgumentException($"{parent.Label}.{slot.Name} requires {(slot.IsArray ? "at least " + slot.Minimum : "exactly one")} child.");
+            if (order.Value.Count < slot.Minimum || !slot.IsArray && order.Value.Count > 1)
+                throw new ArgumentException($"{parent.Label}.{slot.Name} requires {(slot.IsArray ? "at least " + slot.Minimum : slot.Minimum == 0 ? "at most one" : "exactly one")} child.");
             var owner = parent.Kind == "ArgumentGroup" ? Parent(parent.Id)! : parent;
             foreach (var child in order.Value)
-                if (child.Kind == "ArgumentGroup" || child.Kind != "Opaque" && schema != null && !SchemaAt(owner)!.AcceptsChild(Expression(owner), slot.Name, expressions[child.Id].ToString(), parent.Kind == "ArgumentGroup" ? Expression(parent) : null))
+                if (child.Kind == "ArgumentGroup" || child.Kind != "Opaque" && schema != null && !SchemaAt(owner)!.AcceptsChild(Expression(owner), slot.Name, expressions[child.Id].ToString(), parent.Kind == "ArgumentGroup" && !parent.ArgumentFromCall ? Expression(parent) : null))
                     throw new ArgumentException($"{child.Label} is not compatible with {parent.Label}.{slot.Name} ({slot.ElementType}).");
         }
         var changed = tree.ReplaceNodes(containers.Keys, (original, current) =>
         {
-            var parent = Find(containers[original]);
-            var sourceChildren = ContainerExpressions(original, parent).ToArray(); var rewrittenChildren = ContainerExpressions(current, parent).ToArray();
-            foreach (var child in parent.Children)
+            var parents = containers[original].Select(Find).ToArray();
+            foreach (var parent in parents)
             {
-                var index = Array.FindIndex(sourceChildren, e => e.SpanStart == child.Start);
-                var updated = rewrittenChildren[index];
-                expressions[child.Id] = updated.WithTriviaFrom(expressions[child.Id]);
+                var sourceChildren = ContainerExpressions(original, parent).ToArray(); var rewrittenChildren = ContainerExpressions(current, parent).ToArray();
+                foreach (var child in parent.Children)
+                {
+                    var index = Array.FindIndex(sourceChildren, e => e.SpanStart == child.Start);
+                    var updated = rewrittenChildren[index];
+                    expressions[child.Id] = updated.WithTriviaFrom(expressions[child.Id]);
+                }
             }
-            return RewriteContainer(current, original, parent, orders[parent.Id].Select(n => expressions[n.Id]).ToArray());
+            if (parents.All(p => p.ArgumentFromCall))
+                return RewriteCallSlots(current, original, parents.Select(p => (p, (IReadOnlyList<ExpressionSyntax>)orders[p.Id].Select(n => expressions[n.Id]).ToArray())).ToArray());
+            if (parents.Length != 1) throw new ArgumentException("Overlapping child containers cannot be rewritten independently.");
+            return RewriteContainer(current, original, parents[0], orders[parents[0].Id].Select(n => expressions[n.Id]).ToArray());
         }).ToFullString();
         CommitStructure(changed, orders, validate);
     }

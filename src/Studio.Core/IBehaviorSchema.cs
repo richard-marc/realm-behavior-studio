@@ -16,6 +16,7 @@ public interface IBehaviorSchema
     SourceExpression? DescribeExpression(string expression) => null;
     IEnumerable<DocumentDiagnostic> SourceDiagnostics() => [];
     string FragmentRoot(IReadOnlyList<string> expressions) => "new State(" + string.Join(",\n", expressions) + ")";
+    string ChildArray(string expression, string parameter, IReadOnlyList<string> children) => "new " + ChildArguments(expression).Single(p => p.Name == parameter).ElementType + "[] { " + string.Join(",\n", children) + " }";
     string[] ParameterNames(string kind);
     string[] ConstructorParameterNames(string expression);
     bool IsChildArgument(string expression, int argumentIndex);

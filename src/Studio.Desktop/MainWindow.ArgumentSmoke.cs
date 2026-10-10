@@ -29,7 +29,7 @@ public partial class MainWindow
         check(document.Find(cycle.Id).Children.First().Id == wander.Id && selectedNode!.Id == wander.Id, "Desktop array reorder changes native source while retaining focused identity");
         Undo(this, new());
         SelectNode(cycle.Id);
-        check(Inspector.Children.OfType<TextBlock>().Any(t => t.Text == "Native typed argument list") && !Inspector.Children.OfType<Button>().Any(b => Equals(b.Content, "Apply changes")), "Argument container inspector describes its role without fake primitive parameter controls");
+        check(Inspector.Children.OfType<TextBlock>().Any(t => t.Text == "CycleBehavior list") && Inspector.Children.OfType<TextBlock>().Any(t => t.Text.StartsWith("Child slot ·")) && chooseChildSlotButton?.IsEnabled == true && !Inspector.Children.OfType<Button>().Any(b => Equals(b.Content, "Apply changes")), "Argument container inspector describes its actual child type and chooser without fake primitive parameter controls");
         BeginNativeCreation(adapter.Primitives.Single(p => p.Name == "Taunt"));
         check(!createNativeButton!.IsEnabled, "Creation form disables incompatible Behavior insertion into a CycleBehavior array");
         SelectNode(cycle.Id); BeginNativeCreation(adapter.Primitives.Single(p => p.Name == "Wander"));

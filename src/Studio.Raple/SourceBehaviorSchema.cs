@@ -52,6 +52,13 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
     readonly int position;
     public bool HasSourceContext => true;
     public string FragmentRoot(IReadOnlyList<string> expressions) => adapter.FragmentRoot(expressions);
+    public string ChildArray(string expression, string parameter, IReadOnlyList<string> children)
+    {
+        var source = Expression(expression);
+        if (source != null && Model.GetSymbolInfo(source).Symbol is IMethodSymbol method && method.Parameters.Single(p => p.Name == parameter).Type is IArrayTypeSymbol array)
+            return "new " + array.ElementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "[] { " + string.Join(",\n", children) + " }";
+        return adapter.ChildArray(expression, parameter, children);
+    }
     public SourceBehaviorSchema(RapleAdapter adapter, SourceSchemaCache cache, string source, string file)
         : this(adapter, new Context(cache, source, file), -1) { }
     public SourceBehaviorSchema(RapleAdapter adapter, CSharpCompilation compiler, string file)
@@ -123,7 +130,7 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
             slots[i] = parameter.Name + (expanded ? "[" + count + "]" : "");
         }
         var children = method.Parameters.Where(p => Child(Element(p.Type)))
-            .Select(p => new ChildArgument(p.Name, Element(p.Type).Name, p.Type is IArrayTypeSymbol, p.IsParams, p.Type is not IArrayTypeSymbol || expression is ObjectCreationExpressionSyntax && type!.Name == "Prioritize" ? 1 : 0)).ToArray();
+            .Select(p => new ChildArgument(p.Name, Element(p.Type).Name, p.Type is IArrayTypeSymbol, p.IsParams, p.Type is not IArrayTypeSymbol && !p.IsOptional || expression is ObjectCreationExpressionSyntax && type!.Name == "Prioritize" ? 1 : 0)).ToArray();
         var standalone = RapleAdapter.Binding(text);
         var actualType = method.ContainingType.ToDisplayString().Replace("@", "");
         var nativeType = Native(type, "State") || adapter.Primitives.Any(p => p.Name == type!.Name) && RapleAdapter.NativeTypeName(type!.Name) == type.ToDisplayString().Replace("@", "");
