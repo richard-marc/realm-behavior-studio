@@ -181,7 +181,7 @@ public partial class MainWindow
     {
         var canEdit = nodeSelection.Count > 0 && nodeSelection.All(id => document.CanOrganize(id) && RegionEditable(document.Find(id)));
         yield return new("Copy selection", "Ctrl+C", CopySelectedNodes, canEdit);
-        yield return new("Paste into focused phase", "Ctrl+V · independent nodes and unique phase names", PasteSelectedNodes, selectedNode != null);
+        yield return new("Paste into focused phase", "Ctrl+V · source scope and shared references preserved", PasteSelectedNodes, selectedNode != null);
         yield return new("Group selection into phase", "Ctrl+G · adjacent siblings; changes phase entry/inheritance", GroupSelectedNodes, canEdit);
         yield return new("Delete selection", "Delete · includes incoming phase transitions", DeleteSelectedNodes, canEdit);
         yield return new("Expand all phases", "Show the complete hierarchy", () => SetAllPhasesExpanded(true));

@@ -20,6 +20,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(int count = 4, double range = 8) => new TKR.WorldServer.logic.behaviors.Shoot(range, count: count, shootAngle: 12, fixedAngle: 90, coolDown: 200);
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(string text) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: text.Length);
     static State StudioContextShared { get { throw new System.InvalidOperationException("authoring must not execute this getter"); } }
+    static readonly TKR.WorldServer.logic.behaviors.Shoot StudioContextSharedAction = new TKR.WorldServer.logic.behaviors.Shoot(8, count: 3, fixedAngle: 90, coolDown: 200);
     static TKR.WorldServer.logic.behaviors.Timed StudioContextWrap(params TKR.WorldServer.logic.Behavior[] children) => new TKR.WorldServer.logic.behaviors.Timed(1000, children);
     static State StudioContextMessages(params string[] text) => new State(string.Join("-", text));
     static State StudioContextKeyword(int @event = 1) => new State(@event.ToString());
@@ -97,10 +98,50 @@ Reject(() => grouped.AddChild(group.Id, "new TimedTransition(100, \"hidden\")", 
 grouped.DeleteNodes([shoot.Id, wander.Id], d => adapter.Validate(d, "Cave Pirate Brawler"));
 Check(grouped.Find(group.Id).Children.Count == 0 && grouped.Source.Contains("Behavior[]"), "Empty factory array preserves its explicit native element type");
 Check(grouped.Undo() && grouped.Find(group.Id).Children.Count == 2, "Factory child structure restores atomically through undo");
+var structural = Doc("new State(StudioContextWrap(children: new TKR.WorldServer.logic.Behavior[] { StudioContextFan(/* preserve count */ StudioContextCount), StudioContextSharedAction }), new Timed(500, new Wander(StudioContextSpeed)))");
+var structuralRoot = Root(structural); var sourceWrap = structuralRoot.Children[0]; var sourceList = sourceWrap.Children.Single(); var leafFactory = sourceList.Children[0]; var sharedAction = sourceList.Children[1]; var timed = structuralRoot.Children[1];
+Check(structural.CanOrganize(sourceWrap.Id) && structural.CanOrganize(leafFactory.Id) && structural.CanOrganize(sharedAction.Id) && !structural.CanOrganize(structuralRoot.Id), "Typed source helpers and shared references expose structural editing while encounter roots stay fixed");
+var clonedWrap = structural.DuplicateNode(sourceWrap.Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(structural.Find(clonedWrap).Kind == "Factory" && structural.Find(clonedWrap).Descendants().All(n => !sourceWrap.Descendants().Any(old => old.Id == n.Id)) && structural.Find(clonedWrap).Children.Single().Children.Select(n => n.Kind).SequenceEqual(["Factory", "Reference"]), "Duplicating a factory preserves nested source-bound children with fresh identities");
+Check(structural.Source.Contains("StudioContextFan(/* preserve count */ StudioContextCount)") && structural.Find(clonedWrap).Children.Single().Children[0].Parameters.Single().Expression == "StudioContextCount", "Factory copies retain argument comments and original constant expressions");
+structural.MoveNodes([leafFactory.Id, sharedAction.Id], timed.Id, 1, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(structural.Find(sourceList.Id).Children.Count == 0 && structural.Find(timed.Id).Children.Skip(1).Select(n => n.Id).SequenceEqual([leafFactory.Id, sharedAction.Id]), "Moving helpers and shared references between native child slots preserves their identities and order");
+var copiedReference = structural.DuplicateNode(sharedAction.Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(structural.Find(copiedReference).Kind == "Reference" && structural.Expression(structural.Find(copiedReference)) == structural.Expression(structural.Find(sharedAction.Id)), "Copying a shared reference preserves the original C# sharing semantics");
+var beforeLock = structural.Source; structural.LockedNodes.Add(timed.Id);
+Reject(() => structural.CopyNodes([leafFactory.Id]), "Source helper copy respects locked ancestors");
+Reject(() => structural.AddChild(timed.Id, "StudioContextFan()"), "Source helper insertion respects locked destinations"); structural.LockedNodes.Clear();
+Check(structural.Source == beforeLock, "Rejected locked source operations preserve the source");
+var beforeInvalid = structural.Source; var beforeInvalidRevision = structural.Revision;
+Reject(() => structural.AddChild(timed.Id, "StudioContextShared", d => adapter.Validate(d, "Cave Pirate Brawler")), "Native Behavior slots reject shared State references by their actual source type");
+Reject(() => structural.AddChild(timed.Id, "StudioContextMissingHelper()", d => adapter.Validate(d, "Cave Pirate Brawler")), "Unresolved pasted helpers reject atomically in the destination source context");
+Check(structural.Source == beforeInvalid && structural.Revision == beforeInvalidRevision, "Invalid source expression placements preserve the last valid revision");
+structural.AddChild(timed.Id, "StudioContextFan(range: 7, count: StudioContextCount)", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(structural.Find(timed.Id).Children.Last().Kind == "Factory" && structural.Find(timed.Id).Children.Last().Parameters.Select(p => p.Name).SequenceEqual(["range", "count"]), "Adding a helper binds its real overload and named arguments in the original file");
+Check(structural.Undo() && structural.Source == beforeInvalid && structural.Redo() && structural.Find(timed.Id).Children.Last().Kind == "Factory", "Source-aware insertion restores source and node identities through undo and redo");
+var otherContext = new BehaviorDocument(original, adapter, sourceFile: file); var otherSource = otherContext.Source;
+Reject(() => otherContext.PasteNodes(Root(otherContext).Id, 0, structural.CopyNodes([leafFactory.Id]), d => adapter.Validate(d, "Cave Pirate Brawler")), "Cross-document paste rejects a helper absent from the destination's source scope");
+Check(otherContext.Source == otherSource, "A missing destination helper leaves the other document untouched");
+var referenceCopy = Doc("new State(StudioContextShared)"); var sharedStateId = Root(referenceCopy).Children.Single().Id;
+Check(referenceCopy.DuplicateNode(sharedStateId, d => adapter.Validate(d, "Cave Pirate Brawler")) != sharedStateId && Root(referenceCopy).Children.All(n => n.Kind == "Reference"), "Shared State references duplicate without executing a throwing getter");
+var stateShadowSource = "using State = TKR.WorldServer.logic.behaviors.Follow;\n" + Doc("new StudioStatePlaceholder(StudioContextFan(), new Wander(StudioContextSpeed))").Source.Replace("new State(", "new global::TKR.WorldServer.logic.State(").Replace("new StudioStatePlaceholder(", "new global::TKR.WorldServer.logic.State(");
+var stateShadow = new BehaviorDocument(stateShadowSource, adapter, sourceFile: file);
+stateShadow.DuplicateNode(Root(stateShadow).Children[0].Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
+var newGroup = stateShadow.GroupNodes(Root(stateShadow).Children.Select(n => n.Id), "grouped source", d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(stateShadow.Find(newGroup).Kind == "State" && stateShadow.Find(newGroup).Children.Count == 3 && stateShadow.Source.Contains("new global::TKR.WorldServer.logic.State(\"grouped source\""), "Source-aware copy and grouping use fully qualified native State constructors");
+var duplicatedAttack = Doc("new State(new State(\"source duplicate\", StudioContextFan(count: 2)))");
+var nativeLeaf = Root(duplicatedAttack).Children.Single().Children.Single(); duplicatedAttack.DuplicateNode(nativeLeaf.Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
 var phase = Doc("new State(new State(\"visible\", new Shoot(8)), StudioContextFan())");
 Reject(() => phase.RenameState(Root(phase).Children[0].Id, "renamed"), "Visible phase rename refuses to guess hidden helper references");
 Reject(() => factory.ReplaceSource(factory.Source.Replace("count: count", "count: StudioNoSuchCount")), "Compiler errors in a helper body reject complete source replacement");
 var output = Path.GetFullPath(".artifacts/source-context"); Directory.CreateDirectory(output);
+var structuralProject = new StudioProject { SourceFile = file, Source = structural.Source, EntityId = "Cave Pirate Brawler", Identities = structural.Identities, Seed = 7 };
+var structuralPath = Path.Combine(output, "source-structure.rbs"); BehaviorDocument.Save(structuralPath, structuralProject); var structuralSaved = BehaviorDocument.Load(structuralPath);
+var structuralReopened = new BehaviorDocument(structuralSaved.Source, adapter, structuralSaved.Identities, structuralSaved.SourceFile);
+Check(structuralReopened.Source == structural.Source && structuralReopened.Identities.SequenceEqual(structural.Identities), "Saved duplicated helpers, nested lists and shared references reopen with every editor identity intact");
+var reopenedBeforeDelete = structuralReopened.Source;
+structuralReopened.DeleteNodes([copiedReference, leafFactory.Id], d => adapter.Validate(d, "Cave Pirate Brawler"));
+Check(!structuralReopened.Identities.Any(i => i.Id == copiedReference || i.Id == leafFactory.Id) && structuralReopened.Undo() && structuralReopened.Source == reopenedBeforeDelete && structuralReopened.Find(copiedReference).Kind == "Reference", "Deleting a mixed helper/reference selection and undoing restores its complete source and identities");
 var project = new StudioProject { SourceFile = file, Source = factory.Source, EntityId = "Cave Pirate Brawler", Identities = factory.Identities, Seed = 7 };
 var saved = Path.Combine(output, "factory.rbs"); BehaviorDocument.Save(saved, project); var loaded = BehaviorDocument.Load(saved);
 var reopened = new BehaviorDocument(loaded.Source, adapter, loaded.Identities, loaded.SourceFile);
@@ -117,6 +158,11 @@ await using (var native = await CompiledRuntime.StartAsync(server, project with 
     var startX = native.Entities.Single().X;
     for (var i = 0; i < 10; i++) await native.AdvanceAsync(new(Y: 1));
     Check(native.Shots.Count == 0 && native.Entities.Single().X != startX, "Aliased Shoot source executes native Follow movement without substituting a Shoot attack");
+}
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = duplicatedAttack.Source, Identities = duplicatedAttack.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new(Y: 1));
+    Check(native.Shots.Count == 2 && native.Shots.All(s => s.Count == 2) && native.Entities.Single().Phase == "source duplicate", "Duplicated source helpers execute two real native attacks inside the original phase");
 }
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));

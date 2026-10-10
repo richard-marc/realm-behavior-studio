@@ -9,7 +9,7 @@ public sealed partial class BehaviorDocument
     {
         try { ChildContainer(id); return true; } catch (ArgumentException) { return false; }
     }
-    public bool CanOrganize(Guid id) => Find(id).Kind is not ("ArgumentGroup" or "Opaque" or "Factory" or "Reference") && Parent(id) is { } parent && CanEditChildren(parent.Id) && ChildContainer(parent.Id).Id == parent.Id;
+    public bool CanOrganize(Guid id) => Find(id).Kind is not ("ArgumentGroup" or "Opaque") && Parent(id) is { } parent && CanEditChildren(parent.Id) && ChildContainer(parent.Id).Id == parent.Id;
     public bool AcceptsChild(Guid id, string expression)
     {
         try

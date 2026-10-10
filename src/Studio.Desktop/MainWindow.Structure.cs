@@ -49,7 +49,7 @@ public partial class MainWindow
             var button = new Button { Content = label, ToolTip = hint, IsEnabled = enabled, Margin = new(column == 0 ? 0 : 5, 0, 0, 0), Padding = new(8, 7, 8, 7) };
             button.Click += handler; Grid.SetColumn(button, column); tools.Children.Add(button); return button;
         }
-        duplicateStructureButton = Tool("Duplicate", 0, DuplicateSelectedNode, "Copy this branch with unique phase names and independent nodes.", editable);
+        duplicateStructureButton = Tool("Duplicate", 0, DuplicateSelectedNode, node.Kind == "Reference" ? "Copy this reference. Both nodes keep using the same shared source value." : "Copy this branch with unique phase names and new editor identities.", editable);
         upStructureButton = Tool("↑", 1, MoveSelectedNodeUp, "Move earlier in source order.", editable && index > 0 && RegionEditable(siblings[index - 1]));
         downStructureButton = Tool("↓", 2, MoveSelectedNodeDown, "Move later in source order.", editable && index + 1 < siblings.Count && RegionEditable(siblings[index + 1]));
         deleteStructureButton = Tool("×", 3, DeleteSelectedNode, "Delete this branch and transitions targeting its phases. Undo restores both.", editable);

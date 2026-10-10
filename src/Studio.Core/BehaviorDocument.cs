@@ -194,10 +194,10 @@ public sealed partial class BehaviorDocument
     public void AddChild(Guid parentId, string expression, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
         var parent = ChildContainer(parentId); EditableContainer(parent);
+        ValidateChildExpression(expression);
         var child = SyntaxFactory.ParseExpression(expression);
-        if (child.ContainsDiagnostics || child is not ObjectCreationExpressionSyntax) throw new ArgumentException("Invalid behavior expression.");
-        var fragment = new BehaviorDocument("class Fragment { void Build() { db.Init(\"__fragment__\", new State(" + expression + ")); } }", names, schema: schema);
-        var node = fragment.Entities.Single().Root.Children.Single();
+        var (_, fragmentRoot) = ChildFragment(parent, [expression]);
+        var node = fragmentRoot.Children.Single();
         var children = parent.Children.ToList(); children.Add(node);
         RewriteChildren(new() { [parent.Id] = children }, new() { [node.Id] = SyntaxFactory.Argument(child) }, validate);
     }

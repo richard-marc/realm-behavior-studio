@@ -18,10 +18,12 @@ public partial class MainWindow
 
         namespace TKR.WorldServer.logic { public partial class BehaviorDb {
             const double StudioPreviewSpeed = .3;
+            static readonly TKR.WorldServer.logic.behaviors.Shoot StudioPreviewShared = new TKR.WorldServer.logic.behaviors.Shoot(8, count: 2, coolDown: 200);
             static State StudioPreviewRoot(int count = 4, double speed = .3) => new State(new State("native preview", StudioPreviewFan(count), new TKR.WorldServer.logic.behaviors.Follow(speed, range: 1)));
             static TKR.WorldServer.logic.behaviors.Shoot StudioPreviewFan(int count) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: count, coolDown: 200);
         } }
         """;
+        RunSourceStructureUiSmoke(source, root, helpers, output, check);
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);
         Changed(); var factory = document.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
         check(factory.Kind == "Factory" && factory.Parameters.Single().Name == "count", "Desktop discovers the imported source helper as the encounter root");
@@ -76,4 +78,33 @@ public partial class MainWindow
         File.WriteAllText(Path.Combine(output, "ui-checks.json"), JsonSerializer.Serialize(new { checks, spriteSheets = sprites.SheetCount, loadedFrames = sprites.LoadedFrames, fallbackNames = sprites.Missing.Order().ToArray() }, BehaviorDocument.JsonOptions));
         Application.Current.Shutdown();
     });
+    void RunSourceStructureUiSmoke(string source, BehaviorNode root, string helpers, string output, Action<bool, string> check)
+    {
+        const string expression = "new State(StudioPreviewFan(4), StudioPreviewShared, new Timed(500, new Wander(StudioPreviewSpeed)))";
+        document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity!.SourceFile);
+        Changed(); WorkspaceTabs.SelectedIndex = 1;
+        var factory = EncounterRoot.Children[0]; var reference = EncounterRoot.Children[1]; var timed = EncounterRoot.Children[2];
+        SelectNode(factory.Id);
+        check(duplicateStructureButton?.IsEnabled == true && downStructureButton?.IsEnabled == true, "Factory selection exposes enabled desktop Duplicate and reorder controls");
+        duplicateStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var copiedFactory = selectedNode!.Id;
+        check(copiedFactory != factory.Id && selectedNode.Kind == "Factory" && EncounterRoot.Children.Count == 4 && selectedNode.Parameters.Single().Expression == "4", "Desktop Duplicate copies a source helper with bound arguments and a fresh editor identity");
+        upStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(EncounterRoot.Children[0].Id == copiedFactory && selectedNode!.Id == copiedFactory, "Desktop reorder moves a helper in source order and preserves its selection");
+        BehaviorClipboard? clipboard = null; var previousRead = readNodeClipboard; var previousWrite = writeNodeClipboard;
+        readNodeClipboard = () => clipboard; writeNodeClipboard = value => clipboard = value;
+        try
+        {
+            CopySelectedNodes(); SelectNode(timed.Id); PasteSelectedNodes();
+            check(clipboard?.Expressions.Single() == "StudioPreviewFan(4)" && document.Find(timed.Id).Children.Last().Kind == "Factory" && selectedNode!.Id != copiedFactory, "Desktop clipboard paste binds a helper inside a native wrapper's actual source scope");
+            Undo(this, new());
+            check(document.Find(timed.Id).Children.Count == 1 && EncounterRoot.Children[0].Id == copiedFactory, "Desktop Undo restores a source-helper paste as one complete edit");
+        }
+        finally { readNodeClipboard = previousRead; writeNodeClipboard = previousWrite; }
+        SelectNode(reference.Id);
+        check(duplicateStructureButton?.IsEnabled == true && duplicateStructureButton.ToolTip is string hint && hint.Contains("shared source value"), "Shared-reference Duplicate explains that copies retain the same source value");
+        duplicateStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(selectedNode!.Kind == "Reference" && selectedNode.Id != reference.Id && document.Expression(selectedNode) == "StudioPreviewShared", "Desktop Duplicate preserves shared-reference syntax without expanding its definition");
+        UpdateLayout(); CaptureView(this, Path.Combine(output, "source-structure.png"));
+    }
 }

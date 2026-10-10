@@ -51,6 +51,7 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
     readonly Context context;
     readonly int position;
     public bool HasSourceContext => true;
+    public string FragmentRoot(IReadOnlyList<string> expressions) => adapter.FragmentRoot(expressions);
     public SourceBehaviorSchema(RapleAdapter adapter, SourceSchemaCache cache, string source, string file)
         : this(adapter, new Context(cache, source, file), -1) { }
     public SourceBehaviorSchema(RapleAdapter adapter, CSharpCompilation compiler, string file)

@@ -33,10 +33,9 @@ public sealed partial class BehaviorDocument
         if (clipboard.Version != 1 || clipboard.Expressions == null || clipboard.Expressions.Count is < 1 or > 256 || clipboard.Expressions.Sum(e => e?.Length ?? 0) > 2_000_000)
             throw new ArgumentException("Unsupported or oversized behavior clipboard.");
         foreach (var expression in clipboard.Expressions)
-            if (expression == null || SyntaxFactory.ParseExpression(expression) is not ObjectCreationExpressionSyntax syntax || syntax.ContainsDiagnostics)
-                throw new ArgumentException("Clipboard entries must be valid constructor expressions.");
-        var temporary = new BehaviorDocument("class Fragment { void Build() { db.Init(\"__fragment__\", new State(" + string.Join(",\n", clipboard.Expressions) + ")); } }", names, schema: schema);
-        var fragmentRoot = temporary.Entities.Single().Root;
+            ValidateChildExpression(expression);
+        var (temporary, fragmentRoot) = ChildFragment(parent, clipboard.Expressions);
+        var fragmentEntityId = temporary.Entities.Single(e => e.Root.Id == fragmentRoot.Id).EntityId;
         var phases = fragmentRoot.Children.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").ToArray();
         var originals = phases.Select(n => temporary.StateName(n.Id) ?? throw new ArgumentException("Name phases before copying them.")).ToArray();
         if (originals.Distinct(StringComparer.Ordinal).Count() != originals.Length) throw new ArgumentException("Copied phases must have unique names.");
@@ -47,11 +46,37 @@ public sealed partial class BehaviorDocument
             while (taken.Contains(candidate)) candidate = originals[i] + "-copy-" + suffix++;
             taken.Add(candidate); temporary.RenameState(phases[i].Id, candidate);
         }
-        var additions = temporary.Entities.Single().Root.Children.ToArray();
+        var additions = temporary.Entities.Single(e => e.EntityId == fragmentEntityId).Root.Children.ToArray();
         var arguments = additions.ToDictionary(n => n.Id, n => SyntaxFactory.Argument(SyntaxFactory.ParseExpression(temporary.Expression(n))));
         var children = parent.Children.ToList(); children.InsertRange(index, additions);
         RewriteChildren(new() { [parent.Id] = children }, arguments, validate);
         return additions.Select(n => n.Id).ToArray();
+    }
+    void ValidateChildExpression(string? expression)
+    {
+        if (expression == null) throw new ArgumentException("Enter a behavior expression.");
+        var syntax = SyntaxFactory.ParseExpression(expression);
+        if (syntax.ContainsDiagnostics || syntax.FullSpan.Length != expression.Length ||
+            syntax is not ObjectCreationExpressionSyntax && !(schema?.HasSourceContext == true && syntax is InvocationExpressionSyntax or IdentifierNameSyntax or MemberAccessExpressionSyntax))
+            throw new ArgumentException("Enter a valid constructor, source helper call or shared behavior reference.");
+    }
+    (BehaviorDocument Document, BehaviorNode Root) ChildFragment(BehaviorNode destination, IReadOnlyList<string> expressions)
+    {
+        if (schema?.HasSourceContext != true)
+        {
+            var standalone = new BehaviorDocument("class Fragment { void Build() { db.Init(\"__fragment__\", new State(" + string.Join(",\n", expressions) + ")); } }", names, schema: baseSchema);
+            return (standalone, standalone.Entities.Single().Root);
+        }
+        var entity = OwningEntity(destination.Id);
+        var wrapper = schema.FragmentRoot(expressions);
+        var source = Source.Remove(entity.Root.Start, entity.Root.Length).Insert(entity.Root.Start, wrapper);
+        var document = new BehaviorDocument(source, names, schema: baseSchema, sourceFile: SourceFile);
+        var errors = document.SourceDiagnostics().Where(d => d.IsError).ToArray();
+        if (errors.Length > 0) throw new ArgumentException(string.Join("\n", errors.Select(d => d.Message)));
+        var root = document.Entities.Single(e => e.EntityId == entity.EntityId).Root;
+        if (root.Children.Count != expressions.Count || root.Children.Any(n => n.Kind == "Opaque"))
+            throw new ArgumentException("Every pasted expression must resolve to a native behavior, phase or transition in the destination source context.");
+        return (document, root);
     }
     public void MoveNodes(IEnumerable<Guid> ids, Guid parentId, int index, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
@@ -88,7 +113,8 @@ public sealed partial class BehaviorDocument
         var siblings = parent.Children.ToList(); var positions = nodes.Select(n => siblings.FindIndex(s => s.Id == n.Id)).ToArray();
         if (positions[^1] - positions[0] + 1 != positions.Length) throw new ArgumentException("Select adjacent nodes to preserve their source order when grouping.");
         var tree = CSharpSyntaxTree.ParseText(Source).GetRoot(); var parentExpressions = ChildExpressions(tree);
-        var groupCreation = (ObjectCreationExpressionSyntax)SyntaxFactory.ParseExpression("new State(" + SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(name)).ToFullString() + ")");
+        var groupName = SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(name)).ToFullString();
+        var groupCreation = (ObjectCreationExpressionSyntax)SyntaxFactory.ParseExpression(schema?.FragmentRoot([groupName]) ?? "new State(" + groupName + ")");
         var selectedArguments = nodes.Select(node =>
         {
             return SyntaxFactory.Argument(parentExpressions[node.Id]);

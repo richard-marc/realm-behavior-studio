@@ -18,6 +18,7 @@ public record CatalogEntry(string Id, ushort ObjectType, string SourceFile)
 public sealed partial class RapleAdapter : IBehaviorSchema
 {
     public string ServerRoot { get; }
+    public string FragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(" + string.Join(",\n", expressions) + ")";
     readonly SourceSchemaCache sourceSchemas;
     public IBehaviorSchema ForSource(string source, string? sourceFile)
     {
