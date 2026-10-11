@@ -29,6 +29,7 @@ public partial class MainWindow
         RefreshPathSelection();
         UpdateProjectileControls();
         UpdateEntityControls();
+        if(ownedLaneAxes!=null)ownedLaneAxes.IsEnabled=editable;
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;
         if (deleteStructureButton != null) deleteStructureButton.IsEnabled = editable;

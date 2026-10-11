@@ -20,7 +20,7 @@ public partial class MainWindow
     Button? creationUseEntityButton;
     static IReadOnlyList<EntityChoice> EntityChoicesFor(EntityParameter parameter)
     {
-        var choices = EntityResources.Catalog(parameter.Scope).Select(resource => new EntityChoice(resource.Id, resource.Title, resource.SpriteId, resource.Summary + (parameter.Scope == EntityResourceScope.Resolvable && resource.RuntimeKind != "Enemy" ? "\nAdditional world context may be required during Play." : ""))).ToList();
+        var choices = EntityResources.Catalog(parameter).Select(resource => new EntityChoice(resource.Id, resource.Title, resource.SpriteId, resource.Summary + (parameter.RequiredProjectileIndex is {} index ? "\nRequired XML projectile #"+index : "") + (parameter.Scope == EntityResourceScope.Resolvable && resource.RuntimeKind != "Enemy" ? "\nAdditional world context may be required during Play." : ""))).ToList();
         if (parameter.AllowsPlayer) choices.Insert(0, new(null, "Nearest player", "Wizard", "Native null target · searches the player collision index"));
         return choices;
     }

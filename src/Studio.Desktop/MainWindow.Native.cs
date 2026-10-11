@@ -123,6 +123,8 @@ public partial class MainWindow
         if (kind == "Prioritize" && parameter.Name == "children") return "new CycleBehavior[] { new Wander(.3) }";
         if (kind == "OnDeathBehavior" && parameter.Name == "behavior") return "new ConditionEffectBehavior(ConditionEffectIndex.Invulnerable)";
         if (kind == "OrderedBehavior" && parameter.Name == "children") return "new Behavior[] { new " + adapter.CreationTypeName("NewMove") + "() }";
+        if (kind == "OwnedLaneEmitters" && parameter.Name == "childName") return PhaseLiteral("Gordo Procession Emitter");
+        if (kind == "OwnedLaneEmitters" && parameter.Name == "axes") return "global::TKR.WorldServer.logic.behaviors.LaneAxes.Horizontal";
         if (parameter.Default != "required") return "";
         if (parameter.Name == "speed" && parameter.Type is "Single" or "float") return "0.3f";
         if (kind == "MoveTo" && parameter.Name is "x" or "y") return parameter.Name == "x" ? "68.5f" : "64.5f";

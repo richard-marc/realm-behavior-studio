@@ -116,6 +116,7 @@ public sealed class EncounterSession : IEncounterSession
         var type = SimEngine.Data.IdToObjectType[entity];
         // Keep spawned instances on the edited behavior too; unrelated minions use their production definitions.
         engine.Server.BehaviorDb.Definitions[type] = Tuple.Create(root, engine.Server.BehaviorDb.Definitions[type].Item2);
+        RapleAdapter.ValidateLaneRuntime(root,engine.Server.BehaviorDb);
         boss = NativeMapFile.SpawnConfigured(engine,new(entity,arena.BossX,arena.BossY,arena.BossConfig));
         foreach(var actor in arena.Actors)NativeMapFile.SpawnConfigured(engine,actor);
         engine.FlushAdds();

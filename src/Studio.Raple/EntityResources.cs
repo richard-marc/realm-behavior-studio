@@ -11,16 +11,20 @@ public sealed record EntityResource(string Id, string DisplayName, ushort Object
     public string Title => Id;
     public string Summary => $"{RuntimeKind} · 0x{ObjectType:X4}" + (RuntimeKind == "Enemy" ? $" · HP {MaxHp} · defense {Defense}" : "") + (string.IsNullOrWhiteSpace(Group) ? "" : "\n" + Group);
 }
-public sealed record EntityParameter(string Name, string Label, EntityResourceScope Scope, bool AllowsPlayer, string? InactiveReason = null);
+public sealed record EntityParameter(string Name, string Label, EntityResourceScope Scope, bool AllowsPlayer, string? InactiveReason = null, int? RequiredProjectileIndex = null);
 public sealed record EntityReference(bool Known, string? Id);
 
 public static class EntityResources
 {
+    static bool MatchesScope(EntityResource resource,EntityResourceScope scope)=>scope == EntityResourceScope.Resolvable || scope == EntityResourceScope.Enemy && resource.RuntimeKind == "Enemy" || scope == EntityResourceScope.Queryable && resource.Queryable;
+    static bool HasProjectile(ObjectDesc desc,int? required)=>required is not {} index||desc.Projectiles.TryGetValue(index,out var projectile)&&projectile.BulletType==index;
+    public static IReadOnlyList<EntityResource> Catalog(EntityParameter parameter)=>Catalog(parameter.Scope).Where(resource=>HasProjectile(SimEngine.Data.ObjectDescs[resource.ObjectType],parameter.RequiredProjectileIndex)).ToArray();
+    public static bool Accepts(EntityParameter parameter,string id)=>SimEngine.Data.IdToObjectType.TryGetValue(id,out var type)&&SimEngine.Data.ObjectDescs.TryGetValue(type,out var desc)&&MatchesScope(Describe(id,desc),parameter.Scope)&&HasProjectile(desc,parameter.RequiredProjectileIndex);
     // Resolve the ID map first: XML aliases and repeated IDs must expose the
     // descriptor the native constructor actually resolves, including its sprite.
     public static IReadOnlyList<EntityResource> Catalog(EntityResourceScope scope) => SimEngine.Data.IdToObjectType
         .Where(pair => SimEngine.Data.ObjectDescs.ContainsKey(pair.Value)).Select(pair => Describe(pair.Key, SimEngine.Data.ObjectDescs[pair.Value]))
-        .Where(resource => scope == EntityResourceScope.Resolvable || scope == EntityResourceScope.Enemy && resource.RuntimeKind == "Enemy" || scope == EntityResourceScope.Queryable && resource.Queryable)
+        .Where(resource => MatchesScope(resource,scope))
         .OrderBy(resource => resource.Id, StringComparer.OrdinalIgnoreCase).ToArray();
     static EntityResource Describe(string id, ObjectDesc desc)
     {
@@ -43,6 +47,7 @@ public sealed partial class RapleAdapter
     {
         "Spawn" => new("children", "Spawn entity", EntityResourceScope.Enemy, false),
         "InstantSpawnRing" => new("childName", "Ring helper", EntityResourceScope.Enemy, false),
+        "OwnedLaneEmitters" => new("childName", "Lane emitter", EntityResourceScope.Enemy, false, RequiredProjectileIndex: 0),
         "Order" or "OrderOnce" => new("children", "Ordered entity", EntityResourceScope.Queryable, false),
         "OrderOnDeath" => new("target", "Ordered entity", EntityResourceScope.Queryable, false),
         "Follow" or "Orbit" => new("target", "Target entity", EntityResourceScope.Queryable, true),
@@ -63,7 +68,7 @@ public sealed partial class RapleAdapter
     public void ApplyEntityReference(BehaviorDocument document, string entityId, Guid nodeId, long revision, string parameterName, string? resourceId)
     {
         var node = document.Find(nodeId); var parameter = EntityParameterFor(document, node);
-        if (parameter == null || parameter.Name != parameterName || parameter.InactiveReason != null || resourceId == null && !parameter.AllowsPlayer || resourceId != null && !EntityResources.Catalog(parameter.Scope).Any(resource => resource.Id == resourceId))
+        if (parameter == null || parameter.Name != parameterName || parameter.InactiveReason != null || resourceId == null && !parameter.AllowsPlayer || resourceId != null && !EntityResources.Accepts(parameter,resourceId))
             throw new InvalidOperationException("Choose an entity accepted by this native parameter.");
         var expression = resourceId == null ? "null" : SyntaxFactory.Literal(resourceId).ToFullString();
         document.Apply(new(revision, "Choose " + parameter.Label, [new(nodeId, parameter.Name, expression)]), candidate => Validate(candidate, entityId));

@@ -42,7 +42,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
-        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform"];
+        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root)
     {
@@ -66,7 +66,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
                 t.Name.Contains("Spawn") ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name=="OwnedLaneEmitters" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -74,7 +74,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string FormatDefault(ParameterInfo p) => p.DefaultValue == null ? (p.ParameterType.IsValueType ? "default" : "null") : Convert.ToString(p.DefaultValue, CultureInfo.InvariantCulture) ?? "default";
     public string[] ParameterNames(string kind) => kind == "State" ? ["name"] : EngineAssembly.GetTypes().Where(t => t.Name == kind && typeof(IStateChildren).IsAssignableFrom(t))
         .SelectMany(t => t.GetConstructors()).SelectMany(c => c.GetParameters()).Select(p => p.Name!).Distinct().ToArray();
-    static string Unit(string name, string? kind = null) => kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
+    static string Unit(string name, string? kind = null) => kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name) => name switch
     {
         "coolDown" => "Runtime countdown, quantized to 100 ms ticks. Shoot generally adds a tick between volleys; 0 normalizes to its runtime default.",
@@ -125,6 +125,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     public IEnumerable<DocumentDiagnostic> Validate(BehaviorDocument document, string? entityId = null)
     {
         foreach (var diagnostic in document.SourceDiagnostics()) yield return diagnostic;
+        foreach (var diagnostic in ValidateOwnedEmitters(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId))
         {
             var nodes = entity.Root.Descendants().ToArray();

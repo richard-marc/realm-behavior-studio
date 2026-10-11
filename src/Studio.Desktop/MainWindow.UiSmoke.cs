@@ -31,6 +31,15 @@ public partial class MainWindow
             var pixels = new byte[image.PixelWidth * image.PixelHeight * 4]; source.CopyPixels(pixels, image.PixelWidth * 4, 0); return pixels;
         }
         var down = sprites.Character("Wizard", SpriteAction.Walk, 0, Math.PI / 2);
+        var atlasPath=Path.Combine(sprites.ClientRoot,"src/kabam/rotmg/assets/projectiles.frames.json");
+        using(var atlas=JsonDocument.Parse(File.ReadAllText(atlasPath)))
+        {
+            var frame=atlas.RootElement.GetProperty("frames").EnumerateArray().Single(f=>f.GetProperty("index").GetInt32()==7).GetProperty("atlas").EnumerateArray().Select(n=>n.GetInt32()).ToArray();
+            var atlasBitmap=new BitmapImage(new Uri(Path.Combine(Path.GetDirectoryName(atlasPath)!,atlas.RootElement.GetProperty("image").GetString()!)));
+            var expected=new CroppedBitmap(atlasBitmap,new Int32Rect(frame[0],frame[1],frame[2],frame[3]));
+            Check(sprites.Get("NpcSym Projectile 08") is {} projectile&&Pixels(projectile).SequenceEqual(Pixels(expected)),"Variable-size projectile registration matches the independent client atlas manifest pixels");
+        }
+        Check(sprites.Get("NpcSym Projectile 13") is {PixelWidth:96,PixelHeight:16},"Client projectile atlas retains nonuniform frame dimensions rather than assuming a grid");
         var up = sprites.Character("Wizard", SpriteAction.Walk, 0, -Math.PI / 2);
         Check(!Pixels(down.Image!).SequenceEqual(Pixels(up.Image!)), "Up and down movement use distinct client sheet rows");
         var right = sprites.Character("Wizard", SpriteAction.Walk, 0, 0);

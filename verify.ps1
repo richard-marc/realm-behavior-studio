@@ -42,6 +42,9 @@ try {
     & dotnet run --project tests/Definition.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/definition-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/definition-checks.log' -Tail 25; throw 'Source definition checks failed.' }
     Get-Content '.artifacts/definition-checks.log' -Tail 1
+    & dotnet run --project tests/OwnedEmitter.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/owned-emitter-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/owned-emitter-checks.log' -Tail 25; throw 'Owned emitter checks failed.' }
+    Get-Content '.artifacts/owned-emitter-checks.log' -Tail 1
     & dotnet run --project tests/Registration.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/registration-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/registration-checks.log' -Tail 25; throw 'Native registration checks failed.' }
     Get-Content '.artifacts/registration-checks.log' -Tail 1

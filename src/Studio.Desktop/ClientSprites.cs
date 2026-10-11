@@ -16,7 +16,7 @@ public readonly record struct CharacterFrame(BitmapSource? Image, bool Flip);
 // Reads the supplied client's own sheet registrations. No game art is copied into Studio.
 public sealed class ClientSprites
 {
-    record Sheet(string Path, int Width, int Height, int CellWidth, int CellHeight, bool Animated, bool FirstDown);
+    record Sheet(string Path, int Width, int Height, int CellWidth, int CellHeight, bool Animated, bool FirstDown, Int32Rect[]? Atlas = null);
     readonly Dictionary<string, Sheet> sheets = new(StringComparer.Ordinal);
     readonly Dictionary<string, XElement> objects = new(StringComparer.Ordinal);
     readonly Dictionary<string, BitmapSource?> frames = new(StringComparer.Ordinal);
@@ -62,6 +62,14 @@ public sealed class ClientSprites
                 foreach (Match m in Regex.Matches(code, "AnimatedChars\\.add\\(\\s*\"([^\"]+)\"\\s*,\\s*new\\s+([\\w.]+)\\(\\)\\.bitmapData\\s*,.*?\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*AnimatedChar\\.(RIGHT|DOWN)\\s*\\)"))
                     if (Resolve(m.Groups[2].Value) is { } path)
                         sheets[m.Groups[1].Value] = new(path, int.Parse(m.Groups[3].Value), int.Parse(m.Groups[4].Value), int.Parse(m.Groups[5].Value), int.Parse(m.Groups[6].Value), true, m.Groups[7].Value == "DOWN");
+                // The client also registers variable-size crops, outside its regular grids.
+                foreach (Match m in Regex.Matches(code, @"var\s+(\w+)\s*:\s*BitmapData\s*=\s*new\s+([\w.]+)\(\)\.bitmapData;.*?var\s+(\w+)\s*:\s*Array\s*=\s*\[(.*?)\];.*?AssetLibrary\.addToImageSet\(""([^""]+)"",\s*BitmapUtil\.cropToBitmapData\(\1,", RegexOptions.Singleline))
+                    if (Resolve(m.Groups[2].Value) is { } path)
+                    {
+                        var rectangles=Regex.Matches(m.Groups[4].Value,@"\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]")
+                            .Select(r=>new Int32Rect(int.Parse(r.Groups[1].Value),int.Parse(r.Groups[2].Value),int.Parse(r.Groups[3].Value),int.Parse(r.Groups[4].Value))).ToArray();
+                        if(rectangles.Length>0)sheets[m.Groups[5].Value]=new(path,0,0,0,0,false,false,rectangles);
+                    }
             }
         }
         foreach (var file in Directory.EnumerateFiles(Path.Combine(serverRoot, "TKR.Shared/resources/xml"), "*.xml", SearchOption.AllDirectories))
@@ -96,6 +104,12 @@ public sealed class ClientSprites
                     }
                     var value = texture.Element("Index")?.Value ?? "0";
                     var index = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? Convert.ToInt32(value[2..], 16) : int.Parse(value, CultureInfo.InvariantCulture);
+                    if(sheet.Atlas is {} rectangles)
+                    {
+                        if(index>=0&&index<rectangles.Length){result=new CroppedBitmap(bitmap,rectangles[index]);result.Freeze();}
+                    }
+                    else
+                    {
                     var cols = bitmap.PixelWidth / sheet.CellWidth;
                     var x = index % cols * sheet.CellWidth + (sheet.Animated ? Math.Clamp(frame, 0, 6) * sheet.Width : 0);
                     var row = direction == 3 ? 2 : direction == 2 ? (sheet.FirstDown ? 0 : 1) : (sheet.FirstDown ? 1 : 0);
@@ -103,6 +117,7 @@ public sealed class ClientSprites
                     var y = index / cols * sheet.CellHeight + row * sheet.Height;
                     if (x + sheet.Width <= bitmap.PixelWidth && y + sheet.Height <= bitmap.PixelHeight)
                     { result = new CroppedBitmap(bitmap, new System.Windows.Int32Rect(x, y, sheet.Width, sheet.Height)); result.Freeze(); }
+                    }
                 }
                 catch (Exception e) when (e is IOException or FormatException or ArgumentException or NotSupportedException) { }
             }

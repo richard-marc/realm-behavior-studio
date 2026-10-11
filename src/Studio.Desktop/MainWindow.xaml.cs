@@ -150,7 +150,7 @@ public partial class MainWindow : Window
         var diagnostics = ReviewDiagnostics().ToArray();
         RefreshPhaseReview(diagnostics);
         Status.Text = $"Revision {document.Revision} · {diagnostics.Count(d => d.IsError)} errors · {diagnostics.Count(d => !d.IsError)} notices";
-        SelectNode(selection ?? authoringRoot.Id);
+        SelectNode(selection is {} selected&&authoringRoot.Descendants().Any(n=>n.Id==selected)?selected:authoringRoot.Id);
     }
     void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n } && n.Id != selectedNode?.Id) SelectAuthoringNode(n.Id, Keyboard.Modifiers); }
     void SelectNode(Guid id)
@@ -191,10 +191,11 @@ public partial class MainWindow : Window
             AddPathControls(selectedNode);
             AddProjectileControls(selectedNode);
             AddEntityControls(selectedNode);
+            AddOwnedEmitterControls(selectedNode);
             AddTransitionSummary(id);
             AddLifecycleControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();
-            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State" && (p.Name != "orbitClockwise" || movementDirection == null)))
+            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State" && (p.Name != "orbitClockwise" || movementDirection == null) && (p.Name!="axes"||ownedLaneAxes==null||adapter.ReadLaneAxis(document,selectedNode)==null)))
             {
                 var meta = adapter.ParameterFor(document, selectedNode, parameter);
                 Inspector.Children.Add(new TextBlock { Text = parameter.Name + (string.IsNullOrEmpty(meta?.Unit) ? "" : " · " + meta.Unit), Margin = new(0, 10, 0, 0) });
@@ -313,8 +314,8 @@ public partial class MainWindow : Window
     void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow { Event.NodeId: { } id }) SelectNode(id); }
     void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => { BranchTimeline(); session.SetBossHpFraction(e.NewValue / 100); UpdateSession(); }); }
     void ApplySource(object sender, RoutedEventArgs e) => Try(() => { document.ReplaceSource(SourceEditor.Text, d => adapter.Validate(d, selectedEntity!.Id)); Changed(); });
-    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if (document.Undo()) Changed(); });
-    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if (document.Redo()) Changed(); });
+    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if (document.Undo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
+    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if (document.Redo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
     void ImportSource(object sender, RoutedEventArgs e) => Try(() =>
     {
         var dialog = new OpenFileDialog { Filter = "C# behavior files|*.cs", InitialDirectory = Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db") };
