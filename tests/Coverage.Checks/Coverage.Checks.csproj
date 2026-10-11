@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><BundleStudioRuntimeHost>true</BundleStudioRuntimeHost></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Studio.Raple/Studio.Raple.csproj" />
+    <ProjectReference Include="../../src/Studio.RuntimeHost/Studio.RuntimeHost.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

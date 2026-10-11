@@ -42,6 +42,9 @@ try {
     & dotnet run --project tests/Runtime.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/runtime-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/runtime-checks.log' -Tail 25; throw 'Compiled runtime checks failed.' }
     Get-Content '.artifacts/runtime-checks.log' -Tail 1
+    & dotnet run --project tests/Coverage.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/coverage-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/coverage-checks.log' -Tail 25; throw 'Native attack preview checks failed.' }
+    Get-Content '.artifacts/coverage-checks.log' -Tail 1
     & dotnet run --project tests/AI.Checks *> '.artifacts/ai-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/ai-checks.log' -Tail 25; throw 'AI contract checks failed.' }
     Get-Content '.artifacts/ai-checks.log' -Tail 1
@@ -51,7 +54,7 @@ try {
     $studioProcess = Start-Process -FilePath $studioExe -ArgumentList @('--smoke', '--server', ('"' + [IO.Path]::GetFullPath($ServerRoot) + '"')) -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
     $studioDeadline = [Diagnostics.Stopwatch]::StartNew()
     while (!$studioProcess.WaitForExit(5000)) {
-        if ($studioDeadline.Elapsed.TotalSeconds -gt 240) { throw 'Desktop authoring/native-preview smoke test did not finish within 240 seconds.' }
+        if ($studioDeadline.Elapsed.TotalSeconds -gt 420) { throw 'Desktop authoring/native-preview smoke test did not finish within 420 seconds.' }
     }
     if ($studioProcess.ExitCode -ne 0) { throw 'Desktop smoke test failed; see .artifacts/desktop-smoke-error.txt.' }
     Write-Host 'Desktop import/edit/play/save/trace/render smoke passed.'

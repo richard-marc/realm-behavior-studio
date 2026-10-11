@@ -22,6 +22,7 @@ while (Console.ReadLine() is { } line)
     RuntimeRequest? request = null;
     try
     {
+        CombatSample? preview = null;
         if (line.Length > RuntimeProtocol.MaxLineLength) throw new ArgumentException("Runtime request exceeds the protocol limit.");
         request = JsonSerializer.Deserialize<RuntimeRequest>(line) ?? throw new ArgumentException("Empty runtime request.");
         if (request.Version != RuntimeProtocol.Version || request.Sequence != lastSequence + 1) throw new ArgumentException("Runtime protocol version or sequence mismatch.");
@@ -49,10 +50,11 @@ while (Console.ReadLine() is { } line)
                 case "remove-minions": session.RemoveMinionsForTest(); break;
                 case "breakpoint": session.BreakpointKind = request.Breakpoint; break;
                 case "inspect": break;
+                case "sample-combat": preview = NativeCombatSampling.Run(session, request.Preview ?? throw new ArgumentException("Missing combat preview options."), request.Density); break;
                 default: throw new ArgumentException("Unknown runtime command.");
             }
         }
-        var response = new RuntimeResponse(RuntimeProtocol.Version, request.Sequence, RuntimeProtocol.Capture(session!, ref events, ref shots, ref playerShots));
+        var response = new RuntimeResponse(RuntimeProtocol.Version, request.Sequence, RuntimeProtocol.Capture(session!, ref events, ref shots, ref playerShots), Preview: preview);
         var json = JsonSerializer.Serialize(response);
         if (json.Length > RuntimeProtocol.MaxLineLength) throw new InvalidOperationException("Runtime response exceeds the protocol limit.");
         protocolOutput.WriteLine(json); protocolOutput.Flush();

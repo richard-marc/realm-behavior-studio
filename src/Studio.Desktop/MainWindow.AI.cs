@@ -100,6 +100,8 @@ public partial class MainWindow
             case "run_simulation":
             {
                 var duration = args.GetProperty("durationMs").GetInt32(); if (duration < 100 || duration > 20000 || duration % 100 != 0) throw new ArgumentException("Duration must be 100–20000 ms in 100 ms steps.");
+                await AwaitCombatCancellation(); ClearViewportEditors();
+                if (pathPreviewTask != null) await pathPreviewTask;
                 var candidate = new BehaviorDocument(document.Source, adapter, document.Identities, document.SourceFile);
                 if (args.GetProperty("previewProposal").GetBoolean())
                 {

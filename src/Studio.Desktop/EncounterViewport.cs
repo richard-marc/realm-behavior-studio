@@ -54,6 +54,7 @@ public sealed partial class EncounterViewport : FrameworkElement
         MouseDown += (_, e) =>
         {
             Focus(); if (e.ChangedButton == MouseButton.Middle) { drag = e.GetPosition(this); CaptureMouse(); return; }
+            if (e.ChangedButton == MouseButton.Left && SelectCombatPoint(e.GetPosition(this))) { e.Handled = true; return; }
             if (e.ChangedButton == MouseButton.Left && (BeginAttackDrag(e.GetPosition(this)) || BeginMovementDrag(e.GetPosition(this)) || BeginPathDrag(e.GetPosition(this)))) { CaptureMouse(); e.Handled = true; return; }
             if (e.ChangedButton == MouseButton.Right && Session != null)
             {
@@ -67,7 +68,7 @@ public sealed partial class EncounterViewport : FrameworkElement
     }
     public EncounterInput Input()
     {
-        if (Attack != null || Movement != null || Path != null) return new();
+        if (Attack != null || Movement != null || Path != null || CombatPreviewOpen) return new();
         bool Held(params Key[] values) => IsKeyboardFocusWithin && values.Any(keys.Contains);
         var aim = HitWorld(Mouse.GetPosition(this));
         return new((Held(Key.D, Key.Right) ? 1 : 0) - (Held(Key.A, Key.Left) ? 1 : 0), (Held(Key.S, Key.Down) ? 1 : 0) - (Held(Key.W, Key.Up) ? 1 : 0), IsMouseOver && Mouse.LeftButton == MouseButtonState.Pressed, aim.X, aim.Y);
@@ -86,6 +87,7 @@ public sealed partial class EncounterViewport : FrameworkElement
         dc.DrawLine(guide, new(origin.X, 0), new(origin.X, ActualHeight)); dc.DrawLine(guide, new(0, origin.Y), new(ActualWidth, origin.Y));
         if (Session is not { } session)
         {
+            if (CombatPreviewOpen) { DrawCombatPreview(dc); return; }
             if (Path != null) { DrawPath(dc); return; }
             if (Movement != null) { DrawMovement(dc); return; }
             DrawCharacter(dc, PreviewEntity, origin, SpriteAction.Stand, 0, 0);

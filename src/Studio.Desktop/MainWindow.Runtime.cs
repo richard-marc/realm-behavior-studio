@@ -11,7 +11,9 @@ public partial class MainWindow
     }
     async Task<bool> StartSessionAsync(string? phase = null)
     {
+        await AwaitCombatCancellation();
         ClearViewportEditors();
+        if (pathPreviewTask != null) await pathPreviewTask;
         session = null; running = false; Viewport.Session = null;
         RefreshRuntimeActors();
         if (!adapter.NeedsCompiledRuntime(document, selectedEntity!.Id)) { StartSession(phase); return true; }

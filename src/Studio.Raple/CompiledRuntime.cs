@@ -66,6 +66,12 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     public static async Task<CompiledRuntime> StartAsync(string serverRoot, StudioProject project, string? phase = null,
         string? hostDirectory = null, string? artifactRoot = null, RuntimeLimits? limits = null, CancellationToken cancellation = default)
     {
+        var prepared = await PrepareAsync(serverRoot, project, hostDirectory, artifactRoot, limits, cancellation).ConfigureAwait(false);
+        return await prepared.StartAsync(phase: phase, cancellation: cancellation).ConfigureAwait(false);
+    }
+    public static async Task<PreparedRuntime> PrepareAsync(string serverRoot, StudioProject project,
+        string? hostDirectory = null, string? artifactRoot = null, RuntimeLimits? limits = null, CancellationToken cancellation = default)
+    {
         limits ??= new();
         if (limits.StartupSeconds is < 1 or > 120 || limits.CommandSeconds is < 1 or > 30 || limits.MemoryBytes < 64 * 1024 * 1024) throw new ArgumentException("Invalid runtime limits.");
         hostDirectory ??= Path.Combine(AppContext.BaseDirectory, "runtime-host");
@@ -107,14 +113,42 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             File.WriteAllText(Path.Combine(directory, "runtime-stamp.json"), JsonSerializer.Serialize(stamp, BehaviorDocument.JsonOptions));
             bundles[cacheKey] = directory;
         }
-        var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        { WorkingDirectory = directory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        start.ArgumentList.Add(Path.Combine(directory, "Studio.RuntimeHost.dll"));
-        start.ArgumentList.Add("--parent"); start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the compiled runtime.");
-        var runtime = new CompiledRuntime(process, stamp, limits, project);
-        try { await runtime.Exchange(new(RuntimeProtocol.Version, 0, "start", new(Path.GetFullPath(serverRoot), project, resourceHash, phase, prepared.Bindings)), limits.StartupSeconds, cancellation).ConfigureAwait(false); return runtime; }
-        catch { await runtime.DisposeAsync().ConfigureAwait(false); throw; }
+        return new PreparedRuntime(Path.GetFullPath(serverRoot), directory, project, prepared.Bindings, stamp, limits, files);
+    }
+    public sealed class PreparedRuntime
+    {
+        readonly string serverRoot, directory;
+        readonly StudioProject project;
+        readonly RuntimeSourceBinding[] bindings;
+        readonly RuntimeLimits limits;
+        readonly IReadOnlyDictionary<string, byte[]> files;
+        public NativeRuntimeStamp Stamp { get; }
+        internal PreparedRuntime(string serverRoot, string directory, StudioProject project, RuntimeSourceBinding[] bindings, NativeRuntimeStamp stamp, RuntimeLimits limits, IReadOnlyDictionary<string, byte[]> files)
+        { this.serverRoot = serverRoot; this.directory = directory; this.project = project; this.bindings = bindings; Stamp = stamp; this.limits = limits; this.files = files; }
+        // Reuse compilation, never executing native objects or RNG state. Every
+        // scenario gets a fresh process and the same verified immutable bundle.
+        public async Task<CompiledRuntime> StartAsync(PlayerPreset? player = null, string? phase = null, CancellationToken cancellation = default)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            await Task.Run(() =>
+            {
+                foreach (var (name, bytes) in files)
+                {
+                    cancellation.ThrowIfCancellationRequested(); var path = Path.Combine(directory, name);
+                    if (!File.Exists(path) || !File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes)) throw new InvalidOperationException("Prepared runtime files changed. Prepare the encounter again.");
+                }
+            }, cancellation).ConfigureAwait(false);
+            var scenario = project with { Player = player ?? project.Player };
+            var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
+            { WorkingDirectory = directory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            start.ArgumentList.Add(Path.Combine(directory, "Studio.RuntimeHost.dll"));
+            start.ArgumentList.Add("--parent"); start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            cancellation.ThrowIfCancellationRequested();
+            var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the compiled runtime.");
+            var runtime = new CompiledRuntime(process, Stamp, limits, scenario);
+            try { await runtime.Exchange(new(RuntimeProtocol.Version, 0, "start", new(serverRoot, scenario, Stamp.ResourceHash, phase, bindings)), limits.StartupSeconds, cancellation).ConfigureAwait(false); return runtime; }
+            catch { await runtime.DisposeAsync().ConfigureAwait(false); throw; }
+        }
     }
     async Task DrainLog()
     {
@@ -124,13 +158,19 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     }
     public Task AdvanceAsync(EncounterInput input, int durationMs = 100, CancellationToken cancellation = default)
         => Exchange(new(RuntimeProtocol.Version, 0, "advance", Input: input, DurationMs: durationMs, Breakpoint: BreakpointKind), limits.CommandSeconds, cancellation);
+    public async Task<CombatSample> SampleCombatAsync(CombatPreviewOptions options, bool density = true, CancellationToken cancellation = default)
+    {
+        options.Validate();
+        return await Exchange(new(RuntimeProtocol.Version, 0, "sample-combat", Preview: options, Density: density), limits.CommandSeconds, cancellation).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The runtime did not return combat samples.");
+    }
     public Task SetBossHpAsync(double fraction, CancellationToken cancellation = default)
         => Exchange(new(RuntimeProtocol.Version, 0, "boss-hp", Fraction: fraction), limits.CommandSeconds, cancellation);
     public Task RemoveMinionsAsync(CancellationToken cancellation = default)
         => Exchange(new(RuntimeProtocol.Version, 0, "remove-minions"), limits.CommandSeconds, cancellation);
     public Task SetBreakpointAsync(string? kind, CancellationToken cancellation = default)
     { BreakpointKind = kind; return Exchange(new(RuntimeProtocol.Version, 0, "breakpoint", Breakpoint: kind), limits.CommandSeconds, cancellation); }
-    async Task Exchange(RuntimeRequest request, int seconds, CancellationToken cancellation)
+    async Task<CombatSample?> Exchange(RuntimeRequest request, int seconds, CancellationToken cancellation)
     {
         await commands.WaitAsync(cancellation).ConfigureAwait(false);
         try
@@ -155,7 +195,15 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             if (frame.LoadedAssemblyHash != Stamp.AssemblyHash || frame.RuntimeVersion != Stamp.RuntimeVersion) throw new InvalidOperationException("Compiled runtime provenance does not match its build.");
             CheckMemory(); // Fast responses must observe the budget too.
             if (request.Command == "advance") inputs = inputs.Add(new(Frame.Ms, request.Input!, request.DurationMs));
+            if (request.Command == "sample-combat")
+            {
+                var sample = response.Preview ?? throw new InvalidOperationException("The runtime omitted its combat preview result.");
+                if (sample.DensitySampled != request.Density || sample.PeakIncoming < 0 || !double.IsFinite(sample.MeanIncoming) || sample.MeanIncoming < 0) throw new InvalidOperationException("Invalid combat density response.");
+                if (sample.ActualMs < 0 || sample.ActualMs > request.Preview!.DurationMs || sample.ActualMs % EncounterSession.SampleMs != 0 || frame.Ms != Frame.Ms + sample.ActualMs || sample.ExposureSamples.Length != request.Preview.Columns * request.Preview.Columns || sample.ExposureSamples.Any(n => n < 0)) throw new InvalidOperationException("Invalid combat sample response.");
+                inputs = inputs.AddRange(Enumerable.Range(0, sample.ActualMs / EncounterSession.SampleMs).Select(i => new ReplayInput(Frame.Ms + i * EncounterSession.SampleMs, new(), EncounterSession.SampleMs)));
+            }
             events = events.AddRange(frame.Events); shots = shots.AddRange(frame.Shots); playerShots = playerShots.AddRange(frame.PlayerShots); currentFrame = frame;
+            return response.Preview;
         }
         catch (OperationCanceledException) { Kill(); if (cancellation.IsCancellationRequested) throw; throw new TimeoutException("Compiled runtime exceeded its time limit and was stopped."); }
         catch { Kill(); throw; }

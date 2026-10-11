@@ -17,6 +17,9 @@ public record CatalogEntry(string Id, ushort ObjectType, string SourceFile)
 }
 public sealed partial class RapleAdapter : IBehaviorSchema
 {
+    static readonly object resourceGate = new();
+    static (string Root, string Hash)? loadedResources;
+    public string LoadedResourceHash { get; }
     public string ServerRoot { get; }
     public string FragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(" + string.Join(",\n", expressions) + ")";
     public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(children: [" + string.Join(",\n", expressions) + "])";
@@ -47,6 +50,18 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         sourceSchemas = new(ServerRoot);
         if (!Directory.Exists(Path.Combine(ServerRoot, "TKR.Shared/resources/xml"))) throw new DirectoryNotFoundException("Choose the Raple Realms server source folder, containing TKR.Shared/resources/xml.");
         SimEngine.Root = ServerRoot;
+        lock (resourceGate)
+        {
+            if (loadedResources == null)
+            {
+                var resources = Path.Combine(ServerRoot, "TKR.Shared/resources");
+                var before = SourceVerification.Fingerprint(resources, "*");
+                _ = SimEngine.Data;
+                if (before != SourceVerification.Fingerprint(resources, "*")) throw new InvalidOperationException("Game resources changed while loading. Restart Studio.");
+                loadedResources = (ServerRoot, before);
+            }
+            LoadedResourceHash = string.Equals(loadedResources.Value.Root, ServerRoot, StringComparison.OrdinalIgnoreCase) ? loadedResources.Value.Hash : "";
+        }
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :

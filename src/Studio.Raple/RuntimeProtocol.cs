@@ -6,8 +6,8 @@ public record RuntimeLimits(int StartupSeconds = 30, int CommandSeconds = 3, lon
 public record RuntimeSourceBinding(int Start, string Expression, SourceExpression Description);
 public record RuntimeStart(string ServerRoot, StudioProject Project, string ResourceHash, string? Phase = null, RuntimeSourceBinding[]? SourceBindings = null);
 public record RuntimeRequest(int Version, long Sequence, string Command, RuntimeStart? Start = null, EncounterInput? Input = null,
-    int DurationMs = 100, double Fraction = 1, string? Breakpoint = null);
-public record RuntimeResponse(int Version, long Sequence, RuntimeFrame? Frame = null, string? Error = null);
+    int DurationMs = 100, double Fraction = 1, string? Breakpoint = null, CombatPreviewOptions? Preview = null, bool Density = true);
+public record RuntimeResponse(int Version, long Sequence, RuntimeFrame? Frame = null, string? Error = null, CombatSample? Preview = null);
 public record RuntimeFrame(long Ms, int PlayerHp, float PlayerX, float PlayerY, int BossHp, int BossMaxHp, int Seed, double StartMs,
     string PlayerClass, WeaponEntry Weapon, double PlayerFacing, double PlayerAttackAngle, double PlayerMoveSpeed,
     long PlayerAttackStart, double PlayerAttackPeriod, int[] PlayerStats, string Coverage, bool PauseRequested,

@@ -80,13 +80,21 @@ public sealed class EncounterSession : IEncounterSession
     {
         var watch = Stopwatch.StartNew(); document = doc; entityId = entity; this.seed = seed; preset = player; compiledSource = originalRuntimeReference;
         if (player.Hp < 1 || player.Hp > 1000000 || player.Speed < 0 || player.Speed > 500 || player.Defense < 0 || player.Defense > 10000 || player.Attack < 0 || player.Attack > 500 || player.Dexterity < 0 || player.Dexterity > 500) throw new ArgumentException("Player values are outside supported bounds.");
-        engine = new SimEngine(new SimConfig { Boss = entity, Seed = seed });
+        if (!double.IsFinite(player.StartX) || !double.IsFinite(player.StartY) || player.StartX < 0 || player.StartY < 0 || (float)player.StartX >= 128 || (float)player.StartY >= 128) throw new ArgumentException("Player start must be inside the 128-tile prototype map.");
+        // Resize with the observer at the native arena center. The offline
+        // harness lacks the network state needed by a resize-triggered teleport.
+        // The requested start is applied before any encounter entry callbacks.
+        engine = new SimEngine(new SimConfig { Boss = entity, Seed = seed, PlayerX = BossLabWorld.Center, PlayerY = BossLabWorld.Center });
         // The upstream harness copies base fields from an enemy. Replace its effect manager so
         // a boss's immunity flags never become the test player's immunity flags.
         playerConditions = new ConditionEffectManager(engine.Actor);
         typeof(Entity).GetField("ConditionEffectManager", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(engine.Actor, playerConditions);
         weapon = new GameWeapon(engine.Actor, player, seed);
         ((BossLabWorld)engine.World).TrySetArenaSize(engine.Actor, SimEngine.Time(0), Math.Clamp(arenaSize, 32, 128));
+        if (!((BossLabWorld)engine.World).ContainsArenaPoint(player.StartX, player.StartY) || !engine.World.Map.Contains((float)player.StartX, (float)player.StartY) || !engine.World.IsPassable((float)player.StartX, (float)player.StartY, false)) throw new ArgumentException("Player start is outside the passable prototype arena.");
+        // Arena resizing can relocate the debug actor. Apply the validated start
+        // again before any encounter entry callback or forced-phase setup.
+        engine.Actor.Move((float)player.StartX, (float)player.StartY);
         // Some constructors resolve resources through InitDb. Reuse that exact lookup context during binding.
         var init = typeof(BehaviorDb).GetField("InitDb", BindingFlags.Static | BindingFlags.NonPublic)!;
         init.SetValue(null, engine.Server.BehaviorDb);

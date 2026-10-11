@@ -43,13 +43,14 @@ public partial class MainWindow : Window
         arguments = args; InitializeComponent();
         Graph.Selected += id => SelectAuthoringNode(id, Keyboard.Modifiers); Graph.CollapseRequested += TogglePhaseCollapse; Viewport.Selected += SelectNode;
         InitializeSelectionControls();
+        InitializeCombatControls();
         Viewport.AttackEdited += ApplyAttackEdit;
         Viewport.MovementEdited += ApplyMovementEdit;
         Viewport.PathEdited += ApplyPathEdit;
         autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); };
         PreviewKeyDown += Shortcut;
         Loaded += (_, _) => { Try(Initialize); CompositionTarget.Rendering += Advance; };
-        Closing += async (_, _) => { ClearPathEditor(); CompositionTarget.Rendering -= Advance; session = null; SaveWorkspaceLayout(); if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); aiCancellation?.Cancel(); if (codex != null) await codex.DisposeAsync(); };
+        Closing += async (_, _) => { ClearCombatPreview(); ClearPathEditor(); CompositionTarget.Rendering -= Advance; session = null; SaveWorkspaceLayout(); if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); aiCancellation?.Cancel(); if (codex != null) await codex.DisposeAsync(); };
     }
     string ServerPath()
     {
@@ -95,7 +96,7 @@ public partial class MainWindow : Window
         Layout = CaptureLayout(), LockedNodes = document.LockedNodes.ToList(), CollapsedNodes = CollapsedNodes.ToList()
     };
     PlayerPreset ReadPreset() => new(int.Parse(PlayerHp.Text), int.Parse(PlayerSpeed.Text), int.Parse(PlayerDefense.Text), Invulnerable.IsChecked == true, Spectator.IsChecked == true,
-        selectedWeaponId, int.Parse(PlayerAttack.Text), int.Parse(PlayerDexterity.Text));
+        selectedWeaponId, int.Parse(PlayerAttack.Text), int.Parse(PlayerDexterity.Text), double.Parse(PlayerStartX.Text, System.Globalization.CultureInfo.InvariantCulture), double.Parse(PlayerStartY.Text, System.Globalization.CultureInfo.InvariantCulture));
     void SearchChanged(object sender, TextChangedEventArgs e) { if (adapter != null) { var results = catalog.Where(e => e.Id.Contains(Search.Text, StringComparison.OrdinalIgnoreCase)).ToArray(); Library.ItemsSource = results; LibraryCount.Text = results.Length + " entities"; } }
     void PrimitiveSearchChanged(object sender, TextChangedEventArgs e) { if (adapter != null) Primitives.ItemsSource = adapter.Primitives.Where(p => p.Name.Contains(PrimitiveSearch.Text, StringComparison.OrdinalIgnoreCase)).ToArray(); }
     void EntitySelected(object sender, SelectionChangedEventArgs e)
@@ -112,6 +113,7 @@ public partial class MainWindow : Window
     }
     void RefreshDocument(Guid? selection = null)
     {
+        ClearCombatPreview();
         RefreshRuntimeActors();
         if (selectedEntity == null) return;
         EntityTitle.Text = selectedEntity.Id; SourceEditor.Text = document.Source;
@@ -139,6 +141,7 @@ public partial class MainWindow : Window
     void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n } && n.Id != selectedNode?.Id) SelectAuthoringNode(n.Id, Keyboard.Modifiers); }
     void SelectNode(Guid id)
     {
+        if (selectedNode?.Id != id) ClearCombatPreview();
         Try(() =>
         {
             selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();
@@ -233,7 +236,7 @@ public partial class MainWindow : Window
     }
     void Pause(object sender, RoutedEventArgs e) { running = false; Status.Text = "Paused"; UpdatePlayButton(); }
     async void Restart(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (!await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
-    void Stop(object sender, RoutedEventArgs e) { running = false; session = null; Viewport.Session = null; Viewport.InvalidateVisual(); Events.ItemsSource = null; EventCount.Text = "0 events"; Status.Text = "Stopped"; UpdatePlayButton(); RefreshRuntimeActors(); }
+    void Stop(object sender, RoutedEventArgs e) { ClearCombatPreview(); running = false; session = null; Viewport.Session = null; Viewport.InvalidateVisual(); Events.ItemsSource = null; EventCount.Text = "0 events"; Status.Text = "Stopped"; UpdatePlayButton(); RefreshRuntimeActors(); }
     async void Step(object sender, RoutedEventArgs e) => await TryRuntime(async () => { running = false; if (session == null && !await StartSessionAsync()) return; var active = session!; await active.AdvanceAsync(Viewport.Input(), 100); if (ReferenceEquals(active, session)) UpdateSession(); });
     async void TestPhase(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (selectedNode?.Kind != "State" || selectedNode.Label == "Root") throw new ArgumentException("Select a named phase first."); if (!await StartSessionAsync(selectedNode.Label)) return; running = true; clock.Restart(); Viewport.Focus(); });
     async void Advance(object? sender, EventArgs e)
@@ -320,6 +323,7 @@ public partial class MainWindow : Window
         foreach (var id in p.LockedNodes) d.LockedNodes.Add(id);
         Brief.Text = p.Brief; Seed.Text = p.Seed.ToString(); ArenaSize.Text = p.ArenaSize.ToString(); PlayerHp.Text = p.Player.Hp.ToString(); PlayerSpeed.Text = p.Player.Speed.ToString(); PlayerDefense.Text = p.Player.Defense.ToString(); Invulnerable.IsChecked = p.Player.Invulnerable; Spectator.IsChecked = p.Player.Spectator;
         PlayerAttack.Text = p.Player.Attack.ToString(); PlayerDexterity.Text = p.Player.Dexterity.ToString();
+        PlayerStartX.Text = p.Player.StartX.ToString("R", System.Globalization.CultureInfo.InvariantCulture); PlayerStartY.Text = p.Player.StartY.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
         selectedWeaponId = p.Player.WeaponId; WeaponSearch.Text = ""; Weapons.ItemsSource = weaponCatalog; Weapons.SelectedItem = weaponCatalog.FirstOrDefault(w => w.Id == selectedWeaponId);
         if (Weapons.SelectedItem == null) WeaponInfo.Text = "Missing weapon XML: " + selectedWeaponId;
         CollapsedNodes.UnionWith(p.CollapsedNodes.Where(id => d.Identities.Any(n => n.Id == id)));

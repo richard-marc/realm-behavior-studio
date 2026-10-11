@@ -6,7 +6,16 @@ Windows 11 x64; AMD Ryzen 9 7950X3D; approximately 64 GB installed memory. .NET 
 
 ## Passed checks
 
-The current check total is **903 passed checks** across the ten check projects and the release desktop smoke. The focused ring/controller run passes 156 native schema checks, 195 source-context checks and all **292 UI checks**. The final release desktop process exits 0 in **166.1 seconds**; its earlier concurrent run exits 0 in 179.2 seconds. Editor/runtime, structural, selection, weapon and runtime-process regressions also pass (33/32/30/38/33); grouped-argument, analysis and authentication suites retain their preceding results. Destination, line and actor renders were inspected. Physical pointer interaction and measured display FPS remain outside these runs.
+The current check total is **944 passed checks** across eleven check projects and the release desktop smoke: 33 editor/runtime, 32 structural, 30 selection, 23 analysis, 38 weapon, 156 schema, 53 argument, 195 source-context, 33 compiled-runtime, 27 attack-preview, 18 AI contract and **306 UI checks**. All suites pass in the current run. The final release desktop process exits 0 in **249.7 seconds**. Density, health-loss and no-damage renders were inspected; captured sprite lookups have no missing names. Physical pointer interaction, measured display FPS, live AI and complete game/client fidelity remain outside these runs.
+
+- Actual reference projectile density and independent damage at fresh stationary starts; a consumed reference projectile does not establish zero damage at a different tested position.
+- Original defense arithmetic, including hits with zero health loss; native death stops tests at their actual shorter duration.
+- Native player start coordinates, float/map/active-arena bounds, explicit unavailable points, save/reopen and legacy preset defaults.
+- Same seed/input repeatability, loaded-resource fingerprint agreement, cancellation and run-by-run progress.
+- Compiled source prepared once with a fresh process per start, matching build identity, replayable 5 ms inputs, disposal and cancellation before launch.
+- Modified private runtime bundles reject before scenario launch; supplied game source remains unchanged.
+
+Fourteen additional desktop checks use the actual preview button, display selector and point-selection methods. They verify native area damage, dispatcher availability, suppressed gameplay input, point details, captured-result display changes, settings that invalidate results while remaining editable, seed/selection/preset cancellation, forced-phase provenance, Play waiting for cancellation, and fresh compiled processes for generated encounter roots. `attack-density.png`, `attack-health-loss.png` and `attack-no-damage.png` are WPF dispatcher renders and were visually inspected. Green dots report no damage at exact stationary starts for the recorded seed/duration; they do not establish safety across intervening positions, movement paths, omitted trajectories or broader game contexts.
 
 **33 editor/runtime checks** in `tests/Studio.Checks`:
 

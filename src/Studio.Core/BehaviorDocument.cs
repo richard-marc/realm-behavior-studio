@@ -22,7 +22,7 @@ public record DocumentPatch(long ExpectedRevision, string Description, IReadOnly
 public record DocumentDiagnostic(string Message, Guid? NodeId = null, bool IsError = true);
 public record NodeIdentity(Guid Id, string Path, string Kind, string? Signature = null);
 public record PlayerPreset(int Hp = 1000, int Speed = 50, int Defense = 25, bool Invulnerable = false, bool Spectator = false,
-    string WeaponId = "Staff of Diabolic Secrets", int Attack = 50, int Dexterity = 50);
+    string WeaponId = "Staff of Diabolic Secrets", int Attack = 50, int Dexterity = 50, double StartX = 70.5, double StartY = 64.5);
 public sealed record StudioProject
 {
     public int Version { get; init; } = 1;

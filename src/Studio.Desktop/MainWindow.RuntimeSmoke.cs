@@ -38,6 +38,7 @@ public partial class MainWindow
         await RunEntityUiSmoke(source, root, helpers, output, check);
         await RunPathUiSmoke(source, root, helpers, output, check);
         await RunOwnedActorsUiSmoke(source, root, helpers, output, check);
+        await RunCombatUiSmoke(source, root, output, check);
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);
         Changed(); var factory = document.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
         check(factory.Kind == "Factory" && factory.Parameters.Single().Name == "count", "Desktop discovers the imported source helper as the encounter root");
@@ -83,6 +84,9 @@ public partial class MainWindow
         ShareContext.IsChecked = false;
         check(toolResult.GetProperty("Coverage").GetString()!.Contains("Compiled original encounter") && toolResult.GetProperty("events").EnumerateArray().Any(e => e.GetProperty("Kind").GetString() == "attack"), "Bounded application simulation tool can run the same source-context encounter without live AI");
         check(document.Source == beforeTool && session == null, "Application tool preview leaves the shared source unchanged and closes its native process");
+        await BeginCombatPreview();
+        check(Viewport.CombatReport is { Runtime: "Compiled source", BuildId.Length: 64 } && Viewport.CombatReport.Points.Length == 25 && Viewport.CombatReport.Points.All(p => p.Sample != null), "Generated source roots use fresh compiled native processes for actual area tests");
+        ClearCombatPreview();
         var cancelled = StartSessionAsync(); Stop(this, new());
         try { await cancelled; } catch (OperationCanceledException) { }
         check(session == null && runtimeStarting == null && PlayButton.IsEnabled, "Stopped preparation cannot install a stale compiled session");

@@ -62,6 +62,7 @@ public partial class MainWindow
     }
     async Task RunPathPreviewAsync()
     {
+        await AwaitCombatCancellation();
         if (!pathEditing || selectedNode == null) return;
         var expected = document; var revision = document.Revision; var nodeId = selectedNode.Id; var project = Snapshot();
         BehaviorNode? phase = selectedNode;
