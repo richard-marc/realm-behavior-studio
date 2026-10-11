@@ -18,6 +18,8 @@ public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxH
 public record BulletView(float X, float Y, int OwnerId, int ProjectileIndex, Guid? NodeId, string TextureId, double Angle, bool Friendly);
 public record ReplayInput(long Ms, EncounterInput Input, int DurationMs = 100);
 public record Emission(long Ms, int OwnerId, int Index, int Count, int BulletId, float X, float Y, float Angle, float AngleIncrement, int Damage);
+// Phase is observed after the native tick; it does not attribute motion to an action.
+public record MovementSample(long Ms, int DurationMs, int ActorId, string Entity, bool Player, float FromX, float FromY, float ToX, float ToY, string Phase = "", Guid? PhaseNodeId = null);
 public record ReplayRecord(int Version, int Seed, string Entity, string Source, string ResourceHash, PlayerPreset Player, List<ReplayInput> Inputs);
 
 // Enemy execution, resource definitions and weapon formulas are reused. Client collision is sampled.
@@ -49,6 +51,9 @@ public sealed class EncounterSession : IEncounterSession
     public double StartMs { get; }
     public List<EncounterEvent> Events { get; } = [];
     public List<ReplayInput> Inputs { get; } = [];
+    public ReplayJournal? Recording { get; set; }
+    public List<MovementSample> Movements { get; } = [];
+    IReadOnlyList<MovementSample> IEncounterSession.Movements => Movements;
     public List<Emission> Shots { get; } = [];
     public bool PauseRequested { get; private set; }
     public string? BreakpointKind { get; set; }
@@ -128,11 +133,13 @@ public sealed class EncounterSession : IEncounterSession
     {
         if (!double.IsFinite(fraction) || fraction < 0 || fraction > 1) throw new ArgumentOutOfRangeException(nameof(fraction));
         boss.HP = Math.Max(1, (int)(boss.MaximumHP * fraction)); Add("override", "Boss HP forced to " + (fraction * 100).ToString("0") + "%");
+        Recording?.Record(this, new(Ms, "boss-hp", Fraction: fraction));
     }
     public void RemoveMinionsForTest()
     {
         foreach (var e in engine.World.Enemies.Values.Where(e => e != boss).ToArray()) e.Expunge();
         Add("override", "Minions removed for transition test; death callbacks bypassed.");
+        Recording?.Record(this, new(Ms, "remove-minions"));
     }
     public void Step(EncounterInput input) => Advance(input, SimEngine.TickMs);
     public void Advance(EncounterInput input, int durationMs)
@@ -156,7 +163,11 @@ public sealed class EncounterSession : IEncounterSession
                 if (length > 0)
                 {
                     var x = PlayerX + input.X / length * speed; var y = PlayerY + input.Y / length * speed;
-                    if (engine.Walkable(x, y)) { engine.MovePlayer(x, y); PlayerMoveSpeed = speed / SampleMs; PlayerFacing = Math.Atan2(input.Y, input.X); }
+                    if (engine.Walkable(x, y))
+                    {
+                        var fromX=PlayerX; var fromY=PlayerY; engine.MovePlayer(x,y); PlayerMoveSpeed=speed/SampleMs; PlayerFacing=Math.Atan2(input.Y,input.X);
+                        if(fromX!=PlayerX || fromY!=PlayerY) Movements.Add(new(Ms,SampleMs,engine.Actor.Id,PlayerClass,true,fromX,fromY,PlayerX,PlayerY));
+                    }
                 }
                 if (input.Attack)
                 {
@@ -187,6 +198,7 @@ public sealed class EncounterSession : IEncounterSession
                     var from = beforeTick.GetValueOrDefault(e.Id, (e.X, e.Y));
                     motions[e.Id] = new(from.X, from.Y, e.X, e.Y, Ms, SimEngine.TickMs);
                     var current = e.CurrentState?.Name ?? "";
+                    if(from.X!=e.X || from.Y!=e.Y) Movements.Add(new(Ms,SimEngine.TickMs,e.Id,e.ObjectDesc.IdName,false,from.X,from.Y,e.X,e.Y,current,e.ObjectType==boss.ObjectType?FindState(current):null));
                     if (!lastStates.TryGetValue(e.Id, out var previous)) Add("spawn", e.ObjectDesc.IdName, actor: e.Id, parent: e.ParentEntity?.Id);
                     if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}", e.ObjectType == boss.ObjectType ? FindState(current) : null, actor: e.Id, parent: e.ParentEntity?.Id);
                     lastStates[e.Id] = current;
@@ -238,6 +250,7 @@ public sealed class EncounterSession : IEncounterSession
         }
         foreach (var removed in bullets.Where(b => b.Friendly && b.Removed)) weapon.Forget(removed.Id);
         bullets.RemoveAll(b => b.Removed);
+        Recording?.Record(this, new(Ms - durationMs, "advance", durationMs, input));
     }
     void ObserveActorRemovals()
     {

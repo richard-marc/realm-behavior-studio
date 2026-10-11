@@ -16,6 +16,8 @@ public interface IEncounterSession : IDisposable
     IReadOnlyList<Emission> Shots { get; }
     IReadOnlyList<Emission> PlayerShots { get; }
     IReadOnlyList<ReplayInput> Inputs { get; }
+    ReplayJournal? Recording { get; set; }
+    IReadOnlyList<MovementSample> Movements { get; }
     bool PauseRequested { get; }
     string? BreakpointKind { get; set; }
     string PlayerClass { get; }

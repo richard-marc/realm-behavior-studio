@@ -28,7 +28,7 @@ public partial class MainWindow : Window
     IEncounterSession? session
     {
         get => currentSession;
-        set { runtimeStarting?.Cancel(); if (!ReferenceEquals(currentSession, value)) currentSession?.Dispose(); currentSession = value; }
+        set { runtimeStarting?.Cancel(); if (!timelineReplacing) ClearTimeline(); if (!ReferenceEquals(currentSession, value)) currentSession?.Dispose(); currentSession = value; }
     }
     DocumentPatch? pendingProposal;
     readonly DispatcherTimer autosaveTimer = new() { Interval = TimeSpan.FromSeconds(15) };
@@ -44,6 +44,7 @@ public partial class MainWindow : Window
         Graph.Selected += id => SelectAuthoringNode(id, Keyboard.Modifiers); Graph.CollapseRequested += TogglePhaseCollapse; Viewport.Selected += SelectNode;
         InitializeSelectionControls();
         InitializeCombatControls();
+        InitializeTimelineControls();
         Viewport.AttackEdited += ApplyAttackEdit;
         Viewport.MovementEdited += ApplyMovementEdit;
         Viewport.PathEdited += ApplyPathEdit;
@@ -221,7 +222,7 @@ public partial class MainWindow : Window
         if (selectedNode == null || Primitives.SelectedItem is not Primitive p) return;
         BeginNativeCreation(p);
     });
-    async void Play(object sender, RoutedEventArgs e) => await TryRuntime(async () => { ClearViewportEditors(); if (session is CompiledRuntime { IsStopped: true }) session = null; if (session == null && !await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
+    async void Play(object sender, RoutedEventArgs e) => await TryRuntime(async () => { ClearViewportEditors(); if (session is CompiledRuntime { IsStopped: true }) session = null; if (session == null && !await StartSessionAsync()) return; if(replayCursor!=null)recordedPlayback=true; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); RefreshTimelineControls(); });
     void StartSession(string? phase = null)
     {
         ClearViewportEditors();
@@ -230,6 +231,7 @@ public partial class MainWindow : Window
     }
     void BindSession(string? phase)
     {
+        BeginTimelineRecording(phase);
         session!.BreakpointKind = Breakpoint.SelectedIndex > 0 ? ((ComboBoxItem)Breakpoint.SelectedItem).Content.ToString() : null;
         Viewport.Session = session; Viewport.ShowHitboxes = Hitboxes.IsChecked == true; Viewport.ShowGrid = ArenaGrid.IsChecked == true; accumulator = 0; clearedEvents = 0;
         WorkspaceTabs.SelectedIndex = 0;
@@ -238,15 +240,16 @@ public partial class MainWindow : Window
         Status.Text = phase == null ? "Playing edited document revision " + document.Revision : "Forced-phase test: earlier encounter setup bypassed";
         UpdateSession();
     }
-    void Pause(object sender, RoutedEventArgs e) { running = false; Status.Text = "Paused"; UpdatePlayButton(); }
+    void Pause(object sender, RoutedEventArgs e) { running = false; Status.Text = "Paused"; UpdatePlayButton(); RefreshTimeline(); }
     async void Restart(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (!await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
     void Stop(object sender, RoutedEventArgs e) { ClearCombatPreview(); running = false; session = null; Viewport.Session = null; Viewport.InvalidateVisual(); Events.ItemsSource = null; EventCount.Text = "0 events"; Status.Text = "Stopped"; UpdatePlayButton(); RefreshRuntimeActors(); }
-    async void Step(object sender, RoutedEventArgs e) => await TryRuntime(async () => { running = false; if (session == null && !await StartSessionAsync()) return; var active = session!; await active.AdvanceAsync(Viewport.Input(), 100); if (ReferenceEquals(active, session)) UpdateSession(); });
+    async void Step(object sender, RoutedEventArgs e) => await TryRuntime(async () => { running = false; if(replayCursor!=null && timelineReplay!=null) { await replayCursor.AdvanceToAsync(Math.Min(timelineReplay.DurationMs,session!.Ms+100)); UpdateSession(); return; } if (session == null && !await StartSessionAsync()) return; var active = session!; await active.AdvanceAsync(Viewport.Input(), 100); if (ReferenceEquals(active, session)) UpdateSession(); });
     async void TestPhase(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (selectedNode?.Kind != "State" || selectedNode.Label == "Root") throw new ArgumentException("Select a named phase first."); if (!await StartSessionAsync(selectedNode.Label)) return; running = true; clock.Restart(); Viewport.Focus(); });
     async void Advance(object? sender, EventArgs e)
     {
         if (!running || session == null || advancingRuntime) return;
         var elapsed = clock.Elapsed.TotalMilliseconds; clock.Restart();
+        if(recordedPlayback) { var activeReplay=session; advancingRuntime=true; try { await AdvanceRecordedTimeline(elapsed); } catch(Exception error) { if(ReferenceEquals(activeReplay,session)) { running=false; recordedPlayback=false; replayCursor=null; timelineReplacing=true; try { session=null; Viewport.Session=null; } finally { timelineReplacing=false; } Try(()=>throw error); } } finally { advancingRuntime=false; } return; }
         if (session is not CompiledRuntime) { Try(() => AdvancePlayback(elapsed, Viewport.Input())); return; }
         var active = session; var input = Viewport.Input(); advancingRuntime = true;
         try
@@ -282,6 +285,7 @@ public partial class MainWindow : Window
         Viewport.InvalidateVisual(); Graph.ActivePhase = session?.Entities.FirstOrDefault(e => e.Name == selectedEntity?.Id)?.Phase; UpdatePlayButton();
         if (session != null) { Coverage.ToolTip = session.Coverage; Coverage.Text = session.Coverage.Contains("Unsupported") ? "Unsupported motion · see console" : session is CompiledRuntime ? "Compiled encounter · 5 ms samples" : "Client hit geometry · 5 ms samples"; }
         TimerInfo.Text = session?.InspectTimers(); RefreshRuntimeActors(); FilterEvents(this, null!);
+        RefreshTimeline();
     }
     record EventRow(EncounterEvent Event) { public string Time => $"{Event.Ms / 1000d:0.0}s"; public override string ToString() => $"{Time}  {Event.Kind}  {Event.Message}"; }
     void FilterEvents(object sender, TextChangedEventArgs e)
@@ -295,7 +299,7 @@ public partial class MainWindow : Window
         if (follow && rows.Length > 0) Events.ScrollIntoView(rows[^1]);
     }
     void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow { Event.NodeId: { } id }) SelectNode(id); }
-    void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => session.SetBossHpFraction(e.NewValue / 100)); }
+    void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => { BranchTimeline(); session.SetBossHpFraction(e.NewValue / 100); UpdateSession(); }); }
     void ApplySource(object sender, RoutedEventArgs e) => Try(() => { document.ReplaceSource(SourceEditor.Text, d => adapter.Validate(d, selectedEntity!.Id)); Changed(); });
     void Undo(object sender, RoutedEventArgs e) => Try(() => { if (document.Undo()) Changed(); });
     void Redo(object sender, RoutedEventArgs e) => Try(() => { if (document.Redo()) Changed(); });
@@ -321,6 +325,10 @@ public partial class MainWindow : Window
     void LoadProject(string path)
     {
         var p = BehaviorDocument.Load(path);
+        ApplyProject(p,path);
+    }
+    void ApplyProject(StudioProject p, string? path)
+    {
         var d = new BehaviorDocument(p.Source, adapter, p.Identities, p.SourceFile);
         var known = catalog.FirstOrDefault(c => c.Id == p.EntityId) ?? throw new ArgumentException("Project entity is missing from this server's resources.");
         selectedEntity = known with { SourceFile = p.SourceFile }; document = d; documents[p.SourceFile] = d; projectPath = path;

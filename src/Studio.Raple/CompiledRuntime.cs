@@ -31,6 +31,10 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     public IReadOnlyList<Emission> Shots => shots;
     public IReadOnlyList<Emission> PlayerShots => playerShots;
     public IReadOnlyList<ReplayInput> Inputs => inputs;
+    public ReplayJournal? Recording { get; set; }
+    public PreparedRuntime? Prepared { get; private set; }
+    volatile ImmutableList<MovementSample> movements = ImmutableList<MovementSample>.Empty;
+    public IReadOnlyList<MovementSample> Movements => movements;
     public long Ms => Frame.Ms;
     public int PlayerHp => Frame.PlayerHp;
     public bool Dead => PlayerHp <= 0;
@@ -146,6 +150,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             cancellation.ThrowIfCancellationRequested();
             var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the compiled runtime.");
             var runtime = new CompiledRuntime(process, Stamp, limits, scenario);
+            runtime.Prepared = this;
             try { await runtime.Exchange(new(RuntimeProtocol.Version, 0, "start", new(serverRoot, scenario, Stamp.ResourceHash, phase, bindings)), limits.StartupSeconds, cancellation).ConfigureAwait(false); return runtime; }
             catch { await runtime.DisposeAsync().ConfigureAwait(false); throw; }
         }
@@ -202,7 +207,11 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
                 if (sample.ActualMs < 0 || sample.ActualMs > request.Preview!.DurationMs || sample.ActualMs % EncounterSession.SampleMs != 0 || frame.Ms != Frame.Ms + sample.ActualMs || sample.ExposureSamples.Length != request.Preview.Columns * request.Preview.Columns || sample.ExposureSamples.Any(n => n < 0)) throw new InvalidOperationException("Invalid combat sample response.");
                 inputs = inputs.AddRange(Enumerable.Range(0, sample.ActualMs / EncounterSession.SampleMs).Select(i => new ReplayInput(Frame.Ms + i * EncounterSession.SampleMs, new(), EncounterSession.SampleMs)));
             }
+            var previousMs = currentFrame?.Ms ?? 0;
+            movements=movements.AddRange(frame.MovementDelta ?? throw new InvalidOperationException("Runtime omitted native movement samples."));
             events = events.AddRange(frame.Events); shots = shots.AddRange(frame.Shots); playerShots = playerShots.AddRange(frame.PlayerShots); currentFrame = frame;
+            if (request.Command is "advance" or "boss-hp" or "remove-minions") Recording?.Record(this, new(previousMs, request.Command, request.Command == "advance" ? request.DurationMs : 0, request.Input, request.Fraction));
+            else if (request.Command == "sample-combat" && Recording != null) Recording = null;
             return response.Preview;
         }
         catch (OperationCanceledException) { Kill(); if (cancellation.IsCancellationRequested) throw; throw new TimeoutException("Compiled runtime exceeded its time limit and was stopped."); }
