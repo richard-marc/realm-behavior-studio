@@ -71,7 +71,7 @@ public partial class MainWindow
             UpdateLayout();
             if (console[1] == 1) CollapseConsole(this, new()); else if (console[1] == 2) ExpandConsole(this, new());
         }
-        if (layout.TryGetValue("workspace", out var workspace) && workspace.Length > 0 && double.IsFinite(workspace[0])) WorkspaceTabs.SelectedIndex = Math.Clamp((int)workspace[0], 0, 3);
+        if (layout.TryGetValue("workspace", out var workspace) && workspace.Length > 0 && double.IsFinite(workspace[0])) WorkspaceTabs.SelectedIndex = Math.Clamp((int)workspace[0], 0, WorkspaceTabs.Items.Count - 1);
     }
     void LoadWorkspaceLayout()
     {

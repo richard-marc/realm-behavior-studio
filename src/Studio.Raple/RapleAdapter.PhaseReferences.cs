@@ -9,6 +9,12 @@ public sealed partial class RapleAdapter
 {
     internal static bool NativeOrderType(string? fullName) => fullName is "TKR.WorldServer.logic.behaviors.Order" or "TKR.WorldServer.logic.behaviors.OrderOnce" or "TKR.WorldServer.logic.behaviors.OrderOnDeath";
     internal static bool SameEntity(string first, string second) => first == second || SimEngine.Data.IdToObjectType.TryGetValue(first, out var firstType) && SimEngine.Data.IdToObjectType.TryGetValue(second, out var secondType) && firstType == secondType;
+    public string? PhaseEntityParameter(string expression, string phaseParameter)
+    {
+        var type = Binding(expression).Constructor?.DeclaringType;
+        if (!NativeOrderType(type?.FullName)) return null;
+        return phaseParameter == (type!.Name == "OrderOnDeath" ? "state" : "targetState") ? type.Name == "OrderOnDeath" ? "target" : "children" : null;
+    }
     public bool? TargetsPhaseOf(string expression, string parameter, string ownerEntity, string targetEntity)
     {
         var binding = Binding(expression); var type = binding.Constructor?.DeclaringType;

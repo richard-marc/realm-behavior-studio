@@ -185,6 +185,13 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
         var description = DescribeExpression(expression);
         return description == null ? adapter.IsChildArgument(expression, index) : index < description.ArgumentNames.Length && description.Children.Any(p => p.Name == description.ArgumentNames[index].Split('[')[0]);
     }
+    public string? PhaseEntityParameter(string text, string phaseParameter)
+    {
+        var expression = Expression(text);
+        if (expression == null || Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || !RapleAdapter.NativeOrderType(method.ContainingType.ToDisplayString())) return null;
+        var death = method.ContainingType.Name == "OrderOnDeath";
+        return phaseParameter == (death ? "state" : "targetState") ? death ? "target" : "children" : null;
+    }
     public IReadOnlyList<ChildArgument> ChildArguments(string expression) => DescribeExpression(expression)?.Children ?? adapter.ChildArguments(expression);
     public string? ArrayElementType(string text)
     {

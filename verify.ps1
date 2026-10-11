@@ -45,6 +45,9 @@ try {
     & dotnet run --project tests/Coverage.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/coverage-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/coverage-checks.log' -Tail 25; throw 'Native attack preview checks failed.' }
     Get-Content '.artifacts/coverage-checks.log' -Tail 1
+    & dotnet run --project tests/Fragment.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/fragment-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/fragment-checks.log' -Tail 25; throw 'Reusable fragment checks failed.' }
+    Get-Content '.artifacts/fragment-checks.log' -Tail 1
     & dotnet run --project tests/AI.Checks *> '.artifacts/ai-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/ai-checks.log' -Tail 25; throw 'AI contract checks failed.' }
     Get-Content '.artifacts/ai-checks.log' -Tail 1

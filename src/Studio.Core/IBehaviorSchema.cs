@@ -20,6 +20,7 @@ public interface IBehaviorSchema
     SourceExpression? DescribeExpression(string expression) => null;
     // null means that a phase-reference owner cannot be resolved without execution.
     bool? TargetsPhaseOf(string expression, string parameter, string ownerEntity, string targetEntity) => parameter.StartsWith("targetState", StringComparison.Ordinal) && ownerEntity == targetEntity;
+    string? PhaseEntityParameter(string expression, string phaseParameter) => null;
     IEnumerable<DocumentDiagnostic> SourceDiagnostics() => [];
     string FragmentRoot(IReadOnlyList<string> expressions) => "new State(" + string.Join(",\n", expressions) + ")";
     string CollectionFragmentRoot(IReadOnlyList<string> expressions) => "new State(children: [" + string.Join(",\n", expressions) + "])";

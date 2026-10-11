@@ -77,6 +77,7 @@ public partial class MainWindow : Window
         try { InitializeAI(); } catch (Exception) { AccountStatus.Text = "Account storage is unavailable. Local editing, export and simulation remain available."; }
         Library.SelectedItem = catalog.First(e => e.Id == "Cave Pirate Brawler");
         Library.ScrollIntoView(Library.SelectedItem);
+        RefreshFragments();
         // Prime resource and behavior code paths at initialization; each actual run still gets fresh behavior instances.
         var cold = new EncounterSession(adapter, document, selectedEntity!.Id, 7, new(1000, 50, 0));
         Status.Text = $"Ready · cold runtime initialization {cold.StartMs:0} ms";
@@ -113,6 +114,7 @@ public partial class MainWindow : Window
     }
     void RefreshDocument(Guid? selection = null)
     {
+        ClearFragmentPreview();
         ClearCombatPreview();
         RefreshRuntimeActors();
         if (selectedEntity == null) return;
@@ -141,10 +143,12 @@ public partial class MainWindow : Window
     void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n } && n.Id != selectedNode?.Id) SelectAuthoringNode(n.Id, Keyboard.Modifiers); }
     void SelectNode(Guid id)
     {
+        if (selectedNode?.Id != id) ClearFragmentPreview();
         if (selectedNode?.Id != id) ClearCombatPreview();
         Try(() =>
         {
             selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();
+            RefreshFragmentDestinations();
             RefreshAttackSelection();
             RefreshMovementSelection();
             RefreshPathSelection();
