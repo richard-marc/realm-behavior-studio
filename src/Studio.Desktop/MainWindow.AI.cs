@@ -112,7 +112,7 @@ public partial class MainWindow
                 var preset = ReadPreset();
                 using IEncounterSession sim = adapter.NeedsCompiledRuntime(candidate, selectedEntity!.Id)
                     ? await CompiledRuntime.StartAsync(adapter.ServerRoot, Snapshot() with { Source = candidate.Source, Identities = candidate.Identities }, cancellation: aiCancellation?.Token ?? default)
-                    : new EncounterSession(adapter, candidate, selectedEntity.Id, int.Parse(Seed.Text), preset, int.Parse(ArenaSize.Text));
+                    : new EncounterSession(adapter, candidate, selectedEntity.Id, int.Parse(Seed.Text), preset, int.Parse(ArenaSize.Text), arena:arenaPreset);
                 for (var elapsed = 0; elapsed < duration; elapsed += 100) await sim.AdvanceAsync(new(), 100, aiCancellation?.Token ?? default);
                 return new { durationMs = duration, sim.Seed, inputs = "stationary; no attacks", player = preset, sim.PlayerHp, sim.Coverage, entityLimit = 128, projectileLimit = 20000, events = sim.Events.TakeLast(120) };
             }

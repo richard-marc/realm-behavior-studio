@@ -72,13 +72,13 @@ public partial class MainWindow
             var phase = CombatPhase.IsChecked == true ? selectedNode is { Kind: "State", Label: not "Root" } ? selectedNode.Label : throw new ArgumentException("Select a named phase in Behavior before enabling Selected phase.") : null;
             var options = new CombatPreviewOptions(new[] { 3000, 5000, 10000 }[CombatDuration.SelectedIndex], CombatGrid.SelectedIndex == 0 ? 5 : 9, double.Parse(CombatSpacing.Text, CultureInfo.InvariantCulture));
             options.Validate();
-            var expectedDocument = document; var revision = document.Revision; var selected = selectedNode?.Id;
+            var expectedDocument = document; var revision = document.Revision; var selected = selectedNode?.Id;var expectedScenario=scenarioRevision;
             cancellation = new(); combatCancellation = cancellation;
             Viewport.CombatPreviewOpen = true; CombatPreviewControls.Visibility = Visibility.Visible;
             CombatPreviewButton.Content = "Close preview"; CombatRerun.IsEnabled = false; CombatExport.IsEnabled = false;
             CombatPointInfo.Text = "Preparing independent native runs…"; Viewport.CombatProgress = "Preparing native runs…";
             WorkspaceTabs.SelectedIndex = 0;
-            bool Current() => !cancellation.IsCancellationRequested && document == expectedDocument && document.Revision == revision && selectedEntity?.Id == project.EntityId && selectedNode?.Id == selected;
+            bool Current() => !cancellation.IsCancellationRequested && document == expectedDocument && document.Revision == revision && scenarioRevision==expectedScenario && selectedEntity?.Id == project.EntityId && selectedNode?.Id == selected;
             var completed = false;
             var progress = new Progress<CombatPreviewProgress>(value =>
             {

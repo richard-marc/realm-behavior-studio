@@ -35,6 +35,8 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     public PreparedRuntime? Prepared { get; private set; }
     volatile ImmutableList<MovementSample> movements = ImmutableList<MovementSample>.Empty;
     public IReadOnlyList<MovementSample> Movements => movements;
+    volatile ArenaSceneView arena = null!;
+    public ArenaSceneView Arena=>arena;
     public long Ms => Frame.Ms;
     public int PlayerHp => Frame.PlayerHp;
     public bool Dead => PlayerHp <= 0;
@@ -208,6 +210,8 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
                 inputs = inputs.AddRange(Enumerable.Range(0, sample.ActualMs / EncounterSession.SampleMs).Select(i => new ReplayInput(Frame.Ms + i * EncounterSession.SampleMs, new(), EncounterSession.SampleMs)));
             }
             var previousMs = currentFrame?.Ms ?? 0;
+            if(frame.ArenaDelta is {} map)arena=map;
+            else if(arena==null)throw new InvalidOperationException("Runtime omitted its initial native arena snapshot.");
             movements=movements.AddRange(frame.MovementDelta ?? throw new InvalidOperationException("Runtime omitted native movement samples."));
             events = events.AddRange(frame.Events); shots = shots.AddRange(frame.Shots); playerShots = playerShots.AddRange(frame.PlayerShots); currentFrame = frame;
             if (request.Command is "advance" or "boss-hp" or "remove-minions") Recording?.Record(this, new(previousMs, request.Command, request.Command == "advance" ? request.DurationMs : 0, request.Input, request.Fraction));

@@ -17,13 +17,13 @@ public partial class MainWindow
         session = null; running = false; Viewport.Session = null;
         RefreshRuntimeActors();
         if (!adapter.NeedsCompiledRuntime(document, selectedEntity!.Id)) { StartSession(phase); return true; }
-        var project = Snapshot(); var expectedDocument = document; var revision = document.Revision;
+        var project = Snapshot(); var expectedDocument = document; var revision = document.Revision;var expectedScenario=scenarioRevision;
         using var cancellation = new CancellationTokenSource(); runtimeStarting = cancellation;
         Status.Text = "Preparing encounter…"; UpdatePlayButton();
         try
         {
             var native = await CompiledRuntime.StartAsync(adapter.ServerRoot, project, phase, cancellation: cancellation.Token);
-            if (cancellation.IsCancellationRequested || document != expectedDocument || document.Revision != revision || selectedEntity?.Id != project.EntityId)
+            if (cancellation.IsCancellationRequested || document != expectedDocument || document.Revision != revision || scenarioRevision!=expectedScenario || selectedEntity?.Id != project.EntityId)
             { await native.DisposeAsync(); return false; }
             runtimeStarting = null; session = native; BindSession(phase);
             Coverage.Text = "Compiled encounter · seed " + native.Seed;

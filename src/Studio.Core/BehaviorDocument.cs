@@ -32,6 +32,7 @@ public sealed record StudioProject
     public string Brief { get; init; } = "";
     public int Seed { get; init; } = 1;
     public int ArenaSize { get; init; } = 48;
+    public ArenaPreset Arena { get; init; } = new();
     public PlayerPreset Player { get; init; } = new();
     public List<NodeIdentity> Identities { get; init; } = new();
     public Dictionary<string, double[]> Layout { get; init; } = new();

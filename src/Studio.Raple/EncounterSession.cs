@@ -38,6 +38,9 @@ public sealed class EncounterSession : IEncounterSession
     readonly bool compiledSource;
     readonly ConditionEffectManager playerConditions;
     readonly GameWeapon weapon;
+    readonly NativeArenaObserver arenaObserver;
+    public ArenaSceneView Arena=>arenaObserver.Current;
+    public ArenaTileProbe ProbeArena(double x,double y)=>new(((BossLabWorld)engine.World).ContainsArenaPoint(x,y),engine.Walkable(x,y),engine.World.IsPassable(x,y,true),engine.BlocksProjectile(x,y,false),engine.BlocksProjectile(x,y,true),engine.TileSpeed(x,y));
     public const int SampleMs = 5;
     int eventCursor;
     public long Ms { get; private set; }
@@ -81,9 +84,10 @@ public sealed class EncounterSession : IEncounterSession
         public float X, Y; public double Angle; public Guid? Node;
         public ProjectileDesc Desc = null!; public Player.ValidatedProjectile Path = null!;
     }
-    public EncounterSession(RapleAdapter adapter, BehaviorDocument doc, string entity, int seed, PlayerPreset player, int arenaSize = 48, string? phase = null, bool originalRuntimeReference = false)
+    public EncounterSession(RapleAdapter adapter, BehaviorDocument doc, string entity, int seed, PlayerPreset player, int arenaSize = 48, string? phase = null, bool originalRuntimeReference = false,ArenaPreset? arena = null)
     {
         var watch = Stopwatch.StartNew(); document = doc; entityId = entity; this.seed = seed; preset = player; compiledSource = originalRuntimeReference;
+        arena??=new();NativeArena.Validate(arena);
         if (player.Hp < 1 || player.Hp > 1000000 || player.Speed < 0 || player.Speed > 500 || player.Defense < 0 || player.Defense > 10000 || player.Attack < 0 || player.Attack > 500 || player.Dexterity < 0 || player.Dexterity > 500) throw new ArgumentException("Player values are outside supported bounds.");
         if (!double.IsFinite(player.StartX) || !double.IsFinite(player.StartY) || player.StartX < 0 || player.StartY < 0 || (float)player.StartX >= 128 || (float)player.StartY >= 128) throw new ArgumentException("Player start must be inside the 128-tile prototype map.");
         // Resize with the observer at the native arena center. The offline
@@ -95,7 +99,10 @@ public sealed class EncounterSession : IEncounterSession
         playerConditions = new ConditionEffectManager(engine.Actor);
         typeof(Entity).GetField("ConditionEffectManager", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(engine.Actor, playerConditions);
         weapon = new GameWeapon(engine.Actor, player, seed);
-        ((BossLabWorld)engine.World).TrySetArenaSize(engine.Actor, SimEngine.Time(0), Math.Clamp(arenaSize, 32, 128));
+        NativeArena.Apply(engine,arena,arenaSize);
+        arenaObserver=new(engine,arena.GroundId);
+        NativeArena.ValidateSpawn(engine,arena.BossX,arena.BossY,"Primary enemy",true);
+        foreach(var actor in arena.Actors)NativeArena.ValidateSpawn(engine,actor.X,actor.Y,actor.EntityId,true);
         if (!((BossLabWorld)engine.World).ContainsArenaPoint(player.StartX, player.StartY) || !engine.World.Map.Contains((float)player.StartX, (float)player.StartY) || !engine.World.IsPassable((float)player.StartX, (float)player.StartY, false)) throw new ArgumentException("Player start is outside the passable prototype arena.");
         // Arena resizing can relocate the debug actor. Apply the validated start
         // again before any encounter entry callback or forced-phase setup.
@@ -108,7 +115,9 @@ public sealed class EncounterSession : IEncounterSession
         var type = SimEngine.Data.IdToObjectType[entity];
         // Keep spawned instances on the edited behavior too; unrelated minions use their production definitions.
         engine.Server.BehaviorDb.Definitions[type] = Tuple.Create(root, engine.Server.BehaviorDb.Definitions[type].Item2);
-        boss = (Enemy)engine.World.CreateNewEntity(type, 64.5f, 64.5f); engine.FlushAdds();
+        boss = (Enemy)engine.World.CreateNewEntity(type,(float)arena.BossX,(float)arena.BossY);
+        foreach(var actor in arena.Actors)engine.World.CreateNewEntity(SimEngine.Data.IdToObjectType[actor.EntityId],(float)actor.X,(float)actor.Y);
+        engine.FlushAdds();
         PlayerHp = weapon.Stats[0]; engine.Actor.HP = PlayerHp;
         if (phase != null)
         {
@@ -119,6 +128,8 @@ public sealed class EncounterSession : IEncounterSession
         watch.Stop(); StartMs = watch.Elapsed.TotalMilliseconds;
         Add("start", $"Seed {seed}; 100 ms enemy ticks / {SampleMs} ms client collision samples. Weapon: {weapon.Entry.Name}. Abilities, armor/ring loadouts, regeneration and full player lifecycle remain pending.");
         ObserveActorRemovals();
+        if(NativeArena.Limitations(arena) is {} limitation){Coverage=limitation;Add("unsupported",limitation);}
+        arenaObserver.Capture();
     }
     void Add(string kind, string message, Guid? node = null, long? at = null, int? actor = null, int? parent = null)
     {
@@ -250,6 +261,7 @@ public sealed class EncounterSession : IEncounterSession
         }
         foreach (var removed in bullets.Where(b => b.Friendly && b.Removed)) weapon.Forget(removed.Id);
         bullets.RemoveAll(b => b.Removed);
+        arenaObserver.Capture();
         Recording?.Record(this, new(Ms - durationMs, "advance", durationMs, input));
     }
     void ObserveActorRemovals()

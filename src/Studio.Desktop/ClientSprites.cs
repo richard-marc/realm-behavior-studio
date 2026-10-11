@@ -65,11 +65,18 @@ public sealed class ClientSprites
             }
         }
         foreach (var file in Directory.EnumerateFiles(Path.Combine(serverRoot, "TKR.Shared/resources/xml"), "*.xml", SearchOption.AllDirectories))
-            foreach (var element in XDocument.Load(file).Descendants("Object"))
+        {
+            var xml=XDocument.Load(file);
+            foreach (var element in xml.Descendants("Object"))
                 if (element.Attribute("id") is { } id) objects[id.Value] = element;
+            foreach(var element in xml.Descendants("Ground"))
+                if(element.Attribute("type") is {} type)
+                { var text=type.Value;var number=text.StartsWith("0x",StringComparison.OrdinalIgnoreCase)?Convert.ToUInt16(text[2..],16):ushort.Parse(text,CultureInfo.InvariantCulture);objects["@ground:"+number]=element; }
+        }
         Current = this;
     }
     public BitmapSource? Get(string id, int frame = 0, bool down = false) => GetRaw(id, frame, down ? 2 : 0);
+    public BitmapSource? GetGround(ushort type)=>Get("@ground:"+type);
     BitmapSource? GetRaw(string id, int frame, int direction)
     {
         var key = id + ":" + frame + ":" + direction;

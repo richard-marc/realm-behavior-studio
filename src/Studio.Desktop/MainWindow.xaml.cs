@@ -45,6 +45,7 @@ public partial class MainWindow : Window
         InitializeSelectionControls();
         InitializeCombatControls();
         InitializeTimelineControls();
+        InitializeArenaControls();
         Viewport.AttackEdited += ApplyAttackEdit;
         Viewport.MovementEdited += ApplyMovementEdit;
         Viewport.PathEdited += ApplyPathEdit;
@@ -94,7 +95,7 @@ public partial class MainWindow : Window
     StudioProject Snapshot() => new()
     {
         SourceFile = selectedEntity!.SourceFile, Source = document.Source, Identities = document.Identities,
-        EntityId = selectedEntity.Id, Brief = Brief.Text, Player = ReadPreset(), Seed = int.Parse(Seed.Text), ArenaSize = int.Parse(ArenaSize.Text),
+        EntityId = selectedEntity.Id, Brief = Brief.Text, Player = ReadPreset(), Seed = int.Parse(Seed.Text), ArenaSize = int.Parse(ArenaSize.Text), Arena=arenaPreset,
         Layout = CaptureLayout(), LockedNodes = document.LockedNodes.ToList(), CollapsedNodes = CollapsedNodes.ToList()
     };
     PlayerPreset ReadPreset() => new(int.Parse(PlayerHp.Text), int.Parse(PlayerSpeed.Text), int.Parse(PlayerDefense.Text), Invulnerable.IsChecked == true, Spectator.IsChecked == true,
@@ -226,7 +227,7 @@ public partial class MainWindow : Window
     void StartSession(string? phase = null)
     {
         ClearViewportEditors();
-        session = new EncounterSession(adapter, document, selectedEntity!.Id, int.Parse(Seed.Text), ReadPreset(), int.Parse(ArenaSize.Text), phase);
+        session = new EncounterSession(adapter, document, selectedEntity!.Id, int.Parse(Seed.Text), ReadPreset(), int.Parse(ArenaSize.Text), phase, arena:arenaPreset);
         BindSession(phase);
     }
     void BindSession(string? phase)
@@ -301,8 +302,8 @@ public partial class MainWindow : Window
     void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow { Event.NodeId: { } id }) SelectNode(id); }
     void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => { BranchTimeline(); session.SetBossHpFraction(e.NewValue / 100); UpdateSession(); }); }
     void ApplySource(object sender, RoutedEventArgs e) => Try(() => { document.ReplaceSource(SourceEditor.Text, d => adapter.Validate(d, selectedEntity!.Id)); Changed(); });
-    void Undo(object sender, RoutedEventArgs e) => Try(() => { if (document.Undo()) Changed(); });
-    void Redo(object sender, RoutedEventArgs e) => Try(() => { if (document.Redo()) Changed(); });
+    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(Viewport.ArenaEditing) UndoArena(); else if (document.Undo()) Changed(); });
+    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(Viewport.ArenaEditing) RedoArena(); else if (document.Redo()) Changed(); });
     void ImportSource(object sender, RoutedEventArgs e) => Try(() =>
     {
         var dialog = new OpenFileDialog { Filter = "C# behavior files|*.cs", InitialDirectory = Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db") };
@@ -331,6 +332,7 @@ public partial class MainWindow : Window
     {
         var d = new BehaviorDocument(p.Source, adapter, p.Identities, p.SourceFile);
         var known = catalog.FirstOrDefault(c => c.Id == p.EntityId) ?? throw new ArgumentException("Project entity is missing from this server's resources.");
+        NativeArena.Validate(p.Arena); arenaPreset=p.Arena; arenaUndo.Clear();arenaRedo.Clear();scenarioRevision++;ClearArenaEditor();
         selectedEntity = known with { SourceFile = p.SourceFile }; document = d; documents[p.SourceFile] = d; projectPath = path;
         foreach (var id in p.LockedNodes) d.LockedNodes.Add(id);
         Brief.Text = p.Brief; Seed.Text = p.Seed.ToString(); ArenaSize.Text = p.ArenaSize.ToString(); PlayerHp.Text = p.Player.Hp.ToString(); PlayerSpeed.Text = p.Player.Speed.ToString(); PlayerDefense.Text = p.Player.Defense.ToString(); Invulnerable.IsChecked = p.Player.Invulnerable; Spectator.IsChecked = p.Player.Spectator;
@@ -343,10 +345,10 @@ public partial class MainWindow : Window
     }
     async void Export(object sender, RoutedEventArgs e) => await TryRuntime(async () =>
     {
-        var project = Snapshot(); var expected = document; var revision = document.Revision;
+        var project = Snapshot(); var expected = document; var revision = document.Revision;var expectedScenario=scenarioRevision;
         Status.Text = "Checking export…";
         await using var native = await CompiledRuntime.StartAsync(adapter.ServerRoot, project);
-        if (document != expected || document.Revision != revision || selectedEntity?.Id != project.EntityId) throw new InvalidOperationException("The document changed during export checking. Export the current revision again.");
+        if (document != expected || document.Revision != revision || scenarioRevision!=expectedScenario || selectedEntity?.Id != project.EntityId) throw new InvalidOperationException("The document or arena changed during export checking. Export the current revision again.");
         var dialog = new SaveFileDialog { Filter = "C# behavior source|*.cs", FileName = Path.GetFileName(selectedEntity.SourceFile) };
         if (dialog.ShowDialog() != true) return;
         if (Path.GetFullPath(dialog.FileName).StartsWith(adapter.ServerRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Export to a separate folder, then review before installing in the private server.");

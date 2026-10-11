@@ -51,6 +51,9 @@ try {
     & dotnet run --project tests/Replay.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/replay-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/replay-checks.log' -Tail 25; throw 'Native replay checks failed.' }
     Get-Content '.artifacts/replay-checks.log' -Tail 1
+    & dotnet run --project tests/Arena.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/arena-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/arena-checks.log' -Tail 25; throw 'Native arena checks failed.' }
+    Get-Content '.artifacts/arena-checks.log' -Tail 1
     & dotnet run --project tests/AI.Checks *> '.artifacts/ai-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/ai-checks.log' -Tail 25; throw 'AI contract checks failed.' }
     Get-Content '.artifacts/ai-checks.log' -Tail 1

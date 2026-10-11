@@ -148,9 +148,9 @@ public partial class MainWindow
     });
     async Task LoadTimelineReplayAsync(EncounterReplay replay)
     {
-        var expected=document; var revision=document.Revision;
+        var expected=document; var revision=document.Revision;var expectedScenario=scenarioRevision;
         replay.Validate(); var current=await Task.Run(()=>EncounterReplay.Identify(adapter,replay.Project,replay.Identity.CompiledBuildId));
-        if(document!=expected || document.Revision!=revision)throw new InvalidOperationException("The document changed while opening the recording. Open it again.");
+        if(document!=expected || document.Revision!=revision || scenarioRevision!=expectedScenario)throw new InvalidOperationException("The document or arena changed while opening the recording. Open it again.");
         if(current!=replay.Identity)throw new InvalidOperationException("Recording source, resources or runtime changed. Record a fresh run.");
         ApplyProject(replay.Project,null); timelineReplay=replay; recordedProject=replay.Project; recordedPhase=replay.Phase; recordedIdentity=replay.Identity;
         timelineEventsCount=-1; await SeekTimelineAsync(0); WorkspaceTabs.SelectedIndex=5;

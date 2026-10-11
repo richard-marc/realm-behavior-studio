@@ -17,6 +17,8 @@ public sealed class ReplayJournal
     readonly List<ReplayCommand> commands = [];
     string eventsHash = "", shotsHash = "", playerShotsHash = "", movementHash = "";
     int events, shots, playerShots, movements;
+    ArenaSceneView? observedArena;
+    string arenaHash="";
     public ReplayPoint Initial { get; }
     public ReplayJournal(IEncounterSession session)
     {
@@ -30,11 +32,12 @@ public sealed class ReplayJournal
         { while (cursor < values.Count) hash = Hash(hash + JsonSerializer.Serialize(values[cursor++])); }
         Append(session.Events, ref events, ref eventsHash); Append(session.Shots, ref shots, ref shotsHash); Append(session.PlayerShots, ref playerShots, ref playerShotsHash);
         Append(session.Movements,ref movements,ref movementHash);
+        if(!ReferenceEquals(observedArena,session.Arena)){observedArena=session.Arena;arenaHash=Hash(JsonSerializer.Serialize(observedArena with { Revision=0 }));}
         var signature = Hash(JsonSerializer.Serialize(new {
             session.Ms, session.PlayerHp, session.PlayerX, session.PlayerY, session.BossHp, session.BossMaxHp, session.Seed,
             session.PlayerFacing, session.PlayerAttackAngle, session.PlayerMoveSpeed, session.PlayerAttackStart, session.PlayerAttackPeriod,
             session.PlayerStats, session.Coverage, actors = session.Entities.OrderBy(e => e.Id), projectiles = session.Projectiles,
-            timers = session.InspectTimers(), eventsHash, shotsHash, playerShotsHash, movementHash
+            timers = session.InspectTimers(), eventsHash, shotsHash, playerShotsHash, movementHash,arenaHash
         }));
         return new(session.Ms, signature, events, shots, playerShots,movements);
     }
@@ -77,13 +80,13 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
     {
         static bool Hash(string? value) => value?.Length == 64 && value.All(Uri.IsHexDigit);
         if (Version != 1 || Project == null || Identity == null || Initial == null || Commands == null || Events == null || Shots == null || PlayerShots == null || Movements==null || Movements.Length>500_000 ||
-            Project.Version != 1 || Project.Player == null || Project.Identities == null || Project.LockedNodes == null || Project.CollapsedNodes == null || Project.Layout == null ||
+            Project.Version != 1 || Project.Player == null || Project.Arena==null || Project.Identities == null || Project.LockedNodes == null || Project.CollapsedNodes == null || Project.Layout == null ||
             string.IsNullOrEmpty(Project.SourceFile) || string.IsNullOrEmpty(Project.EntityId) || Project.Source == null || Project.Source.Length > 4_000_000 ||
             Commands.Length > 100_000 || Events.Length > 30_000 || Shots.Length > 200_000 || PlayerShots.Length > 200_000 ||
             !Hash(Identity.SourceHash) || !Hash(Identity.NativeSourcesHash) || !Hash(Identity.ResourceHash) || !Hash(Identity.RuntimeHash) ||
             Identity.CompiledBuildId != "" && !Hash(Identity.CompiledBuildId) || Identity.SourceHash != ReplayJournal.Hash(JsonSerializer.Serialize(Project)))
             throw new ArgumentException("Unsupported, modified or oversized encounter recording.");
-        long ms = 0; var previous = Initial;
+        Project.Arena.Validate();long ms = 0; var previous = Initial;
         if (Initial.Ms != 0 || !Hash(Initial.Signature) || Initial.Events < 0 || Initial.Shots < 0 || Initial.PlayerShots < 0 || Initial.Movements<0) throw new ArgumentException("Invalid initial replay witness.");
         foreach (var command in Commands)
         {
@@ -150,7 +153,7 @@ public sealed class ReplayCursor
                 if (identity.ResourceHash != adapter.LoadedResourceHash) throw new InvalidOperationException("Loaded resources changed. Restart Studio before replay.");
                 var document = new BehaviorDocument(replay.Project.Source, adapter, replay.Project.Identities, replay.Project.SourceFile);
                 if (adapter.NeedsCompiledRuntime(document, replay.Project.EntityId)) throw new InvalidOperationException("Recording runtime mode does not match its source.");
-                session = new EncounterSession(adapter, document, replay.Project.EntityId, replay.Project.Seed, replay.Project.Player, replay.Project.ArenaSize, replay.Phase);
+                session = new EncounterSession(adapter, document, replay.Project.EntityId, replay.Project.Seed, replay.Project.Player, replay.Project.ArenaSize, replay.Phase,arena:replay.Project.Arena);
             }
             session.BreakpointKind = null; session.Recording = new(session);
             Match(session.Recording.Initial, replay.Initial);

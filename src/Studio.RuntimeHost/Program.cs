@@ -16,6 +16,7 @@ try
 catch (ArgumentException) { return 0; }
 EncounterSession? session = null;
 int events = 0, shots = 0, playerShots = 0, movements = 0;
+long arenaRevision=-1;
 long lastSequence = 0;
 while (Console.ReadLine() is { } line)
 {
@@ -37,7 +38,7 @@ while (Console.ReadLine() is { } line)
             var project = start.Project;
             if (project.Version != 1) throw new ArgumentException("Unsupported project version.");
             var document = new BehaviorDocument(project.Source, new PreparedBehaviorSchema(adapter, start.SourceBindings ?? []), project.Identities);
-            session = new(adapter, document, project.EntityId, project.Seed, project.Player, project.ArenaSize, start.Phase, originalRuntimeReference: true);
+            session = new(adapter, document, project.EntityId, project.Seed, project.Player, project.ArenaSize, start.Phase, originalRuntimeReference: true,arena:project.Arena);
             if (SourceVerification.Fingerprint(resourceRoot, "*") != start.ResourceHash) throw new InvalidOperationException("Game resources changed during runtime initialization. Restart with the current resources.");
         }
         else
@@ -54,7 +55,7 @@ while (Console.ReadLine() is { } line)
                 default: throw new ArgumentException("Unknown runtime command.");
             }
         }
-        var response = new RuntimeResponse(RuntimeProtocol.Version, request.Sequence, RuntimeProtocol.Capture(session!, ref events, ref shots, ref playerShots,ref movements), Preview: preview);
+        var response = new RuntimeResponse(RuntimeProtocol.Version, request.Sequence, RuntimeProtocol.Capture(session!, ref events, ref shots, ref playerShots,ref movements,ref arenaRevision), Preview: preview);
         var json = JsonSerializer.Serialize(response);
         if (json.Length > RuntimeProtocol.MaxLineLength) throw new InvalidOperationException("Runtime response exceeds the protocol limit.");
         protocolOutput.WriteLine(json); protocolOutput.Flush();

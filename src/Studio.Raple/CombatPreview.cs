@@ -77,7 +77,7 @@ public static class CombatPreview
             }
             return await Task.Run(() =>
             {
-                using var native = new EncounterSession(adapter, document, project.EntityId, project.Seed, player, project.ArenaSize, phase);
+                using var native = new EncounterSession(adapter, document, project.EntityId, project.Seed, player, project.ArenaSize, phase,arena:project.Arena);
                 return NativeCombatSampling.Run(native, options, density, cancellation);
             }, cancellation).ConfigureAwait(false);
         }

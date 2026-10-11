@@ -42,7 +42,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
-        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath"];
+        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root)
     {

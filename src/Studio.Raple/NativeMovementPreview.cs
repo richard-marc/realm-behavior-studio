@@ -16,7 +16,7 @@ public static class NativeMovementPreview
         var document = new BehaviorDocument(project.Source, adapter, project.Identities, project.SourceFile);
         IEncounterSession native = adapter.NeedsCompiledRuntime(document, project.EntityId)
             ? await CompiledRuntime.StartAsync(adapter.ServerRoot, project, phase, cancellation: cancellation)
-            : new EncounterSession(adapter, document, project.EntityId, project.Seed, project.Player, project.ArenaSize, phase);
+            : new EncounterSession(adapter, document, project.EntityId, project.Seed, project.Player, project.ArenaSize, phase, arena:project.Arena);
         try
         {
             var actor = native.Entities.MinBy(e => e.Id) ?? throw new InvalidOperationException("The native preview has no encounter actor.");

@@ -64,7 +64,7 @@ public partial class MainWindow
     {
         await AwaitCombatCancellation();
         if (!pathEditing || selectedNode == null) return;
-        var expected = document; var revision = document.Revision; var nodeId = selectedNode.Id; var project = Snapshot();
+        var expected = document; var revision = document.Revision; var nodeId = selectedNode.Id; var project = Snapshot();var expectedScenario=scenarioRevision;
         BehaviorNode? phase = selectedNode;
         while (phase != null && phase.Kind != "State") phase = document.Parent(phase.Id);
         var phaseName = phase == null || phase.Label == "Root" ? null : document.StateName(phase.Id);
@@ -73,7 +73,7 @@ public partial class MainWindow
         try
         {
             var trace = await NativeMovementPreview.SampleAsync(adapter, project, phaseName, cancellation: cancellation.Token);
-            if (cancellation.IsCancellationRequested || document != expected || document.Revision != revision || selectedNode?.Id != nodeId || !pathEditing) return;
+            if (cancellation.IsCancellationRequested || document != expected || document.Revision != revision || scenarioRevision!=expectedScenario || selectedNode?.Id != nodeId || !pathEditing) return;
             Viewport.PathTrace = trace; Viewport.FitPath();
             Status.Text = "Native movement samples · " + (phaseName == null ? "full encounter" : "forced phase " + phaseName) + " · seed " + trace.Seed + " · stationary test player";
         }
