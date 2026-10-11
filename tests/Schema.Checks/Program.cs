@@ -5,6 +5,7 @@ using Studio.Raple;
 using TKR.WorldServer.logic;
 using TKR.WorldServer.core.objects;
 using TKR.Shared.resources;
+using TKR.WorldServer.utils;
 
 var adapter = new RapleAdapter(Path.GetFullPath(args.FirstOrDefault() ?? "../raple-realms-7-server"));
 var count = 0;
@@ -172,4 +173,57 @@ using (var homeSession = new EncounterSession(adapter, homeDoc, "Cave Pirate Bra
     nativeBoss.Move(76, 64.5f); homeSession.Step(new()); var returning = homeSession.Entities.Single();
     Check(inside.X == 70 && Math.Abs(returning.X - 75.85) < .00001, "StayCloseToSpawn captures its entry position and uses the actual range before returning toward that anchor");
 }
+var enemyResources = EntityResources.Catalog(EntityResourceScope.Enemy);
+var queryResources = EntityResources.Catalog(EntityResourceScope.Queryable);
+var allResources = EntityResources.Catalog(EntityResourceScope.Resolvable);
+var ghost = enemyResources.Single(r => r.Id == "Ghost Ship");
+var ghostXml = System.Xml.Linq.XElement.Load(Path.Combine(adapter.ServerRoot, "TKR.Shared/resources/xml/characters/TK_Characters_chars16x16rEncounters.xml")).Elements("Object").Single(e => (string?)e.Attribute("id") == "Ghost Ship");
+Check(ghost.ObjectType == Convert.ToUInt16(((string)ghostXml.Attribute("type")!)[2..], 16) && ghost.MaxHp == (int)ghostXml.Element("MaxHitPoints")! && ghost.Defense == (int)ghostXml.Element("Defense")! && ghost.SpriteId == (string)ghostXml.Attribute("id")!, "Entity choices retain the real XML ID, type, sprite key, HP and defense");
+Check(allResources.Count > queryResources.Count && queryResources.Count > enemyResources.Count && allResources.Select(r => r.Id).Distinct().Count() == allResources.Count, "Resource catalogs distinguish native Resolve, collision-index and enemy-only spawn choices with unique native IDs");
+var portalResource = allResources.First(r => r.RuntimeKind == "Portal");
+Check(!enemyResources.Any(r => r.Id == portalResource.Id) && !queryResources.Any(r => r.Id == portalResource.Id), "Portals are resolvable but absent from the native enemy/static collision index");
+Check(allResources.Where(r => r.RuntimeKind is "Container" or "Vendor").All(r => !queryResources.Any(q => q.Id == r.Id)), "Containers and vendors retain their own world buckets instead of being advertised as movement targets");
+var entityDoc = Doc("new State(new Spawn(\"Cave Pirate Brawler\", maxChildren: 1, initialSpawn: 1))");
+var entityNode = entityDoc.Entities.Single().Root.Children.Single();
+var entityBefore = entityDoc.Source; var entityRevision = entityDoc.Revision;
+adapter.ApplyEntityReference(entityDoc, "Cave Pirate Brawler", entityNode.Id, entityRevision, "children", ghost.Id);
+Check(entityDoc.Revision == entityRevision + 1 && adapter.ReadEntityReference(entityDoc, entityDoc.Find(entityNode.Id), adapter.EntityParameterFor(entityDoc, entityDoc.Find(entityNode.Id))!) is { Known: true, Id: "Ghost Ship" }, "Choosing a spawn resource commits its actual ID once through the typed native parameter");
+Check(entityDoc.Find(entityNode.Id).Parameters.Single(p => p.Name == "maxChildren").Expression == "1", "Entity selection preserves unrelated constructor arguments and node identity");
+using (var spawnSession = new EncounterSession(adapter, entityDoc, "Cave Pirate Brawler", 7, new()))
+{
+    spawnSession.Step(new()); spawnSession.Step(new());
+    Check(spawnSession.Entities.Any(e => e.Name == "Ghost Ship"), "Native Spawn creates the chosen XML enemy rather than an editor placeholder");
+    var engine = typeof(EncounterSession).GetField("engine", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(spawnSession)!;
+    var server = (TKR.WorldServer.core.GameServer)engine.GetType().GetField("Server")!.GetValue(engine)!;
+    var nativeData = (XmlData)engine.GetType().GetProperty("Data", BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
+    Check(allResources.All(r => nativeData.IdToObjectType[r.Id] == r.ObjectType && nativeData.ObjectDescs[r.ObjectType].IdName == r.SpriteId), "Every XML choice follows the final native ID lookup and resolved sprite descriptor, including aliases and overwritten IDs");
+    var portal = Entity.Resolve(server, portalResource.ObjectType);
+    Check(portal is Portal, "A resolvable portal choice constructs the actual native Portal class");
+    var nativeBoss = (Enemy)typeof(EncounterSession).GetField("boss", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(spawnSession)!;
+    portal.Move(65, 64.5f); nativeBoss.World.EnterWorld(portal);
+    var staticResource = allResources.First(r => r.RuntimeKind == "World object"); var staticObject = Entity.Resolve(server, staticResource.ObjectType);
+    staticObject.Move(65, 64.5f); nativeBoss.World.EnterWorld(staticObject);
+    engine.GetType().GetMethod("FlushAdds")!.Invoke(engine, null);
+    Check(nativeBoss.GetNearestEntity(10, (ushort?)portal.ObjectType) == null && nativeBoss.GetNearestEntity(10, (ushort?)staticObject.ObjectType) == staticObject, "The real native world query excludes a nearby portal while including a resolved static object");
+}
+entityDoc.Undo(); Check(entityDoc.Source == entityBefore, "One Undo restores the entire original entity argument");
+Reject(() => adapter.ApplyEntityReference(entityDoc, "Cave Pirate Brawler", entityNode.Id, entityDoc.Revision, "children", portalResource.Id), "Spawn rejects non-enemy XML resources atomically");
+Reject(() => adapter.ApplyEntityReference(entityDoc, "Cave Pirate Brawler", entityNode.Id, entityDoc.Revision, "children", null), "Spawn rejects null player targeting");
+Reject(() => adapter.ApplyEntityReference(entityDoc, "Cave Pirate Brawler", entityNode.Id, entityDoc.Revision - 1, "children", ghost.Id), "Entity choices reject stale source revisions");
+entityDoc.LockedNodes.Add(entityNode.Id);
+Reject(() => adapter.ApplyEntityReference(entityDoc, "Cave Pirate Brawler", entityNode.Id, entityDoc.Revision, "children", ghost.Id), "Entity choices honor the shared source lock");
+var targetDoc = Doc("new State(new Follow(.3, target: \"Ghost Ship\"))"); var targetNode = targetDoc.Entities.Single().Root.Children.Single();
+adapter.ApplyEntityReference(targetDoc, "Cave Pirate Brawler", targetNode.Id, targetDoc.Revision, "target", null);
+Check(targetDoc.Find(targetNode.Id).Parameters.Single(p => p.Name == "target").Expression == "null" && adapter.ReadMovementPattern(targetDoc, targetDoc.Find(targetNode.Id))!.Target == null, "Nearest-player selection writes the actual native null target without a fake entity ID");
+var transitionDoc = Doc("new State(new State(\"waiting\", new Spawn(\"Ghost Ship\", maxChildren: 1, initialSpawn: 1), new EntityExistsTransition(\"Ghost Ship\", 10, \"found\")), new State(\"found\"))");
+using (var transitionSession = new EncounterSession(adapter, transitionDoc, "Cave Pirate Brawler", 7, new()))
+{
+    transitionSession.Step(new()); transitionSession.Step(new()); transitionSession.Step(new());
+    Check(transitionSession.Entities.Single(e => e.Name == "Cave Pirate Brawler").Phase == "found", "Entity-exists transitions query the actual spawned XML target through the native collision index");
+}
+var ignoredDoc = Doc("new State(new State(\"waiting\", new EntityNotExistsTransition(\"Ghost Ship\", 10, \"done\", checkAttackTarget: true)), new State(\"done\"))");
+var ignoredNode = ignoredDoc.Entities.Single().Root.Descendants().Single(n => n.Kind == "EntityNotExistsTransition");
+Check(adapter.EntityParameterFor(ignoredDoc, ignoredNode)!.InactiveReason != null, "The picker explains when native checkAttackTarget makes the XML target unused");
+Reject(() => adapter.ApplyEntityReference(ignoredDoc, "Cave Pirate Brawler", ignoredNode.Id, ignoredDoc.Revision, "target", "Cave Pirate Brawler"), "Inactive XML targets cannot be changed through the resource picker");
+Check(RapleAdapter.EntityParameterFor("Transform")?.Scope == EntityResourceScope.Resolvable && RapleAdapter.EntityParameterFor("TransformOnDeath")?.Scope == EntityResourceScope.Resolvable && RapleAdapter.EntityParameterFor("EngineTransform") == null, "Transform mappings follow native Resolve while context-specific EngineTransform retains its source boundary");
 Console.WriteLine($"{count} native schema checks passed.");

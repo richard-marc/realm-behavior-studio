@@ -16,6 +16,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     const int StudioContextCount = 4;
     const double StudioContextSpeed = .3;
     const string StudioContextPhaseName = "source name";
+    const string StudioContextEntityId = "Ghost Ship";
     static State StudioContextRoot(int count = 4, double speed = .3) => new State(new State("source factory", new TKR.WorldServer.logic.behaviors.Follow(speed, range: 1), StudioContextFan(count)));
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(int count = 4, double range = 8) => new TKR.WorldServer.logic.behaviors.Shoot(range, count: count, shootAngle: 12, fixedAngle: 90, coolDown: 200);
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(string text) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: text.Length);
@@ -466,6 +467,27 @@ Check(adapter.ReadMovementPattern(unknownRange, Root(unknownRange).Children.Sing
 var unknownTarget = Doc("new State(new Orbit(.3, 3, target: StudioContextMovementTarget))");
 Check(adapter.ReadMovementPattern(unknownTarget, Root(unknownTarget).Children.Single()) == null, "An unknown target getter retains its source boundary rather than being replaced with a player prototype");
 Check(adapter.ReadMovementPattern(shadowed, Root(shadowed).Children.Single()) is { Kind: "Follow", Range: 1 }, "A source alias resolves to the actual native movement primitive and its explicit range instead of exposing attack controls");
+var constantTarget = Doc("new State(new Follow(.3, target: StudioContextEntityId))"); var constantTargetNode = Root(constantTarget).Children.Single();
+Check(adapter.ReadEntityReference(constantTarget, constantTargetNode, adapter.EntityParameterFor(constantTarget, constantTargetNode)!) is { Known: true, Id: "Ghost Ship" }, "Entity IDs resolve compiler constants in the actual imported source scope");
+var unknownTargetNode = Root(unknownTarget).Children.Single(); var unknownTargetBefore = unknownTarget.Source;
+Check(adapter.ReadEntityReference(unknownTarget, unknownTargetNode, adapter.EntityParameterFor(unknownTarget, unknownTargetNode)!) is { Known: false }, "Entity selection retains an unknown throwing getter without authoring execution");
+adapter.ApplyEntityReference(unknownTarget, "Cave Pirate Brawler", unknownTargetNode.Id, unknownTarget.Revision, "target", "Ghost Ship");
+Check(unknownTarget.Find(unknownTargetNode.Id).Parameters.Single(p => p.Name == "target").Expression == "\"Ghost Ship\"" && unknownTarget.Find(unknownTargetNode.Id).Parameters.Single(p => p.Name == "radius").Expression == "3", "Entity selection replaces only the unknown target expression and preserves source-scoped geometry");
+unknownTarget.Undo(); Check(unknownTarget.Source == unknownTargetBefore, "Undo restores the complete unknown entity expression without evaluating it");
+Check(adapter.EntityParameterFor(shadowed, Root(shadowed).Children.Single()) is { Name: "target", AllowsPlayer: true } && adapter.EntityParameterFor(nested, nodes[0]) == null, "Compiler-resolved aliases expose the real native entity contract while factories remain source-bound");
+var sourceTransition = Doc("new State(new State(\"waiting\", new EntityExistsTransition(targetState: \"done\", dist: 10, target: StudioContextEntityId)), new State(\"done\"))");
+var sourceTransitionNode = Root(sourceTransition).Descendants().Single(n => n.Kind == "EntityExistsTransition");
+adapter.ApplyEntityReference(sourceTransition, "Cave Pirate Brawler", sourceTransitionNode.Id, sourceTransition.Revision, "target", "Cave Pirate Brawler");
+Check(sourceTransition.Find(sourceTransitionNode.Id).Parameters.Single(p => p.Name == "targetState").Expression == "\"done\"", "Named out-of-order entity arguments do not rewrite the transition's phase destination");
+var transformed = Doc("new State(new Transform(StudioContextEntityId))"); var transformNode = Root(transformed).Children.Single();
+Check(adapter.EntityParameterFor(transformed, transformNode) is { Scope: EntityResourceScope.Resolvable } && adapter.NeedsCompiledRuntime(transformed, "Cave Pirate Brawler"), "Source-scoped native Transform exposes XML choices and retains compiled runtime dispatch");
+adapter.ApplyEntityReference(transformed, "Cave Pirate Brawler", transformNode.Id, transformed.Revision, "target", "Ghost Ship");
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = transformed.Source, Identities = transformed.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new());
+    Check(native.Entities.Any(e => e.Name == "Ghost Ship") && native.Entities.All(e => e.Name != "Cave Pirate Brawler"), "The edited complete original assembly executes native Transform into the selected XML enemy");
+    native.ExportTrace(Path.Combine(output, "entity-transform-trace.json"));
+}
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));
 Console.WriteLine($"{checks.Count} source-context checks passed.");

@@ -166,6 +166,7 @@ public partial class MainWindow : Window
             AddAttackControls(selectedNode);
             AddMovementControls(selectedNode);
             AddProjectileControls(selectedNode);
+            AddEntityControls(selectedNode);
             AddTransitionSummary(id);
             AddLifecycleControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();

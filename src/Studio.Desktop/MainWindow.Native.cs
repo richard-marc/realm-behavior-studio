@@ -103,6 +103,8 @@ public partial class MainWindow
                 var input = new TextBox { Text = CreationSeed(primitive.Name, parameter, owner), Tag = parameter.Default == "required" ? "Required C# value" : "Default: " + parameter.Default,
                     ToolTip = parameter.Explanation + (parameter.Type.EndsWith("[]") ? "\nEnter an array, for example new[] { \"first\", \"second\" }." : ""), Margin = new(0, 0, 0, 4) };
                 constructorInputs.Add(parameter.Name, input); fields.Children.Add(input); input.TextChanged += (_, _) => Preview();
+                if (RapleAdapter.EntityParameterFor(primitive.Name) is { } entityParameter && entityParameter.Name == parameter.Name)
+                    fields.Children.Add(CreateEntityInputPicker(entityParameter, input));
             }
             Preview();
         };
