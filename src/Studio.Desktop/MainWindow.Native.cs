@@ -117,6 +117,7 @@ public partial class MainWindow
     }
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
+        if (kind is "Order" or "OrderOnce" or "OrderOnDeath" && parameter.Name is "targetState" or "state") return "";
         if (kind == "State" && parameter.Name == "name") return PhaseLiteral(NextPhaseName());
         if (kind == "Taunt" && parameter.Name == "text") return "new[] { \"Ready.\" }";
         if (kind == "Prioritize" && parameter.Name == "children") return "new CycleBehavior[] { new Wander(.3) }";

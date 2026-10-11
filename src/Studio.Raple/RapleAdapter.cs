@@ -38,7 +38,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static readonly HashSet<string> Supported = ["State", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit",
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
-        "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior"];
+        "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
+        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root)
     {
@@ -49,8 +50,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") ? "Attacks" :
-                t.Name.Contains("Spawn") ? "Spawning" : "Actions",
+                t.Name.Contains("Spawn") ? "Spawning" :
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -132,15 +133,15 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                             try { Evaluate(parsed, parameterType); } catch (Exception e) { typeError = e.GetBaseException().Message; }
                     }
                     if (typeError != null) yield return new($"{n.Kind}.{p.Name}: {typeError}", n.Id);
-                    if (p.Name == "targetState" && !nodes.Any(n => n.Kind is "Opaque" or "Factory" or "Reference" or "Spread") && !states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) && BehaviorDocument.LiteralString(p.Expression) is { } stateTarget && !states.Any(s => (document.StateName(s.Id) ?? "") == stateTarget))
+                    if (p.Name is "targetState" or "state" && (document.SchemaAt(n)?.TargetsPhaseOf(document.Expression(n), p.Name, entity.EntityId, entity.EntityId) ?? TargetsPhaseOf(document.Expression(n), p.Name, entity.EntityId, entity.EntityId)) == true && !nodes.Any(n => n.Kind is "Opaque" or "Factory" or "Reference" or "Spread") && !states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) && BehaviorDocument.LiteralString(p.Expression) is { } stateTarget && !states.Any(s => (document.StateName(s.Id) ?? "") == stateTarget))
                         yield return new("Missing transition target: " + p.Expression, n.Id);
-                    if (p.Name is "children" or "target" && BehaviorDocument.LiteralString(p.Expression) is { } resourceTarget && !SimEngine.Data.IdToObjectType.ContainsKey(resourceTarget))
+                    if (p.Name is "children" or "target" or "childName" && BehaviorDocument.LiteralString(p.Expression) is { } resourceTarget && !SimEngine.Data.IdToObjectType.ContainsKey(resourceTarget))
                         yield return new("Missing entity resource: " + p.Expression, n.Id);
                     if (double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
                     {
                         if (!double.IsFinite(value) || p.Name == "count" && (value < 1 || value > 255 || value != Math.Truncate(value)) ||
                             p.Name == "threshold" && (value < 0 || value > 1) || p.Name is "radius" or "speed" && value < 0 ||
-                            p.Name == "maxChildren" && (value < 0 || value > 128))
+                            p.Name == "maxChildren" && (value < 0 || value > 128) || n.Kind == "InstantSpawnRing" && p.Name == "count" && value > 12)
                             yield return new("Invalid value for " + p.Name + ": " + p.Expression, n.Id);
                         if (p.Name == "projectileIndex" && SimEngine.Data.IdToObjectType.TryGetValue(entity.EntityId, out var type) && !SimEngine.Data.ObjectDescs[type].Projectiles.ContainsKey((int)value))
                             yield return new("This entity has no projectile index " + value, n.Id);

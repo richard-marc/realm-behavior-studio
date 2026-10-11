@@ -168,6 +168,18 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
         .Select(d => new DocumentDiagnostic($"Line {d.Location.GetLineSpan().StartLinePosition.Line + 1}: {d.GetMessage()}"));
     public string[] ParameterNames(string kind) => adapter.ParameterNames(kind);
     public string[] ConstructorParameterNames(string expression) => DescribeExpression(expression)?.ArgumentNames ?? adapter.ConstructorParameterNames(expression);
+    public bool? TargetsPhaseOf(string text, string parameter, string ownerEntity, string targetEntity)
+    {
+        var expression = Expression(text);
+        if (expression == null || Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || !RapleAdapter.NativeOrderType(method.ContainingType.ToDisplayString()))
+            return parameter.StartsWith("targetState", StringComparison.Ordinal) && RapleAdapter.SameEntity(ownerEntity, targetEntity);
+        var death = method.ContainingType.Name == "OrderOnDeath";
+        if (parameter != (death ? "state" : "targetState")) return false;
+        var slot = Array.IndexOf(DescribeExpression(text)!.ArgumentNames, death ? "target" : "children");
+        if (slot < 0 || expression is not ObjectCreationExpressionSyntax creation) return null;
+        var constant = Model.GetConstantValue(creation.ArgumentList!.Arguments[slot].Expression);
+        return constant.HasValue && constant.Value is string entity ? RapleAdapter.SameEntity(entity, targetEntity) : null;
+    }
     public bool IsChildArgument(string expression, int index)
     {
         var description = DescribeExpression(expression);

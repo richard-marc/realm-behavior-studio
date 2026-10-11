@@ -189,5 +189,5 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     }
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
     public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { runtime = Stamp, seed = Frame.Seed,
-        entity = Project.EntityId, player = Project.Player, tickMs = 100, sampleMs = EncounterSession.SampleMs, durationMs = Frame.Ms, coverage = Frame.Coverage, events = Events, shots = Shots, playerShots = PlayerShots, inputs = Inputs }, BehaviorDocument.JsonOptions));
+        entity = Project.EntityId, player = Project.Player, tickMs = 100, sampleMs = EncounterSession.SampleMs, durationMs = Frame.Ms, coverage = Frame.Coverage, actors = Entities, events = Events, shots = Shots, playerShots = PlayerShots, inputs = Inputs }, BehaviorDocument.JsonOptions));
 }

@@ -10,6 +10,9 @@ public sealed partial class BehaviorDocument
     public static string? LiteralString(string expression) => SyntaxFactory.ParseExpression(expression) is LiteralExpressionSyntax { Token.Value: string value } ? value : null;
     public string? StateName(Guid id) => Find(id).Kind == "State" ? Find(id).Parameters.Select(p => LiteralString(p.Expression)).FirstOrDefault(v => v != null) : null;
     EntityBehavior OwningEntity(Guid id) => Entities.Single(e => e.Root.Descendants().Any(n => n.Id == id));
+    bool? ReferencesEntityPhase(BehaviorNode node, Parameter parameter, EntityBehavior target) => SchemaAt(node) is { } binding
+        ? binding.TargetsPhaseOf(Expression(node), parameter.Name, OwningEntity(node.Id).EntityId, target.EntityId)
+        : parameter.Name.StartsWith("targetState", StringComparison.Ordinal) && OwningEntity(node.Id).EntityId == target.EntityId;
     void Editable(BehaviorNode node)
     {
         if (LockedNodes.Select(Find).Any(locked => node.Path == locked.Path || node.Path.StartsWith(locked.Path + "/")) || node.Descendants().Any(n => LockedNodes.Contains(n.Id)))
@@ -28,10 +31,13 @@ public sealed partial class BehaviorDocument
         {
             if (node.Kind is "Factory" or "Reference" or "Spread")
                 throw new ArgumentException("This encounter contains source-generated phases or references. Update phase names in source so their hidden references stay consistent.");
-            if (node.Parameters.Any(p => p.Name.StartsWith("targetState", StringComparison.Ordinal) && (p.Name != "targetState" || LiteralString(p.Expression) == null)) ||
+            if (node.Parameters.Any(p => ReferencesEntityPhase(node, p, entity) == true && (p.Name != "targetState" && p.Name != "state" || LiteralString(p.Expression) == null)) ||
                 node.Kind == "Opaque" && SyntaxFactory.ParseExpression(Expression(node)).DescendantNodesAndSelf().OfType<LiteralExpressionSyntax>().Any(l => l.Token.Value is string value && affected.Contains(value)))
                 throw new ArgumentException("This encounter contains a phase reference that cannot be safely rewritten. Update it in source first.");
         }
+        foreach (var node in Entities.SelectMany(e => e.Root.Descendants()))
+            if (node.Parameters.Any(p => ReferencesEntityPhase(node, p, entity) is var scope && (scope == true && LiteralString(p.Expression) == null || scope == null && (LiteralString(p.Expression) == null || affected.Contains(LiteralString(p.Expression)!)))))
+                throw new ArgumentException("An order's target entity cannot be resolved safely. Update this phase reference in source first.");
     }
     public void RenameState(Guid id, string name, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
@@ -45,8 +51,8 @@ public sealed partial class BehaviorDocument
         var nameParameter = node.Parameters.First(p => LiteralString(p.Expression) == oldName);
         var literal = SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(name)).ToFullString();
         edits.Add((nameParameter.Start, nameParameter.Length, literal));
-        foreach (var reference in entity.Root.Descendants())
-            foreach (var parameter in reference.Parameters.Where(p => p.Name == "targetState" && LiteralString(p.Expression) == oldName))
+        foreach (var reference in Entities.SelectMany(e => e.Root.Descendants()))
+            foreach (var parameter in reference.Parameters.Where(p => ReferencesEntityPhase(reference, p, entity) == true && LiteralString(p.Expression) == oldName))
             {
                 Editable(reference); edits.Add((parameter.Start, parameter.Length, literal));
             }

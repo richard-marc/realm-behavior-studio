@@ -67,6 +67,8 @@ public partial class MainWindow
         entityPicker = null; entityChoices = null; entitySearch = null; useEntityButton = null; entityInfo = null;
         entityParameter = adapter.EntityParameterFor(document, node); if (entityParameter == null) return;
         var parameter = entityParameter; var current = adapter.ReadEntityReference(document, node, parameter); var revision = document.Revision;
+        if (node.Kind is "Order" or "OrderOnce" or "OrderOnDeath")
+            Inspector.Children.Add(new TextBlock { Text = "Orders address nearby matching entities, regardless of parent. The destination phase belongs to the target entity, not this host.", TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = EncounterViewport.Brush("#929D96"), Margin = new(0, 10, 0, 0) });
         var panel = new StackPanel(); var loaded = false;
         var search = entitySearch = new TextBox { Tag = "Search entities", Margin = new(0, 8, 0, 6) }; panel.Children.Add(search);
         var list = entityChoices = new ListBox { MaxHeight = 210, ItemTemplate = (DataTemplate)FindResource("EntityChoiceTemplate") }; panel.Children.Add(list);

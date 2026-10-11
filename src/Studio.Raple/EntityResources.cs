@@ -42,6 +42,9 @@ public sealed partial class RapleAdapter
     public static EntityParameter? EntityParameterFor(string nativeKind) => nativeKind switch
     {
         "Spawn" => new("children", "Spawn entity", EntityResourceScope.Enemy, false),
+        "InstantSpawnRing" => new("childName", "Ring helper", EntityResourceScope.Enemy, false),
+        "Order" or "OrderOnce" => new("children", "Ordered entity", EntityResourceScope.Queryable, false),
+        "OrderOnDeath" => new("target", "Ordered entity", EntityResourceScope.Queryable, false),
         "Follow" or "Orbit" => new("target", "Target entity", EntityResourceScope.Queryable, true),
         "EntityExistsTransition" => new("target", "Required entity", EntityResourceScope.Queryable, false),
         "EntityNotExistsTransition" => new("target", "Absent entity", EntityResourceScope.Queryable, true),

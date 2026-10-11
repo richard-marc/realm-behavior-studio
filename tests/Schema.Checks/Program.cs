@@ -304,4 +304,74 @@ using (var cancelled = new CancellationTokenSource())
     cancelled.Cancel(); var rejected = false; try { await NativeMovementPreview.SampleAsync(adapter, pathProject, cancellation: cancelled.Token); } catch (OperationCanceledException) { rejected = true; }
     Check(rejected, "Cancelled native movement requests do not construct a preview session");
 }
+var ringDoc = Doc("new State(new State(\"ring\", new InstantSpawnRing(\"Ghost Ship\", count: 2, radius: 2), new TimedTransition(300, \"finished\")), new State(\"finished\"))");
+var ringNode = ringDoc.Entities.Single().Root.Descendants().Single(n => n.Kind == "InstantSpawnRing");
+Check(!adapter.NeedsCompiledRuntime(ringDoc, "Cave Pirate Brawler") && adapter.EntityParameterFor(ringDoc, ringNode) is { Name: "childName", Scope: EntityResourceScope.Enemy }, "Native ring spawning supports real constructors and an enemy-only XML helper picker");
+Check(adapter.Callbacks("InstantSpawnRing").Select(c => c.Stage).SequenceEqual(["Entry", "Exit", "Death"]) && adapter.Callbacks("GordoSupport").All(c => c.DeclaringType == "InstantSpawnRing"), "Native ring and derived support lifecycle provenance retains inherited entry, exit and death cleanup");
+using (var native = new EncounterSession(adapter, ringDoc, "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); var host = native.Entities.Single(e => e.Name == "Cave Pirate Brawler"); var helpersInRing = native.Entities.Where(e => e.ParentId == host.Id).OrderBy(e => e.Id).ToArray();
+    Check(helpersInRing.Length == 2 && helpersInRing.All(e => e.SpawnedByBehavior) && Math.Abs(helpersInRing[0].X - 66.5) < .00001 && Math.Abs(helpersInRing[1].X - 62.5) < .00001 && helpersInRing.All(e => e.Y == 64.5), "Actual ring entry places two helpers on the native circle and snapshots their genuine parent and behavior-spawn flag");
+    Check(native.Events.Count(e => e.Kind == "spawn" && e.ParentId == host.Id && helpersInRing.Any(h => h.Id == e.ActorId)) == 2, "Native ring spawn events retain distinct actor IDs and actual parent provenance");
+    native.Advance(new(), 400);
+    Check(native.Entities.Count == 1 && native.Entities.Single().Phase == "finished", "Leaving the owning phase executes native ring exit cleanup without keeping its helpers alive");
+    Check(helpersInRing.All(h => native.Events.Any(e => e.Kind == "despawn" && e.ActorId == h.Id && e.ParentId == host.Id)), "Native removal events preserve each helper's actual parent after phase cleanup");
+}
+using (var native = new EncounterSession(adapter, Doc("new State(new InstantSpawnRing(\"Ghost Ship\", radius: 2))"), "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); native.SetBossHpFraction(.001);
+    for (var i = 0; i < 15 && native.Entities.Any(e => e.Name == "Cave Pirate Brawler"); i++) native.Step(new(Attack: true, AimX: 64.5, AimY: 64.5));
+    Check(native.Entities.Count == 0 && native.Events.Any(e => e.Kind == "death") && native.Events.Count(e => e.Kind == "despawn" && e.ParentId != null) == 2, "Weapon-triggered host death executes actual ring death cleanup and records removed owned helpers");
+}
+using (var native = new EncounterSession(adapter, Doc("new State(new Spawn(\"Ghost Ship\", maxChildren: 2, initialSpawn: 0, coolDown: 0))"), "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); var laterSpawn = native.Entities.Single(e => e.Name == "Ghost Ship");
+    Check(laterSpawn.SpawnedByBehavior && laterSpawn.ParentId == null, "Ordinary ongoing Spawn preserves the game's unassigned parent instead of inventing an ownership link");
+}
+foreach (var (kind, phaseParameter, entityParameterName, stage) in new[] { ("Order", "targetState", "children", "Ongoing"), ("OrderOnce", "targetState", "children", "Entry"), ("OrderOnDeath", "state", "target", "Death") })
+{
+    var orderDoc = Doc("new State(new " + kind + "(10, \"Ghost Ship\", \"pause\"))"); var orderNode = orderDoc.Entities.Single().Root.Children.Single();
+    Check(adapter.Callbacks(kind).Select(c => c.Stage).SequenceEqual([stage]) && adapter.EntityParameterFor(orderDoc, orderNode)?.Name == entityParameterName && !adapter.NeedsCompiledRuntime(orderDoc, "Cave Pirate Brawler"), "Native " + kind + " retains its actual callback, entity field and original helper-order implementation");
+    adapter.ApplyEntityReference(orderDoc, "Cave Pirate Brawler", orderNode.Id, orderDoc.Revision, entityParameterName, "Cave Pirate Veteran");
+    Check(orderDoc.Find(orderNode.Id).Parameters.Single(p => p.Name == phaseParameter).Expression == "\"pause\"", "Native " + kind + " entity selection preserves the target entity's independent phase name");
+}
+using (var native = new EncounterSession(adapter, Doc("new State(new InstantSpawnRing(\"Ghost Ship\", radius: 2), new OrderOnce(10, \"Ghost Ship\", \"pause\"))"), "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new());
+    Check(native.Entities.Count(e => e.Name == "Ghost Ship" && e.Phase == "pause") == 2, "Native OrderOnce addresses pending ring helpers in the same tick and switches their actual production phases");
+}
+var orderReferences = new BehaviorDocument("class Fixture { void Build() { db.Init(\"Cave Pirate Brawler\", new State(new State(\"pause\", new OrderOnce(10, \"Ghost Ship\", \"pause\"), new OrderOnce(10, \"Cave Pirate Brawler\", \"pause\")))); db.Init(\"Ghost Ship\", new State(new State(\"pause\", new OrderOnDeath(10, \"Cave Pirate Brawler\", \"pause\")))); } }", adapter);
+var referencePhase = orderReferences.Entities.Single(e => e.EntityId == "Cave Pirate Brawler").Root.Children.Single();
+var incomingOrder = orderReferences.Entities.Single(e => e.EntityId == "Ghost Ship").Root.Descendants().Single(n => n.Kind == "OrderOnDeath");
+orderReferences.LockedNodes.Add(incomingOrder.Id); var referenceBefore = orderReferences.Source;
+Reject(() => orderReferences.RenameState(referencePhase.Id, "opening"), "Locked incoming orders protect the target entity's phase rename across definitions");
+Check(orderReferences.Source == referenceBefore, "A rejected cross-entity phase rename retains complete source atomically"); orderReferences.LockedNodes.Clear();
+orderReferences.RenameState(referencePhase.Id, "opening");
+Check(orderReferences.Find(referencePhase.Id).Children.Single(n => n.Parameters.Any(p => p.Name == "children" && p.Expression == "\"Ghost Ship\"")).Parameters.Single(p => p.Name == "targetState").Expression == "\"pause\"" && orderReferences.Find(incomingOrder.Id).Parameters.Single(p => p.Name == "state").Expression == "\"opening\"" && orderReferences.Find(referencePhase.Id).Children.Single(n => n.Parameters.Any(p => p.Name == "children" && p.Expression == "\"Cave Pirate Brawler\"")).Parameters.Single(p => p.Name == "targetState").Expression == "\"opening\"", "Phase rename preserves external orders and rewrites actual self/incoming order targets across entity definitions");
+var copiedReferencePhase = orderReferences.Find(orderReferences.DuplicateNode(referencePhase.Id));
+Check(copiedReferencePhase.Children.Single(n => n.Parameters.Any(p => p.Name == "children" && p.Expression == "\"Cave Pirate Brawler\"")).Parameters.Single(p => p.Name == "targetState").Expression == "\"opening-copy\"" && copiedReferencePhase.Children.Single(n => n.Parameters.Any(p => p.Name == "children" && p.Expression == "\"Ghost Ship\"")).Parameters.Single(p => p.Name == "targetState").Expression == "\"pause\"", "Copied phases remap self orders using their real entity scope while preserving foreign target phases");
+Reject(() => orderReferences.DeleteNode(referencePhase.Id), "Deleting a phase referenced by a different entity's order requires explicit rerouting first");
+orderReferences.Undo(); orderReferences.Undo(); Check(orderReferences.Source == referenceBefore, "Cross-entity order rename and copy each restore complete source through one Undo");
+Check(adapter.Validate(Doc("new State(new OrderOnce(10, \"Ghost Ship\", \"pause\"))"), "Cave Pirate Brawler").All(d => !d.IsError) && adapter.Validate(Doc("new State(new OrderOnce(10, \"Cave Pirate Brawler\", \"missing\"))"), "Cave Pirate Brawler").Any(d => d.IsError && d.Message.StartsWith("Missing transition target")), "Native validation distinguishes external target phases from missing self-order destinations");
+Check(adapter.Validate(Doc("new State(new InstantSpawnRing(\"Ghost Ship\", count: 13))"), "Cave Pirate Brawler").Any(d => d.IsError), "Ring authoring rejects counts beyond the native twelve-helper constructor limit");
+foreach (var kind in new[] { "Order", "OrderOnce" })
+{
+    using var native = new EncounterSession(adapter, Doc("new State(new InstantSpawnRing(\"Ghost Ship\", radius: 2), new " + kind + "(10, \"Ghost Ship\", \"pause\"))"), "Cave Pirate Brawler", 7, new());
+    var engine = typeof(EncounterSession).GetField("engine", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(native)!;
+    var world = (TKR.WorldServer.core.worlds.World)engine.GetType().GetField("World")!.GetValue(engine)!;
+    var data = (XmlData)engine.GetType().GetProperty("Data", BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
+    var unowned = (Enemy)world.CreateNewEntity(data.IdToObjectType["Ghost Ship"], 64.5f, 66.5f); engine.GetType().GetMethod("FlushAdds")!.Invoke(engine, null); native.Step(new());
+    var firstOrderReachedUnowned = native.Entities.Single(e => e.Id == unowned.Id) is { ParentId: null, Phase: "pause" };
+    unowned.SwitchTo(unowned.CurrentState.Parent.States.Single(s => s.Name == "idle")); native.Step(new());
+    Check(firstOrderReachedUnowned && native.Entities.Single(e => e.Id == unowned.Id).Phase == (kind == "Order" ? "pause" : "idle"), "Native " + kind + " addresses unowned nearby entities and preserves its repeated-tick versus entry-only dispatch");
+}
+using (var native = new EncounterSession(adapter, Doc("new State(new InstantSpawnRing(\"Ghost Ship\", radius: 2), new OrderOnDeath(10, \"Ghost Ship\", \"pause\"))"), "Cave Pirate Brawler", 7, new()))
+{
+    var engine = typeof(EncounterSession).GetField("engine", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(native)!;
+    var world = (TKR.WorldServer.core.worlds.World)engine.GetType().GetField("World")!.GetValue(engine)!;
+    var data = (XmlData)engine.GetType().GetProperty("Data", BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
+    var unowned = (Enemy)world.CreateNewEntity(data.IdToObjectType["Ghost Ship"], 64.5f, 66.5f); engine.GetType().GetMethod("FlushAdds")!.Invoke(engine, null); native.Step(new()); native.SetBossHpFraction(.001);
+    for (var i = 0; i < 15 && native.Entities.Any(e => e.Name == "Cave Pirate Brawler"); i++) native.Step(new(Attack: true, AimX: 64.5, AimY: 64.5));
+    Check(native.Entities is [{ Id: var remaining, ParentId: null, Phase: "pause" }] && remaining == unowned.Id, "Weapon-triggered native death clears owned ring helpers and orders a surviving unowned target through OrderOnDeath");
+}
 Console.WriteLine($"{count} native schema checks passed.");

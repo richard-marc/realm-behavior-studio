@@ -527,6 +527,25 @@ await using (var native = await CompiledRuntime.StartAsync(server, project with 
 var sampledFactory = Doc("StudioContextPathRoot()");
 var compiledPathSample = await NativeMovementPreview.SampleAsync(adapter, project with { Source = sampledFactory.Source, Identities = sampledFactory.Identities }, durationMs: 200);
 Check(compiledPathSample.Runtime == "Compiled source" && compiledPathSample.Points.Length == 3 && Math.Abs(compiledPathSample.Points.Last().X - 64.8) < .00001 && compiledPathSample.Points.Last().Y == 64.5 && compiledPathSample.Points.Last().Phase == "source path", "Native phase sampling uses the compiled source path for generated roots and returns authoritative factory movement and phase snapshots");
+var ownedRing = Doc("new State(new State(\"ring\", new " + adapter.CreationTypeName("InstantSpawnRing") + "(StudioContextEntityId, count: 2, radius: 2), new " + adapter.CreationTypeName("OrderOnce") + "(10, StudioContextEntityId, \"pause\"), new TimedTransition(300, \"finished\")), new State(\"finished\"))");
+var ownedRingNode = Root(ownedRing).Descendants().Single(n => n.Kind == "InstantSpawnRing");
+Check(adapter.ReadEntityReference(ownedRing, ownedRingNode, adapter.EntityParameterFor(ownedRing, ownedRingNode)!) is { Known: true, Id: "Ghost Ship" } && adapter.NeedsCompiledRuntime(ownedRing, "Cave Pirate Brawler"), "Source-bound ring and order constructors retain native XML IDs and use compiled execution for their constant context");
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = ownedRing.Source, Identities = ownedRing.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new()); var host = native.Entities.Single(e => e.Name == "Cave Pirate Brawler"); var owned = native.Entities.Where(e => e.ParentId == host.Id).ToArray();
+    Check(owned.Length == 2 && owned.All(e => e.SpawnedByBehavior && e.Phase == "pause") && owned.All(e => native.Events.Any(v => v.Kind == "spawn" && v.ActorId == e.Id && v.ParentId == host.Id)), "Original compiled ring entry and helper ordering cross the process boundary with actual parent IDs, spawn flags, target phases and event actor IDs");
+    var ownedTrace = Path.Combine(output, "owned-ring-trace.json"); native.ExportTrace(ownedTrace);
+    using (var trace = JsonDocument.Parse(File.ReadAllText(ownedTrace)))
+        Check(trace.RootElement.GetProperty("actors").EnumerateArray().Count(e => e.GetProperty("ParentId").ValueKind == JsonValueKind.Number && e.GetProperty("ParentId").GetInt32() == host.Id) == 2, "Compiled trace exports retain actual live actor ownership independently of editor selection");
+    await native.AdvanceAsync(new(), 400);
+    Check(native.Entities.Count == 1 && native.Entities.Single().Phase == "finished" && owned.All(e => native.Events.Any(v => v.Kind == "despawn" && v.ActorId == e.Id && v.ParentId == host.Id)), "Original compiled ring exit removes owned helpers and preserves actor/parent provenance in the emitted removal events");
+}
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
+var externalOrderRename = Doc("new State(new State(\"pause\", new " + adapter.CreationTypeName("OrderOnce") + "(10, StudioContextEntityId, \"pause\")))"); var externalOrderPhase = Root(externalOrderRename).Children.Single();
+externalOrderRename.RenameState(externalOrderPhase.Id, "opening");
+Check(externalOrderRename.Find(externalOrderPhase.Id).Children.Single().Parameters.Single(p => p.Name == "targetState").Expression == "\"pause\"", "Compiler-known external order entity constants preserve their own destination phase during host rename without invoking helpers");
+var unknownOrderRename = Doc("new State(new State(\"pause\", new " + adapter.CreationTypeName("OrderOnce") + "(10, StudioContextMovementTarget, \"pause\")))"); var unknownOrderBefore = unknownOrderRename.Source;
+Reject(() => unknownOrderRename.RenameState(Root(unknownOrderRename).Children.Single().Id, "opening"), "An unknown order entity getter blocks ambiguous phase rewriting without executing source");
+Check(unknownOrderRename.Source == unknownOrderBefore, "Unresolved order ownership rejects atomically and retains original source");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));
 Console.WriteLine($"{checks.Count} source-context checks passed.");

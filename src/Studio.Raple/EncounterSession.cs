@@ -13,8 +13,8 @@ using TKR.WorldServer.logic;
 namespace Studio.Raple;
 
 public record EncounterInput(double X = 0, double Y = 0, bool Attack = false, double AimX = 64.5, double AimY = 64.5);
-public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null);
-public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox, EntityMotion? Motion = null);
+public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null, int? ActorId = null, int? ParentId = null);
+public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox, EntityMotion? Motion = null, int? ParentId = null, bool SpawnedByBehavior = false);
 public record BulletView(float X, float Y, int OwnerId, int ProjectileIndex, Guid? NodeId, string TextureId, double Angle, bool Friendly);
 public record ReplayInput(long Ms, EncounterInput Input, int DurationMs = 100);
 public record Emission(long Ms, int OwnerId, int Index, int Count, int BulletId, float X, float Y, float Angle, float AngleIncrement, int Damage);
@@ -29,6 +29,7 @@ public sealed class EncounterSession : IEncounterSession
     readonly List<Bullet> bullets = [];
     readonly Dictionary<int, string> lastStates = [];
     readonly Dictionary<int, EntityMotion> motions = [];
+    readonly Dictionary<int, (string Name, int? Parent)> liveActors = [];
     readonly PlayerPreset preset;
     readonly string entityId;
     readonly int seed;
@@ -66,7 +67,7 @@ public sealed class EncounterSession : IEncounterSession
     IReadOnlyList<Emission> IEncounterSession.PlayerShots => PlayerShots;
     IReadOnlyList<ReplayInput> IEncounterSession.Inputs => Inputs;
     public IReadOnlyList<EntityView> Entities => engine.World.Enemies.Values.Where(e => !e.Dead)
-        .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id))).ToArray();
+        .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id), e.ParentEntity?.Id, e.SpawnedByBehavior)).ToArray();
     public IReadOnlyList<BulletView> Projectiles => bullets.Where(b => !b.Removed).Select(b => new BulletView(b.X, b.Y, b.Owner, b.Index, b.Node, b.Desc.ObjectId, b.Path.Angle, b.Friendly)).ToArray();
     sealed class Bullet
     {
@@ -104,10 +105,11 @@ public sealed class EncounterSession : IEncounterSession
         }
         watch.Stop(); StartMs = watch.Elapsed.TotalMilliseconds;
         Add("start", $"Seed {seed}; 100 ms enemy ticks / {SampleMs} ms client collision samples. Weapon: {weapon.Entry.Name}. Abilities, armor/ring loadouts, regeneration and full player lifecycle remain pending.");
+        ObserveActorRemovals();
     }
-    void Add(string kind, string message, Guid? node = null, long? at = null)
+    void Add(string kind, string message, Guid? node = null, long? at = null, int? actor = null, int? parent = null)
     {
-        if (Events.Count < 30000) Events.Add(new(at ?? Ms, kind, message, node));
+        if (Events.Count < 30000) Events.Add(new(at ?? Ms, kind, message, node, actor, parent));
         if (BreakpointKind == kind) PauseRequested = true;
     }
     public IReadOnlyList<EncounterEvent> NewEvents()
@@ -171,14 +173,14 @@ public sealed class EncounterSession : IEncounterSession
                 var dying = engine.World.Enemies.Values.Where(e => e.HP == 0 && !e.Dead).ToArray();
                 engine.Actor.HP = Math.Max(1, PlayerHp); engine.Tick(Ms);
                 motions.Clear();
-                foreach (var dead in dying.Where(e => e.Dead)) Add("death", dead.ObjectDesc.IdName + " killed by weapon; native death callbacks executed.");
-                foreach (var e in engine.World.Enemies.Values)
+                foreach (var dead in dying.Where(e => e.Dead)) Add("death", dead.ObjectDesc.IdName + " killed by weapon; native death callbacks executed.", actor: dead.Id, parent: dead.ParentEntity?.Id);
+                foreach (var e in engine.World.Enemies.Values.Where(e => !e.Dead))
                 {
                     var from = beforeTick.GetValueOrDefault(e.Id, (e.X, e.Y));
                     motions[e.Id] = new(from.X, from.Y, e.X, e.Y, Ms, SimEngine.TickMs);
                     var current = e.CurrentState?.Name ?? "";
-                    if (!lastStates.TryGetValue(e.Id, out var previous)) Add("spawn", e.ObjectDesc.IdName);
-                    if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}", e.ObjectType == boss.ObjectType ? FindState(current) : null);
+                    if (!lastStates.TryGetValue(e.Id, out var previous)) Add("spawn", e.ObjectDesc.IdName, actor: e.Id, parent: e.ParentEntity?.Id);
+                    if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}", e.ObjectType == boss.ObjectType ? FindState(current) : null, actor: e.Id, parent: e.ParentEntity?.Id);
                     lastStates[e.Id] = current;
                 }
                 foreach (var shot in engine.DrainShots())
@@ -187,7 +189,7 @@ public sealed class EncounterSession : IEncounterSession
                     if (!SimEngine.Data.ObjectDescs[(ushort)shot.ObjectType].Projectiles.TryGetValue(shot.BulletType, out var desc)) continue;
                     var owner = engine.World.Enemies.Values.FirstOrDefault(e => e.Id == shot.OwnerId);
                     var node = !compiledSource && owner?.ObjectType == boss.ObjectType ? FindAttack(owner.CurrentState?.Name ?? "", shot.BulletType) : null;
-                    Add("attack", $"{owner?.ObjectDesc.IdName}: {shot.NumShots} × projectile #{shot.BulletType}", node);
+                    Add("attack", $"{owner?.ObjectDesc.IdName}: {shot.NumShots} × projectile #{shot.BulletType}", node, actor: shot.OwnerId, parent: owner?.ParentEntity?.Id);
                     if (!Player.ValidatedProjectile.CanSampleBossLab(desc) || desc.Homing || desc.Orbit)
                     { Coverage = "Unsupported projectile motion present · run is not verified"; Add("unsupported", "Projectile omitted: client-history-dependent motion.", node); continue; }
                     for (var i = 0; i < shot.NumShots; i++) bullets.Add(new Bullet { Born = Ms, Id = shot.BulletId + i, Owner = shot.OwnerId,
@@ -211,8 +213,8 @@ public sealed class EncounterSession : IEncounterSession
                         b.HitTargets.Add(target.Id); b.Removed = !b.Desc.MultiHit;
                         var time = SimEngine.Time(Ms);
                         var damage = weapon.Hit(b.Id, target, ref time);
-                        Add("weapon-hit", $"{weapon.Entry.Name} → {target.ObjectDesc.IdName}: −{damage} HP", at: Ms);
-                        if (target.Dead) { engine.FlushAdds(); Add("death", target.ObjectDesc.IdName + " killed by weapon; native death callbacks executed.", at: Ms); }
+                        Add("weapon-hit", $"{weapon.Entry.Name} → {target.ObjectDesc.IdName}: −{damage} HP", at: Ms, actor: target.Id, parent: target.ParentEntity?.Id);
+                        if (target.Dead) { engine.FlushAdds(); Add("death", target.ObjectDesc.IdName + " killed by weapon; native death callbacks executed.", at: Ms, actor: target.Id, parent: target.ParentEntity?.Id); }
                     }
                 }
                 else if (!Dead && !preset.Spectator && !b.Hit && ClientCollision.Eligible(engine.Actor) && new HitGeometry(.5).Contains(b.X - PlayerX, b.Y - PlayerY))
@@ -224,10 +226,19 @@ public sealed class EncounterSession : IEncounterSession
                     if (Dead) Add("death", "Test player died. Restart to respawn.");
                 }
             }
-            Ms += SampleMs;
+            ObserveActorRemovals(); Ms += SampleMs;
         }
         foreach (var removed in bullets.Where(b => b.Friendly && b.Removed)) weapon.Forget(removed.Id);
         bullets.RemoveAll(b => b.Removed);
+    }
+    void ObserveActorRemovals()
+    {
+        foreach (var (id, previous) in liveActors.Where(pair => !engine.World.Enemies.TryGetValue(pair.Key, out var actor) || actor.Dead).ToArray())
+        {
+            Add("despawn", previous.Name + " is no longer active in the native world.", actor: id, parent: previous.Parent);
+            liveActors.Remove(id);
+        }
+        foreach (var actor in engine.World.Enemies.Values.Where(e => !e.Dead)) liveActors[actor.Id] = (actor.ObjectDesc.IdName, actor.ParentEntity?.Id);
     }
     Guid? FindState(string state)
     {
@@ -241,7 +252,7 @@ public sealed class EncounterSession : IEncounterSession
         var matches = phase.StateChildren.Where(n => n.Kind == "Shoot" && (n.Parameters.FirstOrDefault(p => p.Name == "projectileIndex")?.Expression ?? "0") == index.ToString()).ToArray();
         return matches.Length == 1 ? matches[0].Id : null; // Ambiguous emission provenance is not guessed.
     }
-    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, events = Events, shots = Shots, playerShots = PlayerShots, inputs = Inputs }, BehaviorDocument.JsonOptions));
+    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities, events = Events, shots = Shots, playerShots = PlayerShots, inputs = Inputs }, BehaviorDocument.JsonOptions));
     public string InspectTimers() => string.Join("\n", boss.StateStorage.Select(p => p.Key.GetType().Name + ": " + (p.Value is int n ? n + " ms / scalar" : p.Value?.GetType().Name ?? "null")));
     public void Dispose() { } // The current linked bootstrap owns no OS process/resources.
 }

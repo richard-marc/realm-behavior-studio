@@ -13,6 +13,7 @@ public partial class MainWindow
     {
         ClearViewportEditors();
         session = null; running = false; Viewport.Session = null;
+        RefreshRuntimeActors();
         if (!adapter.NeedsCompiledRuntime(document, selectedEntity!.Id)) { StartSession(phase); return true; }
         var project = Snapshot(); var expectedDocument = document; var revision = document.Revision;
         using var cancellation = new CancellationTokenSource(); runtimeStarting = cancellation;

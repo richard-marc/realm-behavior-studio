@@ -112,6 +112,7 @@ public partial class MainWindow : Window
     }
     void RefreshDocument(Guid? selection = null)
     {
+        RefreshRuntimeActors();
         if (selectedEntity == null) return;
         EntityTitle.Text = selectedEntity.Id; SourceEditor.Text = document.Source;
         EntitySprite.Source = sprites.Get(selectedEntity.Id); Viewport.PreviewEntity = selectedEntity.Id; Viewport.InvalidateVisual();
@@ -232,7 +233,7 @@ public partial class MainWindow : Window
     }
     void Pause(object sender, RoutedEventArgs e) { running = false; Status.Text = "Paused"; UpdatePlayButton(); }
     async void Restart(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (!await StartSessionAsync()) return; running = true; clock.Restart(); Viewport.Focus(); UpdatePlayButton(); });
-    void Stop(object sender, RoutedEventArgs e) { running = false; session = null; Viewport.Session = null; Viewport.InvalidateVisual(); Events.ItemsSource = null; EventCount.Text = "0 events"; Status.Text = "Stopped"; UpdatePlayButton(); }
+    void Stop(object sender, RoutedEventArgs e) { running = false; session = null; Viewport.Session = null; Viewport.InvalidateVisual(); Events.ItemsSource = null; EventCount.Text = "0 events"; Status.Text = "Stopped"; UpdatePlayButton(); RefreshRuntimeActors(); }
     async void Step(object sender, RoutedEventArgs e) => await TryRuntime(async () => { running = false; if (session == null && !await StartSessionAsync()) return; var active = session!; await active.AdvanceAsync(Viewport.Input(), 100); if (ReferenceEquals(active, session)) UpdateSession(); });
     async void TestPhase(object sender, RoutedEventArgs e) => await TryRuntime(async () => { if (selectedNode?.Kind != "State" || selectedNode.Label == "Root") throw new ArgumentException("Select a named phase first."); if (!await StartSessionAsync(selectedNode.Label)) return; running = true; clock.Restart(); Viewport.Focus(); });
     async void Advance(object? sender, EventArgs e)
@@ -273,7 +274,7 @@ public partial class MainWindow : Window
         Viewport.FrameRemainderMs = accumulator;
         Viewport.InvalidateVisual(); Graph.ActivePhase = session?.Entities.FirstOrDefault(e => e.Name == selectedEntity?.Id)?.Phase; UpdatePlayButton();
         if (session != null) { Coverage.ToolTip = session.Coverage; Coverage.Text = session.Coverage.Contains("Unsupported") ? "Unsupported motion · see console" : session is CompiledRuntime ? "Compiled encounter · 5 ms samples" : "Client hit geometry · 5 ms samples"; }
-        TimerInfo.Text = session?.InspectTimers(); FilterEvents(this, null!);
+        TimerInfo.Text = session?.InspectTimers(); RefreshRuntimeActors(); FilterEvents(this, null!);
     }
     record EventRow(EncounterEvent Event) { public string Time => $"{Event.Ms / 1000d:0.0}s"; public override string ToString() => $"{Time}  {Event.Kind}  {Event.Message}"; }
     void FilterEvents(object sender, TextChangedEventArgs e)
