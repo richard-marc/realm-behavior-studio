@@ -35,7 +35,7 @@ internal sealed class SourceSchemaCache(string serverRoot)
     }
 }
 
-internal sealed class SourceBehaviorSchema : IBehaviorSchema
+internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
 {
     sealed class Context
     {
@@ -47,6 +47,7 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
         SemanticModel? model;
         IReadOnlyList<EncounterSource>? encounters;
         public IReadOnlyList<EncounterSource> Encounters=>encounters??=NativeRegistrations.Discover(Model).Where(r=>r.Shared).ToArray();
+        public IReadOnlyList<SourceDefinition>? Definitions;
         public SemanticModel Model => model ??= Binding.Value.Compilation.GetSemanticModel(Binding.Value.Tree);
     }
     readonly RapleAdapter adapter;

@@ -6,18 +6,19 @@ namespace Studio.Core;
 
 public sealed partial class BehaviorDocument
 {
-    public BehaviorNode? Parent(Guid id) => Entities.SelectMany(e => e.Root.Descendants()).FirstOrDefault(n => n.Children.Any(c => c.Id == id));
+    public BehaviorNode? Parent(Guid id) => AllNodes.FirstOrDefault(n => n.Children.Any(c => c.Id == id));
     public static string? LiteralString(string expression) => SyntaxFactory.ParseExpression(expression) is LiteralExpressionSyntax { Token.Value: string value } ? value : null;
     public string? StateName(Guid id) => Find(id).Kind == "State" ? Find(id).Parameters.Select(p => LiteralString(p.Expression)).FirstOrDefault(v => v != null) : null;
-    EntityBehavior OwningEntity(Guid id) => Entities.Single(e => e.Root.Descendants().Any(n => n.Id == id));
+    EntityBehavior OwningEntity(Guid id) => AllRoots.Single(e => e.Root.Descendants().Any(n => n.Id == id));
     IEnumerable<EntityBehavior> SharedEntities(EntityBehavior entity)=>entity.Registration?.Shared==true
         ?Entities.Where(e=>e.Registration?.Shared==true&&e.Root.Start==entity.Root.Start&&e.Root.Length==entity.Root.Length):[entity];
+    IEnumerable<string> PhaseOwners(EntityBehavior entity)=>entity.Definition?.Encounters??SharedEntities(entity).Select(e=>e.EntityId).ToArray();
     bool? ReferencesEntityPhase(BehaviorNode node, Parameter parameter, EntityBehavior target)
     {
         var owner=OwningEntity(node.Id);var binding=SchemaAt(node);
-        var scopes=SharedEntities(target).Select(entity=>binding!=null
-            ?binding.TargetsPhaseOf(Expression(node),parameter.Name,owner.EntityId,entity.EntityId)
-            :parameter.Name.StartsWith("targetState",StringComparison.Ordinal)&&owner.EntityId==entity.EntityId).ToArray();
+        var scopes=PhaseOwners(owner).SelectMany(from=>PhaseOwners(target).Select(to=>binding!=null
+            ?binding.TargetsPhaseOf(Expression(node),parameter.Name,from,to)
+            :parameter.Name.StartsWith("targetState",StringComparison.Ordinal)&&from==to)).ToArray();
         return scopes.Contains(true)?true:scopes.Contains(null)?null:false;
     }
     bool SharesLockedRegion(BehaviorNode node,BehaviorNode locked,bool descendants)
@@ -27,10 +28,25 @@ public sealed partial class BehaviorDocument
         var path=node.Path[owner.EntityId.Length..];var lockPath=locked.Path[lockOwner.EntityId.Length..];
         return path==lockPath||path.StartsWith(lockPath+"/",StringComparison.Ordinal)||descendants&&lockPath.StartsWith(path+"/",StringComparison.Ordinal);
     }
+    bool LockedDefinitionUse(BehaviorNode node)
+    {
+        var owner=OwningEntity(node.Id);if(owner.Definition==null)return false;
+        var queue=new Queue<EntityBehavior>(LockedNodes.Select(Find).SelectMany(ReferencedDefinitions));var seen=new HashSet<string>(StringComparer.Ordinal);
+        while(queue.TryDequeue(out var definition))
+        {
+            if(!seen.Add(definition.EntityId))continue;if(definition.EntityId==owner.EntityId)return true;
+            foreach(var nested in ReferencedDefinitions(definition.Root))queue.Enqueue(nested);
+        }
+        return false;
+    }
     void Editable(BehaviorNode node)
     {
-        if (LockedNodes.Select(Find).Any(locked => node.Path == locked.Path || node.Path.StartsWith(locked.Path + "/") || SharesLockedRegion(node,locked,true)) || node.Descendants().Any(n => LockedNodes.Contains(n.Id)))
+        if (LockedDefinitionUse(node)||LockedNodes.Select(Find).Any(locked => node.Path == locked.Path || node.Path.StartsWith(locked.Path + "/") || SharesLockedRegion(node,locked,true)) || node.Descendants().Any(n => LockedNodes.Contains(n.Id)))
             throw new InvalidOperationException("This region, a descendant or an ancestor is locked.");
+    }
+    public bool CanEditRegion(Guid id)
+    {
+        try{Editable(Find(id));return true;}catch(Exception error) when(error is ArgumentException or InvalidOperationException){return false;}
     }
     BehaviorNode StructuralParent(BehaviorNode node)
     {
@@ -41,15 +57,22 @@ public sealed partial class BehaviorDocument
     void LiteralReferences(EntityBehavior entity, IEnumerable<string> affectedNames)
     {
         var affected = affectedNames.ToHashSet(StringComparer.Ordinal);
-        foreach (var node in entity.Root.Descendants())
+        if(entity.Definition is {CompletePhaseContents:false})throw new ArgumentException("This definition has other statements, unresolved inputs or callers outside the document. Reconcile phase names in Source first.");
+        var queue=new Queue<BehaviorNode>(entity.Root.Descendants());var seen=new HashSet<Guid>();
+        while(queue.TryDequeue(out var node))
         {
-            if (node.Kind is "Factory" or "Reference" or "Spread")
-                throw new ArgumentException("This encounter contains source-generated phases or references. Update phase names in source so their hidden references stay consistent.");
+            if(!seen.Add(node.Id))continue;
+            if (node.Kind is "Factory" or "Reference" or "Spread"||node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource)
+            {
+                var definitions=ReferencedDefinitions(node);
+                if(definitions.Count==0||definitions.Any(d=>!d.Definition!.CompletePhaseContents))throw new ArgumentException("This encounter contains source-generated phases or references. Update phase names in source so their hidden references stay consistent.");
+                foreach(var definition in definitions)foreach(var child in definition.Root.Descendants())queue.Enqueue(child);
+            }
             if (node.Parameters.Any(p => ReferencesEntityPhase(node, p, entity) == true && (p.Name != "targetState" && p.Name != "state" || LiteralString(p.Expression) == null)) ||
                 node.Kind == "Opaque" && SyntaxFactory.ParseExpression(Expression(node)).DescendantNodesAndSelf().OfType<LiteralExpressionSyntax>().Any(l => l.Token.Value is string value && affected.Contains(value)))
                 throw new ArgumentException("This encounter contains a phase reference that cannot be safely rewritten. Update it in source first.");
         }
-        foreach (var node in Entities.SelectMany(e => e.Root.Descendants()))
+        foreach (var node in AllNodes)
             if (node.Parameters.Any(p => ReferencesEntityPhase(node, p, entity) is var scope && (scope == true && LiteralString(p.Expression) == null || scope == null && (LiteralString(p.Expression) == null || affected.Contains(LiteralString(p.Expression)!)))))
                 throw new ArgumentException("An order's target entity cannot be resolved safely. Update this phase reference in source first.");
     }
@@ -59,13 +82,13 @@ public sealed partial class BehaviorDocument
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Enter a non-empty phase name.");
         if (name == oldName) return;
         var entity = OwningEntity(id);
-        if (entity.Root.Descendants().Any(n => n.Id != id && n.Kind == "State" && StateName(n.Id) == name)) throw new ArgumentException("A phase already uses that name.");
+        if (AllRoots.Where(e=>PhaseOwners(e).Intersect(PhaseOwners(entity),StringComparer.Ordinal).Any()).SelectMany(e=>e.Root.Descendants()).Any(n=>n.Id!=id&&n.Start!=node.Start&&n.Kind=="State"&&StateName(n.Id)==name))throw new ArgumentException("A phase already uses that name.");
         LiteralReferences(entity,[oldName]); Editable(node);
         var edits = new List<(int Start, int Length, string Text)>();
         var nameParameter = node.Parameters.First(p => LiteralString(p.Expression) == oldName);
         var literal = SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(name)).ToFullString();
         edits.Add((nameParameter.Start, nameParameter.Length, literal));
-        foreach (var reference in Entities.SelectMany(e => e.Root.Descendants()))
+        foreach (var reference in AllNodes)
             foreach (var parameter in reference.Parameters.Where(p => ReferencesEntityPhase(reference, p, entity) == true && LiteralString(p.Expression) == oldName))
             {
                 Editable(reference); edits.Add((parameter.Start, parameter.Length, literal));
@@ -90,7 +113,7 @@ public sealed partial class BehaviorDocument
     static ObjectCreationExpressionSyntax Creation(SyntaxNode tree, BehaviorNode node) => tree.DescendantNodes().OfType<ObjectCreationExpressionSyntax>().Single(c => c.SpanStart == node.Start && c.Span.Length == node.Length);
     void CommitStructure(string changed, Dictionary<Guid, List<BehaviorNode>> orders, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
-        var originals=Entities.SelectMany(e=>e.Root.Descendants()).ToDictionary(n=>n.Id);
+        var originals=AllNodes.ToDictionary(n=>n.Id);
         foreach(var order in orders.ToArray())
         {
             var parent=Find(order.Key);var owner=OwningEntity(parent.Id);if(owner.Registration?.Shared!=true)continue;
@@ -112,9 +135,12 @@ public sealed partial class BehaviorDocument
             var children = orders.GetValueOrDefault(node.Id) ?? node.Children.ToList();
             for (var i = 0; i < children.Count; i++) Walk(children[i], path + "/" + i);
         }
-        foreach (var entity in Entities) Walk(entity.Root, entity.EntityId + "/root");
+        foreach (var entity in AllRoots) Walk(entity.Root, entity.EntityId + "/root");
         var probe = new BehaviorDocument(changed, names, schema: baseSchema, sourceFile: SourceFile);
-        var ids = probe.Identities.Select(identity => identity with { Id = layout[identity.Path] }).ToList();
+        var definitionPaths=probe.Definitions.Select(d=>d.EntityId+"/root").ToArray();
+        var ids = probe.Identities.Select(identity => identity with { Id = layout.TryGetValue(identity.Path,out var existing)?existing:
+            definitionPaths.Any(path=>identity.Path==path||identity.Path.StartsWith(path+"/",StringComparison.Ordinal))?identity.Id:
+            throw new InvalidOperationException("The structural edit changed an unexpected native identity: "+identity.Path) }).ToList();
         Commit(changed, ids, validate);
     }
 }

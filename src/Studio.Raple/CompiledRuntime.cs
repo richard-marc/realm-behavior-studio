@@ -90,9 +90,9 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             var adapter = new RapleAdapter(serverRoot);
             var schema = new SourceBehaviorSchema(adapter, compilation.Compiler!, project.SourceFile);
             var document = new BehaviorDocument(project.Source, schema, project.Identities);
-            var bindings = document.Entities.SelectMany(e => e.Root.Descendants()).Select(n => (Node: n, Description: document.SchemaAt(n)?.DescribeExpression(document.Expression(n))))
+            var bindings = document.AllNodes.Select(n => (Node: n, Description: document.SchemaAt(n)?.DescribeExpression(document.Expression(n))))
                 .Where(p => p.Description != null).Select(p => new RuntimeSourceBinding(p.Node.Start, document.Expression(p.Node), p.Description!)).DistinctBy(b => (b.Start, b.Expression)).ToArray();
-            return (Project: project with { Identities = document.Identities }, Bindings: bindings,Registrations:document.EncounterSources.ToArray());
+            return (Project: project with { Identities = document.Identities }, Bindings: bindings,Registrations:document.EncounterSources.ToArray(),Definitions:document.Definitions.Select(d=>d.Definition!).ToArray());
         }, cancellation).ConfigureAwait(false);
         project = prepared.Project;
         cancellation.ThrowIfCancellationRequested();
@@ -119,7 +119,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             File.WriteAllText(Path.Combine(directory, "runtime-stamp.json"), JsonSerializer.Serialize(stamp, BehaviorDocument.JsonOptions));
             bundles[cacheKey] = directory;
         }
-        return new PreparedRuntime(Path.GetFullPath(serverRoot), directory, project, prepared.Bindings,prepared.Registrations, stamp, limits, files);
+        return new PreparedRuntime(Path.GetFullPath(serverRoot), directory, project, prepared.Bindings,prepared.Registrations,prepared.Definitions, stamp, limits, files);
     }
     public sealed class PreparedRuntime
     {
@@ -127,11 +127,12 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
         readonly StudioProject project;
         readonly RuntimeSourceBinding[] bindings;
         readonly EncounterSource[] registrations;
+        readonly SourceDefinition[] definitions;
         readonly RuntimeLimits limits;
         readonly IReadOnlyDictionary<string, byte[]> files;
         public NativeRuntimeStamp Stamp { get; }
-        internal PreparedRuntime(string serverRoot, string directory, StudioProject project, RuntimeSourceBinding[] bindings,EncounterSource[] registrations, NativeRuntimeStamp stamp, RuntimeLimits limits, IReadOnlyDictionary<string, byte[]> files)
-        { this.serverRoot = serverRoot; this.directory = directory; this.project = project; this.bindings = bindings;this.registrations=registrations; Stamp = stamp; this.limits = limits; this.files = files; }
+        internal PreparedRuntime(string serverRoot, string directory, StudioProject project, RuntimeSourceBinding[] bindings,EncounterSource[] registrations,SourceDefinition[] definitions, NativeRuntimeStamp stamp, RuntimeLimits limits, IReadOnlyDictionary<string, byte[]> files)
+        { this.serverRoot = serverRoot; this.directory = directory; this.project = project; this.bindings = bindings;this.registrations=registrations;this.definitions=definitions; Stamp = stamp; this.limits = limits; this.files = files; }
         // Reuse compilation, never executing native objects or RNG state. Every
         // scenario gets a fresh process and the same verified immutable bundle.
         public async Task<CompiledRuntime> StartAsync(PlayerPreset? player = null, string? phase = null, CancellationToken cancellation = default)
@@ -154,7 +155,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the compiled runtime.");
             var runtime = new CompiledRuntime(process, Stamp, limits, scenario);
             runtime.Prepared = this;
-            try { await runtime.Exchange(new(RuntimeProtocol.Version, 0, "start", new(serverRoot, scenario, Stamp.ResourceHash, phase, bindings,registrations)), limits.StartupSeconds, cancellation).ConfigureAwait(false); return runtime; }
+            try { await runtime.Exchange(new(RuntimeProtocol.Version, 0, "start", new(serverRoot, scenario, Stamp.ResourceHash, phase, bindings,registrations,definitions)), limits.StartupSeconds, cancellation).ConfigureAwait(false); return runtime; }
             catch { await runtime.DisposeAsync().ConfigureAwait(false); throw; }
         }
     }

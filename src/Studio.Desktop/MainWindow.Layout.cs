@@ -54,12 +54,15 @@ public partial class MainWindow
         ConsoleBody.Visibility = Visibility.Visible; ConsoleSplitter.IsEnabled = true; ExpandConsoleButton.Content = "↗"; CollapseConsoleButton.Content = "⌄";
     }
     void PanelResized(object sender, DragCompletedEventArgs e) { consoleHeight = ConsoleRow.ActualHeight; if (consoleHeight < 85) CollapseConsole(sender, e); }
-    Dictionary<string, double[]> CaptureLayout() => new()
+    Dictionary<string, double[]> CaptureLayout()
     {
+        var result=new Dictionary<string,double[]>{
         ["columns"] = [LibraryColumn.ActualWidth, InspectorColumn.ActualWidth],
         ["console"] = [consoleMode == 0 ? ConsoleRow.ActualHeight : consoleHeight, consoleMode],
         ["workspace"] = [WorkspaceTabs.SelectedIndex]
-    };
+        };
+        if(definitionViewKey!=null)result["definition:"+definitionViewKey]=[1];return result;
+    }
     void RestoreLayout(Dictionary<string, double[]> layout)
     {
         RestoreConsole();
@@ -72,6 +75,8 @@ public partial class MainWindow
             if (console[1] == 1) CollapseConsole(this, new()); else if (console[1] == 2) ExpandConsole(this, new());
         }
         if (layout.TryGetValue("workspace", out var workspace) && workspace.Length > 0 && double.IsFinite(workspace[0])) WorkspaceTabs.SelectedIndex = Math.Clamp((int)workspace[0], 0, WorkspaceTabs.Items.Count - 1);
+        var definition=layout.Keys.FirstOrDefault(k=>k.StartsWith("definition:",StringComparison.Ordinal));
+        if(definition!=null&&document.Definitions.Any(d=>d.EntityId==definition[11..]&&d.Definition!.Encounters.Contains(selectedEntity!.Id)))EditDefinition(definition[11..]);
     }
     void LoadWorkspaceLayout()
     {

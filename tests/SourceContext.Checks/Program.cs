@@ -253,7 +253,8 @@ Check(stateShadow.Find(newGroup).Kind == "State" && stateShadow.Find(newGroup).C
 var duplicatedAttack = Doc("new State(new State(\"source duplicate\", StudioContextFan(count: 2)))");
 var nativeLeaf = Root(duplicatedAttack).Children.Single().Children.Single(); duplicatedAttack.DuplicateNode(nativeLeaf.Id, d => adapter.Validate(d, "Cave Pirate Brawler"));
 var phase = Doc("new State(new State(\"visible\", new Shoot(8)), StudioContextFan())");
-Reject(() => phase.RenameState(Root(phase).Children[0].Id, "renamed"), "Visible phase rename refuses to guess hidden helper references");
+phase.RenameState(Root(phase).Children[0].Id, "renamed");
+Check(Root(phase).Children[0].Label=="renamed"&&Root(phase).Children[1].Kind=="Factory"&&phase.ReferencedDefinitions(Root(phase).Children[1]).Single().Root.Kind=="Shoot", "Visible phase rename reconciles a fully discovered attack-only helper without guessing hidden phase contents");
 Reject(() => factory.ReplaceSource(factory.Source.Replace("count: count", "count: StudioNoSuchCount")), "Compiler errors in a helper body reject complete source replacement");
 var output = Path.GetFullPath(".artifacts/source-context"); Directory.CreateDirectory(output);
 var collectionDoc = Doc("new State(children: [new State(\"source collections\", StudioContextWrap(children: [StudioContextFan(count: 2), .. /* spread note */ StudioContextSharedList, new Wander(StudioContextSpeed)]), new Timed(1000, behaviors: [new Shoot(8, count: 5)]))])");

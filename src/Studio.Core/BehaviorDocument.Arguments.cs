@@ -16,8 +16,8 @@ public sealed partial class BehaviorDocument
         try
         {
             var container = ChildContainer(id); var slot = Slot(container);
-            var owner = container.Kind == "ArgumentGroup" ? Parent(container.Id)! : container;
-            return (!replace || !slot.IsCollection) && (replace || slot.IsCollection || container.Children.Count == 0) && (SchemaAt(owner)?.AcceptsChild(Expression(owner), slot.Name, expression, container.Kind == "ArgumentGroup" && !container.ArgumentFromCall ? Expression(container) : null) ?? true);
+            var owner = container.Kind == "ArgumentGroup" ? Parent(container.Id)??container : container;
+            return (!replace || !slot.IsCollection) && (replace || slot.IsCollection || container.Children.Count == 0) && (OwningEntity(container.Id).Definition?.Collection!=null&&Parent(container.Id)==null?SchemaAt(container)?.AcceptsDefinitionElement(Expression(container),expression)==true:SchemaAt(owner)?.AcceptsChild(Expression(owner), slot.Name, expression, container.Kind == "ArgumentGroup" && !container.ArgumentFromCall ? Expression(container) : null) ?? true);
         }
         catch (ArgumentException) { return false; }
     }
@@ -89,7 +89,7 @@ public sealed partial class BehaviorDocument
     Dictionary<Guid, ExpressionSyntax> ChildExpressions(SyntaxNode tree)
     {
         var result = new Dictionary<Guid, ExpressionSyntax>();
-        foreach (var parent in Entities.SelectMany(e => e.Root.Descendants()).Where(n => CanEditChildren(n.Id) && ChildContainer(n.Id).Id == n.Id))
+        foreach (var parent in AllNodes.Where(n => CanEditChildren(n.Id) && ChildContainer(n.Id).Id == n.Id))
         {
             var expression = NodeExpression(tree, parent);
             if (parent.Kind == "ArgumentGroup" && !parent.ArgumentFromCall)

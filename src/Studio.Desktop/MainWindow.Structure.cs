@@ -13,10 +13,10 @@ public partial class MainWindow
     static string PhaseLiteral(string name) => SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(name)).ToFullString();
     string NextPhaseName()
     {
-        var names = document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root.Descendants().Where(n => n.Kind == "State").Select(n => document.StateName(n.Id)).ToHashSet();
+        var names = AuthoringRoot.Descendants().Where(n => n.Kind == "State").Select(n => document.StateName(n.Id)).ToHashSet();
         var index = 1; while (names.Contains("phase-" + index)) index++; return "phase-" + index;
     }
-    bool RegionEditable(BehaviorNode node) => !document.LockedNodes.Select(document.Find).Any(locked => node.Path == locked.Path || node.Path.StartsWith(locked.Path + "/")) && !node.Descendants().Any(n => document.LockedNodes.Contains(n.Id));
+    bool RegionEditable(BehaviorNode node) => document.CanEditRegion(node.Id);
     void UpdateOrganizeButtons()
     {
         if (selectedNode == null) return; var editable = RegionEditable(selectedNode);

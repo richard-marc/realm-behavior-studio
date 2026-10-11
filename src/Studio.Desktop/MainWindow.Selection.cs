@@ -28,7 +28,7 @@ public partial class MainWindow
         {
             var drag = JsonSerializer.Deserialize<NodeDrag>(json);
             if (drag == null || drag.Revision != document.Revision || drag.EntityId != selectedEntity?.Id || drag.Ids == null || drag.Ids.Length is < 1 or > 2048) return null;
-            var valid = EncounterRoot.Descendants().Select(n => n.Id).ToHashSet();
+            var valid = AuthoringRoot.Descendants().Select(n => n.Id).ToHashSet();
             return drag.Ids.All(valid.Contains) ? drag : null;
         }
         catch (JsonException) { return null; }
@@ -194,7 +194,7 @@ public partial class MainWindow
             if (selectedNode.Kind == "State") yield return new("Toggle focused phase details", "Double-click a phase card", () => TogglePhaseCollapse(focused));
             if (selectedNode.Kind == "State") yield return new("Ungroup focused phase", "Promote its contents · reroute incoming transitions first", UngroupSelectedPhase, document.Parent(focused)?.Kind == "State" && RegionEditable(selectedNode));
         }
-        foreach (var node in EncounterRoot.Descendants())
+        foreach (var node in AuthoringRoot.Descendants())
         {
             var id = node.Id;
             yield return new("Go to " + node.Label, node.Kind + " · " + node.Path, () => SelectNode(id));
@@ -227,7 +227,7 @@ public partial class MainWindow
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             if (e.Key == Key.C) CopySelectedNodes(); else if (e.Key == Key.V) PasteSelectedNodes(); else if (e.Key == Key.G) GroupSelectedNodes();
-            else if (e.Key == Key.A) { nodeSelection.Clear(); nodeSelection.UnionWith(EncounterRoot.Descendants().Where(n => n.Id != EncounterRoot.Id && document.CanOrganize(n.Id)).Select(n => n.Id)); RefreshSelectionVisuals(); }
+            else if (e.Key == Key.A) { nodeSelection.Clear(); nodeSelection.UnionWith(AuthoringRoot.Descendants().Where(n => n.Id != AuthoringRoot.Id && document.CanOrganize(n.Id)).Select(n => n.Id)); RefreshSelectionVisuals(); }
             else return false;
         }
         else if (e.Key == Key.Delete) DeleteSelectedNodes(); else return false;

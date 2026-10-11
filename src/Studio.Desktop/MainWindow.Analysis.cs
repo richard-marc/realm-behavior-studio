@@ -6,8 +6,9 @@ namespace Studio.Desktop;
 public partial class MainWindow
 {
     BehaviorNode EncounterRoot => document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root;
+    BehaviorNode AuthoringRoot=>document.Definitions.FirstOrDefault(d=>d.EntityId==definitionViewKey)?.Root??EncounterRoot;
     IEnumerable<DocumentDiagnostic> ReviewDiagnostics() => adapter.Validate(document, selectedEntity!.Id)
-        .Concat(BehaviorAnalysis.Analyze(EncounterRoot).Diagnostics);
+        .Concat(BehaviorAnalysis.Analyze(AuthoringRoot).Diagnostics);
     void RefreshPhaseReview(IReadOnlyList<DocumentDiagnostic> diagnostics)
     {
         PhaseReview.Header = diagnostics.Count == 0 ? "Phase review · no issues" : $"Phase review · {diagnostics.Count} {(diagnostics.Count == 1 ? "issue" : "issues")}";
@@ -32,7 +33,7 @@ public partial class MainWindow
         if (owner != null)
         {
             Graph.UpdateLayout();
-            var transitions = BehaviorAnalysis.Analyze(EncounterRoot).Transitions;
+            var transitions = BehaviorAnalysis.Analyze(AuthoringRoot).Transitions;
             var edge = transitions.FirstOrDefault(t => t.Node.Id == id);
             if (edge != null && Graph.PhaseBounds(owner.Id) is { } phase && phase.Height > GraphScroll.ViewportHeight && Graph.TransitionBounds(id) is { } row) Graph.BringIntoView(row);
             else Graph.BringPhaseIntoView(owner.Id);
@@ -40,7 +41,7 @@ public partial class MainWindow
     }
     void AddTransitionSummary(Guid id)
     {
-        var edge = BehaviorAnalysis.Analyze(EncounterRoot).Transitions.FirstOrDefault(t => t.Node.Id == id);
+        var edge = BehaviorAnalysis.Analyze(AuthoringRoot).Transitions.FirstOrDefault(t => t.Node.Id == id);
         if (edge == null) return;
         Inspector.Children.Add(new TextBlock { Text = $"{edge.Condition} → {edge.TargetName ?? "dynamic target"}", TextWrapping = TextWrapping.Wrap,
             Foreground = EncounterViewport.Brush("#CFD3DB"), Margin = new(0, 12, 0, 4) });

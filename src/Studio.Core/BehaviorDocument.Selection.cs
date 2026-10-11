@@ -17,7 +17,7 @@ public sealed partial class BehaviorDocument
     void EditableContainer(BehaviorNode parent)
     {
         if (ChildContainer(parent.Id).Id != parent.Id) throw new ArgumentException("Choose the typed argument list as the destination.");
-        if (LockedNodes.Select(Find).Any(locked => parent.Path == locked.Path || parent.Path.StartsWith(locked.Path + "/", StringComparison.Ordinal) || SharesLockedRegion(parent,locked,false)))
+        if (LockedDefinitionUse(parent)||LockedNodes.Select(Find).Any(locked => parent.Path == locked.Path || parent.Path.StartsWith(locked.Path + "/", StringComparison.Ordinal) || SharesLockedRegion(parent,locked,false)))
             throw new InvalidOperationException("The destination phase or an ancestor is locked.");
     }
     public BehaviorClipboard CopyNodes(IEnumerable<Guid> ids)
@@ -35,7 +35,7 @@ public sealed partial class BehaviorDocument
         foreach (var expression in clipboard.Expressions)
             ValidateChildExpression(expression);
         var (temporary, fragmentRoot) = ChildFragment(parent, clipboard.Expressions);
-        var fragmentEntityId = temporary.Entities.Single(e => e.Root.Id == fragmentRoot.Id).EntityId;
+        var fragmentEntityId = temporary.AllRoots.Single(e => e.Root.Id == fragmentRoot.Id).EntityId;
         var phases = fragmentRoot.Children.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").ToArray();
         var originals = phases.Select(n => temporary.StateName(n.Id) ?? throw new ArgumentException("Name phases before copying them.")).ToArray();
         if (originals.Distinct(StringComparer.Ordinal).Count() != originals.Length) throw new ArgumentException("Copied phases must have unique names.");
@@ -46,7 +46,7 @@ public sealed partial class BehaviorDocument
             while (taken.Contains(candidate)) candidate = originals[i] + "-copy-" + suffix++;
             taken.Add(candidate); temporary.RenameState(phases[i].Id, candidate);
         }
-        var additions = FragmentChildren(temporary.Entities.Single(e => e.EntityId == fragmentEntityId).Root).ToArray();
+        var additions = FragmentChildren(temporary.AllRoots.Single(e => e.EntityId == fragmentEntityId).Root).ToArray();
         var arguments = additions.ToDictionary(n => n.Id, n => SyntaxFactory.Argument(SyntaxFactory.ParseExpression(temporary.Expression(n))));
         var children = parent.Children.ToList(); children.InsertRange(index, additions);
         RewriteChildren(new() { [parent.Id] = children }, arguments, validate);
@@ -73,12 +73,12 @@ public sealed partial class BehaviorDocument
             return (standalone, standaloneRoot with { Children = FragmentChildren(standaloneRoot) });
         }
         var entity = OwningEntity(destination.Id);
-        var wrapper = collection ? schema.CollectionFragmentRoot(expressions) : schema.FragmentRoot(expressions);
+        var wrapper = entity.Definition?.Collection!=null?"["+string.Join(",\n",expressions)+"]":collection ? schema.CollectionFragmentRoot(expressions) : schema.FragmentRoot(expressions);
         var source = Source.Remove(entity.Root.Start, entity.Root.Length).Insert(entity.Root.Start, wrapper);
         var document = new BehaviorDocument(source, names, schema: baseSchema, sourceFile: SourceFile);
         var errors = document.SourceDiagnostics().Where(d => d.IsError).ToArray();
         if (errors.Length > 0) throw new ArgumentException(string.Join("\n", errors.Select(d => d.Message)));
-        var actualRoot = document.Entities.Single(e => e.EntityId == entity.EntityId).Root;
+        var actualRoot = document.AllRoots.Single(e => e.EntityId == entity.EntityId).Root;
         var root = actualRoot with { Children = FragmentChildren(actualRoot) };
         if (root.Children.Count != expressions.Count || root.Children.Any(n => n.Kind == "Opaque"))
             throw new ArgumentException("Every pasted expression must resolve to a native behavior, phase or transition in the destination source context.");
@@ -138,7 +138,7 @@ public sealed partial class BehaviorDocument
         var parent = StructuralParent(group); Editable(group); EditableContainer(parent);
         if (!PhaseContainer(parent)) throw new ArgumentException("Ungroup a phase only within another phase's child list.");
         var entity = OwningEntity(id); var name = StateName(id) ?? ""; LiteralReferences(entity, [name]);
-        if (Entities.SelectMany(e => e.Root.Descendants()).Any(n => n.Parameters.Any(p => ReferencesEntityPhase(n, p, entity) == true && LiteralString(p.Expression) == name)))
+        if (AllNodes.Any(n => n.Parameters.Any(p => ReferencesEntityPhase(n, p, entity) == true && LiteralString(p.Expression) == name)))
             throw new ArgumentException("Reroute transitions targeting this phase before ungrouping it.");
         var siblings = parent.Children.ToList(); var index = siblings.FindIndex(n => n.Id == id); siblings.RemoveAt(index); siblings.InsertRange(index, group.Children);
         RewriteChildren(new() { [parent.Id] = siblings }, [], validate); return parent.Id;
@@ -153,7 +153,7 @@ public sealed partial class BehaviorDocument
         {
             var phaseNames = entityGroup.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").Select(n => StateName(n.Id)).OfType<string>().ToHashSet(StringComparer.Ordinal);
             if (phaseNames.Count > 0) LiteralReferences(entityGroup.Key, phaseNames);
-            foreach (var reference in Entities.SelectMany(e => e.Root.Descendants()).Where(n => !removed.Contains(n.Id) && n.Parameters.Any(p => ReferencesEntityPhase(n, p, entityGroup.Key) == true && phaseNames.Contains(LiteralString(p.Expression) ?? ""))))
+            foreach (var reference in AllNodes.Where(n => !removed.Contains(n.Id) && n.Parameters.Any(p => ReferencesEntityPhase(n, p, entityGroup.Key) == true && phaseNames.Contains(LiteralString(p.Expression) ?? ""))))
             {
                 if (!reference.Kind.EndsWith("Transition", StringComparison.Ordinal)) throw new ArgumentException("Update actions referencing deleted phases first.");
                 StructuralParent(reference); Editable(reference); deletions.Add(reference);
@@ -183,9 +183,9 @@ public sealed partial class BehaviorDocument
             var parent = Find(order.Key); var slot = Slot(parent);
             if (order.Value.Count < slot.Minimum || !slot.IsCollection && order.Value.Count > 1)
                 throw new ArgumentException($"{parent.Label}.{slot.Name} requires {(slot.IsCollection ? "at least " + slot.Minimum : slot.Minimum == 0 ? "at most one" : "exactly one")} child.");
-            var owner = parent.Kind == "ArgumentGroup" ? Parent(parent.Id)! : parent;
+            var owner = parent.Kind == "ArgumentGroup" ? Parent(parent.Id)??parent : parent;
             foreach (var child in order.Value)
-                if (child.Kind == "Spread" ? !CollectionContainer(parent) || SchemaAt(owner)?.AcceptsSpread(Expression(owner), slot.Name, expressions[child.Id].ToString(), Expression(parent)) != true : child.Kind == "ArgumentGroup" || child.Kind != "Opaque" && schema != null && !SchemaAt(owner)!.AcceptsChild(Expression(owner), slot.Name, expressions[child.Id].ToString(), parent.Kind == "ArgumentGroup" && !parent.ArgumentFromCall ? Expression(parent) : null))
+                if (child.Kind == "Spread" ? !CollectionContainer(parent) || (OwningEntity(parent.Id).Definition?.Collection!=null&&Parent(parent.Id)==null?SchemaAt(parent)?.AcceptsDefinitionElement(Expression(parent),expressions[child.Id].ToString(),true):SchemaAt(owner)?.AcceptsSpread(Expression(owner), slot.Name, expressions[child.Id].ToString(), Expression(parent))) != true : child.Kind == "ArgumentGroup" || child.Kind != "Opaque" && schema != null && !(OwningEntity(parent.Id).Definition?.Collection!=null&&Parent(parent.Id)==null?SchemaAt(parent)!.AcceptsDefinitionElement(Expression(parent),expressions[child.Id].ToString()):SchemaAt(owner)!.AcceptsChild(Expression(owner), slot.Name, expressions[child.Id].ToString(), parent.Kind == "ArgumentGroup" && !parent.ArgumentFromCall ? Expression(parent) : null)))
                     throw new ArgumentException($"{child.Label} is not compatible with {parent.Label}.{slot.Name} ({slot.ElementType}).");
         }
         var changed = tree.ReplaceNodes(containers.Keys, (original, current) =>

@@ -101,7 +101,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     }
     public string? PreviewContextRequirement(BehaviorDocument document,string id)
     {
-        if(document.Entities.SingleOrDefault(e=>e.EntityId==id)?.Root.Descendants().Any(n=>NativeKind(document,n)=="PetFollow")==true)
+        if(document.Entities.Where(e=>e.EntityId==id).Concat(document.Definitions.Where(d=>d.Definition!.Encounters.Contains(id))).Any(e=>e.Root.Descendants().Any(n=>NativeKind(document,n)=="PetFollow")))
             return "PetFollow authoring is available; playback needs an actual Pet and its player owner context, beyond the current enemy prototype.";
         return SimEngine.Data.IdToObjectType.TryGetValue(id,out var type)&&SimEngine.Data.ObjectDescs.TryGetValue(type,out var desc)&&!desc.Enemy&&desc.Class!="Character"
             ?desc.Class+" authoring is available; playback needs its actual world/player owner context, beyond the current enemy prototype.":null;

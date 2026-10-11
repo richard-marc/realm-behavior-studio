@@ -17,9 +17,14 @@ public record SourceExpression(string Kind, string Label, bool IsState, IReadOnl
 {
     public bool RequiresCompiled { get; init; }
 }
+public record SourceDefinitionUse(int Start,int Length);
+public record SourceDefinition(string Key,string Label,int Start,int Length,ChildArgument? Collection,
+    IReadOnlyList<string> Encounters,IReadOnlyList<SourceDefinitionUse> Uses,bool CompletePhaseContents,string Boundary);
 
 public interface IBehaviorSchema
 {
+    IReadOnlyList<SourceDefinition> SourceDefinitions()=>[];
+    bool AcceptsDefinitionElement(string expression,string element,bool spread=false)=>false;
     bool HasSourceContext => false;
     IBehaviorSchema ForSource(string source, string? sourceFile) => this;
     IBehaviorSchema At(int position) => this;

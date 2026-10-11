@@ -19,6 +19,7 @@ public sealed record BehaviorNode(Guid Id, string Path, string Kind, string Labe
 public record EntityBehavior(string EntityId, int Start, BehaviorNode Root)
 {
     public EncounterSource? Registration { get; init; }
+    public SourceDefinition? Definition { get; init; }
 }
 public record EditOperation(Guid NodeId, string Parameter, string Expression);
 public record DocumentPatch(long ExpectedRevision, string Description, IReadOnlyList<EditOperation> Operations);
@@ -50,6 +51,10 @@ public sealed partial class BehaviorDocument
     public string? SourceFile { get; }
     public long Revision { get; private set; }
     public IReadOnlyList<EntityBehavior> Entities { get; private set; } = [];
+    public IReadOnlyList<EntityBehavior> Definitions { get; private set; } = [];
+    public IEnumerable<EntityBehavior> AllRoots=>Entities.Concat(Definitions);
+    public IEnumerable<BehaviorNode> AllNodes=>AllRoots.SelectMany(e=>e.Root.Descendants());
+    public IReadOnlyList<EntityBehavior> ReferencedDefinitions(BehaviorNode node)=>Definitions.Where(d=>d.Definition!.Uses.Any(u=>u.Start>=node.Start&&u.Start+u.Length<=node.Start+node.Length)).ToArray();
     public IReadOnlyList<DocumentDiagnostic> Diagnostics { get; private set; } = [];
     public HashSet<Guid> LockedNodes { get; } = [];
     readonly Stack<(string Source, List<NodeIdentity> Ids)> undo = new(), redo = new();
@@ -70,8 +75,8 @@ public sealed partial class BehaviorDocument
         if (Diagnostics.Any(d => d.IsError)) throw new ArgumentException(string.Join("\n", Diagnostics.Select(d => d.Message)));
     }
     string IdentitySignature(BehaviorNode node) => (node.ArgumentFromCall ? "$slot:" + node.Argument!.Name + "|" : "") + Expression(node);
-    public List<NodeIdentity> Identities => Entities.SelectMany(e => e.Root.Descendants()).Select(n => new NodeIdentity(n.Id, n.Path, n.Kind, IdentitySignature(n))).ToList();
-    public BehaviorNode Find(Guid id) => Entities.SelectMany(e => e.Root.Descendants()).FirstOrDefault(n => n.Id == id)
+    public List<NodeIdentity> Identities => AllNodes.Select(n => new NodeIdentity(n.Id, n.Path, n.Kind, IdentitySignature(n))).ToList();
+    public BehaviorNode Find(Guid id) => AllNodes.FirstOrDefault(n => n.Id == id)
         ?? throw new ArgumentException("The selected element is no longer in this revision.");
     public string Expression(BehaviorNode n) => Source.Substring(n.Start, n.Length);
     void Parse(List<NodeIdentity> identities, IBehaviorSchema? prepared = null)
@@ -84,7 +89,7 @@ public sealed partial class BehaviorDocument
         var result = new List<EntityBehavior>();
         var usedIdentities = new HashSet<Guid>();
         var syntax=tree.GetRoot();
-        var roots=new List<(string EntityId,int Start,int Order,ExpressionSyntax Root,EncounterSource? Registration)>();
+        var roots=new List<(string EntityId,int Start,int Order,ExpressionSyntax Root,EncounterSource? Registration,SourceDefinition? Definition)>();
         foreach(var call in syntax.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             if (call.Expression is not MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Init" } || call.ArgumentList.Arguments.Count < 2) continue;
@@ -92,13 +97,16 @@ public sealed partial class BehaviorDocument
             var creation = call.ArgumentList.Arguments[1].Expression;
             if (creation is not ObjectCreationExpressionSyntax { Type: { } type } || type.GetLastToken().ValueText != "State")
                 if (schema?.At(creation.SpanStart).DescribeExpression(creation.ToString())?.IsState != true) continue;
-            roots.Add((id.Token.ValueText,call.SpanStart,((MemberAccessExpressionSyntax)call.Expression).Name.SpanStart,creation,null));
+            roots.Add((id.Token.ValueText,call.SpanStart,((MemberAccessExpressionSyntax)call.Expression).Name.SpanStart,creation,null,null));
         }
         foreach(var registration in EncounterSources)
         {
             var expression=syntax.DescendantNodes().OfType<ExpressionSyntax>().FirstOrDefault(n=>n.SpanStart==registration.RootStart&&n.Span.Length==registration.RootLength);
-            if(expression!=null)roots.Add((registration.EntityId,registration.CallStart,registration.OrderStart<0?registration.CallStart:registration.OrderStart,expression,registration));
+            if(expression!=null)roots.Add((registration.EntityId,registration.CallStart,registration.OrderStart<0?registration.CallStart:registration.OrderStart,expression,registration,null));
         }
+        foreach(var definition in schema?.SourceDefinitions()??[])
+            if(syntax.DescendantNodes().OfType<ExpressionSyntax>().FirstOrDefault(n=>n.SpanStart==definition.Start&&n.Span.Length==definition.Length) is {} expression)
+                roots.Add((definition.Key,definition.Start,definition.Start,expression,null,definition));
         foreach(var encounter in roots.OrderBy(r=>r.Order).GroupBy(r=>r.EntityId,StringComparer.Ordinal).Select(g=>g.First()))
         {
             var entityId=encounter.EntityId;var creation=encounter.Root;
@@ -192,9 +200,17 @@ public sealed partial class BehaviorDocument
                 if (old != null) usedIdentities.Add(old.Id);
                 return new(old?.Id ?? Guid.NewGuid(), path, "Opaque", "Opaque: " + expression, expression.SpanStart, expression.Span.Length, [], []);
             }
-            result.Add(new(entityId, encounter.Start, Read(creation, entityId + "/root")){Registration=encounter.Registration});
+            var path=entityId+"/root";BehaviorNode root;
+            if(encounter.Definition?.Collection is {} collection&&ListItems(creation) is {} items)
+            {
+                var old=identities.FirstOrDefault(i=>i.Path==path&&i.Kind=="ArgumentGroup"&&!usedIdentities.Contains(i.Id));if(old!=null)usedIdentities.Add(old.Id);
+                var children=items.Select((item,index)=>ReadItem(item,path+"/"+index)).ToArray();
+                root=new(old?.Id??Guid.NewGuid(),path,"ArgumentGroup",encounter.Definition.Label+" · "+ChildListCount(children),creation.SpanStart,creation.Span.Length,[],children){Argument=collection};
+            }
+            else root=Read(creation,path);
+            result.Add(new(entityId, encounter.Start, root){Registration=encounter.Registration,Definition=encounter.Definition});
         }
-        Entities = result;
+        Entities = result.Where(e=>e.Definition==null).ToArray();Definitions=result.Where(e=>e.Definition!=null).ToArray();
     }
     public void Apply(DocumentPatch patch, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {

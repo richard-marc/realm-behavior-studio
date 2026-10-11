@@ -10,12 +10,14 @@ public sealed class PreparedBehaviorSchema : IBehaviorSchema
     readonly IReadOnlyDictionary<(int Start, string Expression), SourceExpression> bindings;
     readonly int position;
     readonly IReadOnlyList<EncounterSource> registrations;
-    public PreparedBehaviorSchema(RapleAdapter adapter, IEnumerable<RuntimeSourceBinding> bindings,IReadOnlyList<EncounterSource>? registrations=null)
-        : this(adapter, bindings.ToDictionary(b => (b.Start, b.Expression), b => b.Description), -1,registrations??[]) { }
-    PreparedBehaviorSchema(RapleAdapter adapter, IReadOnlyDictionary<(int Start, string Expression), SourceExpression> bindings, int position,IReadOnlyList<EncounterSource> registrations)
-    { this.adapter = adapter; this.bindings = bindings; this.position = position;this.registrations=registrations; }
+    readonly IReadOnlyList<SourceDefinition> definitions;
+    public PreparedBehaviorSchema(RapleAdapter adapter, IEnumerable<RuntimeSourceBinding> bindings,IReadOnlyList<EncounterSource>? registrations=null,IReadOnlyList<SourceDefinition>? definitions=null)
+        : this(adapter, bindings.ToDictionary(b => (b.Start, b.Expression), b => b.Description), -1,registrations??[],definitions??[]) { }
+    PreparedBehaviorSchema(RapleAdapter adapter, IReadOnlyDictionary<(int Start, string Expression), SourceExpression> bindings, int position,IReadOnlyList<EncounterSource> registrations,IReadOnlyList<SourceDefinition> definitions)
+    { this.adapter = adapter; this.bindings = bindings; this.position = position;this.registrations=registrations;this.definitions=definitions; }
+    public IReadOnlyList<SourceDefinition> SourceDefinitions()=>definitions;
     public IReadOnlyList<EncounterSource> AdditionalEncounters()=>registrations;
-    public IBehaviorSchema At(int start) => new PreparedBehaviorSchema(adapter, bindings, start,registrations);
+    public IBehaviorSchema At(int start) => new PreparedBehaviorSchema(adapter, bindings, start,registrations,definitions);
     public SourceExpression? DescribeExpression(string expression) => bindings.GetValueOrDefault((position, expression));
     public string[] ParameterNames(string kind) => adapter.ParameterNames(kind);
     public string[] ConstructorParameterNames(string expression) => DescribeExpression(expression)?.ArgumentNames ?? adapter.ConstructorParameterNames(expression);

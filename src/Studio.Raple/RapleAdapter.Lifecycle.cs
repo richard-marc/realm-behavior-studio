@@ -47,7 +47,7 @@ public sealed partial class RapleAdapter
     {
         var phase = document.Find(phaseId);
         if (phase.Kind != "State") throw new ArgumentException("Select a phase for lifecycle actions.");
-        var phases = document.Entities.SelectMany(e => e.Root.Descendants()).Where(n => n.Kind == "State" && (n.Id == phaseId || phase.Path.StartsWith(n.Path + "/", StringComparison.Ordinal))).OrderByDescending(n => n.Path.Length);
+        var phases = document.AllNodes.Where(n => n.Kind == "State" && (n.Id == phaseId || phase.Path.StartsWith(n.Path + "/", StringComparison.Ordinal))).OrderByDescending(n => n.Path.Length);
         return phases.SelectMany(owner => owner.StateChildren.Where(n => EngineAssembly.GetTypes().Any(t => t.Name == n.Kind && typeof(Behavior).IsAssignableFrom(t)))
             .Select(node => new LifecycleAction(node, owner, owner.Id != phaseId, Callbacks(node.Kind)))).ToArray();
     }
