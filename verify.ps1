@@ -54,6 +54,9 @@ try {
     & dotnet run --project tests/Arena.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/arena-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/arena-checks.log' -Tail 25; throw 'Native arena checks failed.' }
     Get-Content '.artifacts/arena-checks.log' -Tail 1
+    & dotnet run --project tests/Map.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/map-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/map-checks.log' -Tail 25; throw 'Native map checks failed.' }
+    Get-Content '.artifacts/map-checks.log' -Tail 1
     & dotnet run --project tests/AI.Checks *> '.artifacts/ai-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/ai-checks.log' -Tail 25; throw 'AI contract checks failed.' }
     Get-Content '.artifacts/ai-checks.log' -Tail 1

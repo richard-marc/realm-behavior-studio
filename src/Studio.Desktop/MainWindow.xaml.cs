@@ -46,13 +46,14 @@ public partial class MainWindow : Window
         InitializeCombatControls();
         InitializeTimelineControls();
         InitializeArenaControls();
+        InitializeMapControls();
         Viewport.AttackEdited += ApplyAttackEdit;
         Viewport.MovementEdited += ApplyMovementEdit;
         Viewport.PathEdited += ApplyPathEdit;
-        autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); };
+        autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) {Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot()));BeginMapRecovery();} };
         PreviewKeyDown += Shortcut;
         Loaded += (_, _) => { Try(Initialize); CompositionTarget.Rendering += Advance; };
-        Closing += async (_, _) => { ClearCombatPreview(); ClearPathEditor(); CompositionTarget.Rendering -= Advance; session = null; SaveWorkspaceLayout(); if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); aiCancellation?.Cancel(); if (codex != null) await codex.DisposeAsync(); };
+        Closing += async (_, e) => { if(e.Cancel)return; ClearCombatPreview(); ClearPathEditor(); CompositionTarget.Rendering -= Advance; session = null; SaveWorkspaceLayout(); if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); aiCancellation?.Cancel(); if (codex != null) await codex.DisposeAsync(); };
     }
     string ServerPath()
     {
@@ -302,8 +303,8 @@ public partial class MainWindow : Window
     void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow { Event.NodeId: { } id }) SelectNode(id); }
     void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => { BranchTimeline(); session.SetBossHpFraction(e.NewValue / 100); UpdateSession(); }); }
     void ApplySource(object sender, RoutedEventArgs e) => Try(() => { document.ReplaceSource(SourceEditor.Text, d => adapter.Validate(d, selectedEntity!.Id)); Changed(); });
-    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(Viewport.ArenaEditing) UndoArena(); else if (document.Undo()) Changed(); });
-    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(Viewport.ArenaEditing) RedoArena(); else if (document.Redo()) Changed(); });
+    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if (document.Undo()) Changed(); });
+    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if (document.Redo()) Changed(); });
     void ImportSource(object sender, RoutedEventArgs e) => Try(() =>
     {
         var dialog = new OpenFileDialog { Filter = "C# behavior files|*.cs", InitialDirectory = Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db") };
@@ -314,6 +315,7 @@ public partial class MainWindow : Window
     });
     void SaveProject(object sender, RoutedEventArgs e) => Try(() =>
     {
+        if(MapWorkspace.IsSelected){SaveMapFile(sender,e);return;}
         if (projectPath == null) { var dialog = new SaveFileDialog { Filter = "Realm Studio project|*.rbs", FileName = selectedEntity!.Id + ".rbs" }; if (dialog.ShowDialog() != true) return; projectPath = dialog.FileName; }
         BehaviorDocument.Save(projectPath, Snapshot()); Status.Text = "Saved " + Path.GetFileName(projectPath);
     });

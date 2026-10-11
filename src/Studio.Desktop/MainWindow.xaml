@@ -73,6 +73,13 @@
        <DockPanel Margin="0,12,0,8"><Button x:Name="TimelineGoButton" DockPanel.Dock="Right" Content="Go to event" Click="GoToTimelineEvent" Style="{StaticResource QuietButton}"/><TextBlock x:Name="TimelineEventInfo" Text="Choose a marker or event to inspect its source and replay position." Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="2,5,12,0"/></DockPanel></StackPanel>
        <ListBox x:Name="TimelineEvents" SelectionChanged="TimelineEventSelected"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" FontSize="12"/></DataTemplate></ListBox.ItemTemplate></ListBox>
       </DockPanel></Border></TabItem>
+      <TabItem x:Name="MapWorkspace" Header="Map"><Border Background="{StaticResource Panel}" CornerRadius="10" Padding="12"><DockPanel>
+       <StackPanel x:Name="MapToolbar" DockPanel.Dock="Top" Margin="0,0,0,12">
+        <DockPanel Margin="2,0,2,10"><StackPanel><TextBlock x:Name="MapHeading" Text="Native map editor" FontSize="21" FontWeight="SemiBold"/><TextBlock x:Name="MapInfo" Text="Open and edit the game's .wmap files" Style="{StaticResource Label}" Margin="0,4,0,0"/></StackPanel></DockPanel>
+        <WrapPanel Margin="0,0,0,8"><Button Content="Open map" Click="OpenMapFile"/><Button x:Name="MapSave" Content="Save map" Click="SaveMapFile" Margin="6,0,0,0"/><Button Content="From arena" Click="ArenaToMap" Style="{StaticResource QuietButton}" Margin="6,0,0,0"/><Button x:Name="MapUse" Content="Use in arena" Click="MapToArena" Style="{StaticResource QuietButton}" Margin="6,0,0,0" ToolTip="Select the current encounter enemy in a compatible 128×128 map"/><Button Content="Fit" Click="FitMap" Style="{StaticResource QuietButton}" Margin="6,0,0,0"/><Button Content="Focus tile" Click="FocusMapTile" Style="{StaticResource QuietButton}" Margin="6,0,0,0"/></WrapPanel>
+        <WrapPanel x:Name="MapTools"/>
+       </StackPanel><Border Background="#101215" CornerRadius="8" ClipToBounds="True"><local:NativeMapViewport x:Name="MapCanvas"/></Border>
+      </DockPanel></Border></TabItem>
      </TabControl>
     </Grid>
     <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ToolTip="Resize inspector"/>

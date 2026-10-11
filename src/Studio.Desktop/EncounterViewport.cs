@@ -108,9 +108,10 @@ public sealed partial class EncounterViewport : FrameworkElement
             if (Math.Abs(vx) > .00001 || Math.Abs(vy) > .00001) facings[e.Id] = Math.Atan2(vy, vx);
             var period = moved ? (int)(.5 / Math.Sqrt(vx * vx + vy * vy)) : 0;
             if (moved) period += 400 - period % 400;
-            DrawCharacter(dc, e.Name, p, moved ? SpriteAction.Walk : SpriteAction.Stand, moved ? renderMs / period % 1 : 0, facings.GetValueOrDefault(e.Id));
-            var width = Math.Clamp(scale * .8 * Sprites!.Size(e.Name), 26, 90);
-            var image = Sprites.Get(e.Name); var bounds = image == null ? new Rect(p.X - 12, p.Y - 24, 24, 24) : CharacterBounds(p, scale, Sprites.Size(e.Name), image, Sprites.Elevation(e.Name));
+            var characterSize=e.Size.HasValue?Math.Max(0,e.Size.Value)/100d:Sprites!.Size(e.Name);
+            DrawCharacter(dc, e.Name, p, moved ? SpriteAction.Walk : SpriteAction.Stand, moved ? renderMs / period % 1 : 0, facings.GetValueOrDefault(e.Id),characterSize:characterSize);
+            var width = Math.Clamp(scale * .8 * characterSize, 26, 90);
+            var image = Sprites!.Get(e.Name); var bounds = image == null ? new Rect(p.X - 12, p.Y - 24, 24, 24) : CharacterBounds(p, scale, characterSize, image, Sprites.Elevation(e.Name));
             var top = bounds.Top - 10;
             dc.DrawRoundedRectangle(Brush("#303039"), null, new(p.X - width / 2, top, width, 3), 1.5, 1.5);
             var hpWidth = width * Math.Clamp(e.Hp / (double)Math.Max(1, e.MaxHp), 0, 1);
@@ -153,7 +154,7 @@ public sealed partial class EncounterViewport : FrameworkElement
         else dc.DrawRectangle(null, pen, new(point.X - radius, point.Y - radius, radius * 2, radius * 2));
         dc.DrawEllipse(Brush(color), null, point, 1.5, 1.5);
     }
-    void DrawCharacter(DrawingContext dc, string id, Point point, SpriteAction action, double phase, double facing, double? spriteTile = null)
+    void DrawCharacter(DrawingContext dc, string id, Point point, SpriteAction action, double phase, double facing, double? spriteTile = null,double? characterSize=null)
     {
         var frame = Sprites?.Character(id, action, phase, facing) ?? default;
         var image = frame.Image;
@@ -164,7 +165,7 @@ public sealed partial class EncounterViewport : FrameworkElement
             dc.DrawRoundedRectangle(null, new Pen(Brush("#626975"), 1), new(point.X - 12, point.Y - 24, 24, 24), 4, 4);
             Text(dc, "?", new(point.X - 4, point.Y - 22), 14, Brush("#92969F")); return;
         }
-        var rect = CharacterBounds(point, tile, Sprites!.Size(id), image, Sprites.Elevation(id));
+        var rect = CharacterBounds(point, tile, characterSize??Sprites!.Size(id), image, Sprites!.Elevation(id));
         if (frame.Flip) dc.PushTransform(new ScaleTransform(-1, 1, point.X, point.Y));
         dc.DrawImage(image, rect); if (frame.Flip) dc.Pop();
     }

@@ -34,7 +34,11 @@ public static class NativeArena
     }).OrderBy(o=>o.Id).ToArray();
     static bool IsObstacle(ushort type)=>SimEngine.Data.ObjectDescs.TryGetValue(type,out var d)&&d.Static&&!d.Enemy&&!d.Container&&d.Class!="Character"&&
         d.Class is not ("GuildHallPortal" or "ArenaPortal" or "Portal" or "ClosedVaultChest" or "Merchant" or "GuildMerchant" or "ClosedVaultChestGold" or "VaultChest" or "MarketNPC" or "SkillTree" or "Forge" or "StatNPC" or "Engine");
-    public static ushort GroundType(string id)=>SimEngine.Data.IdToTileType.TryGetValue(id,out var type)&&SimEngine.Data.Tiles.ContainsKey(type)?type:throw new ArgumentException("Unknown ground XML: "+id);
+    public static ushort GroundType(string id)
+    {
+        if(id.StartsWith("#0x",StringComparison.Ordinal)&&ushort.TryParse(id.AsSpan(3),System.Globalization.NumberStyles.HexNumber,System.Globalization.CultureInfo.InvariantCulture,out var direct)&&SimEngine.Data.Tiles.ContainsKey(direct))return direct;
+        return SimEngine.Data.IdToTileType.TryGetValue(id,out var type)&&SimEngine.Data.Tiles.ContainsKey(type)?type:throw new ArgumentException("Unknown ground XML: "+id);
+    }
     public static ushort ObstacleType(string? id)
     {if(id==null)return 0;return SimEngine.Data.IdToObjectType.TryGetValue(id,out var type)&&IsObstacle(type)?type:throw new ArgumentException("Choose a native static tile object: "+id);}
     public static void Validate(ArenaPreset arena)
@@ -74,8 +78,12 @@ public static class NativeArena
         if(!double.IsFinite(x)||!double.IsFinite(y)||x<0||y<0||(float)x>=128||(float)y>=128||!lab.ContainsArenaPoint((float)x,(float)y)||!lab.IsPassable((float)x,(float)y,enemy))
             throw new ArgumentException(label+" must start on a passable tile inside the native arena.");
     }
-    public static string? Limitations(ArenaPreset arena)=>Grounds().Where(g=>!g.CompletePlayerSupport&&(g.Id==arena.GroundId||arena.Tiles.Any(t=>t.GroundId==g.Id)))
-        .Select(g=>g.Id).Distinct().Any()?"Unsupported player ground damage/push/sink/zero-speed mechanics present; full player lifecycle remains pending.":null;
+    public static string? Limitations(ArenaPreset arena)
+    {
+        var types=arena.Tiles.Select(t=>GroundType(t.GroundId)).Append(GroundType(arena.GroundId)).ToHashSet();
+        return types.Any(type=>{var d=SimEngine.Data.Tiles[type];return d.MinDamage!=0||d.MaxDamage!=0||d.Push||d.Sink||d.Sinking||d.Speed<=0;})
+            ?"Unsupported player ground damage/push/sink/zero-speed mechanics present; full player lifecycle remains pending.":null;
+    }
 }
 
 // Sparse immutable presentation snapshots are rebuilt only when native cells change.

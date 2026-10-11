@@ -14,7 +14,7 @@ namespace Studio.Raple;
 
 public record EncounterInput(double X = 0, double Y = 0, bool Attack = false, double AimX = 64.5, double AimY = 64.5);
 public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null, int? ActorId = null, int? ParentId = null);
-public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox, EntityMotion? Motion = null, int? ParentId = null, bool SpawnedByBehavior = false);
+public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox, EntityMotion? Motion = null, int? ParentId = null, bool SpawnedByBehavior = false,int? Size=null,string? DisplayName=null);
 public record BulletView(float X, float Y, int OwnerId, int ProjectileIndex, Guid? NodeId, string TextureId, double Angle, bool Friendly);
 public record ReplayInput(long Ms, EncounterInput Input, int DurationMs = 100);
 public record Emission(long Ms, int OwnerId, int Index, int Count, int BulletId, float X, float Y, float Angle, float AngleIncrement, int Damage);
@@ -75,7 +75,7 @@ public sealed class EncounterSession : IEncounterSession
     IReadOnlyList<Emission> IEncounterSession.PlayerShots => PlayerShots;
     IReadOnlyList<ReplayInput> IEncounterSession.Inputs => Inputs;
     public IReadOnlyList<EntityView> Entities => engine.World.Enemies.Values.Where(e => !e.Dead)
-        .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id), e.ParentEntity?.Id, e.SpawnedByBehavior)).ToArray();
+        .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id), e.ParentEntity?.Id, e.SpawnedByBehavior,e.Size,e.Name)).ToArray();
     public IReadOnlyList<BulletView> Projectiles => bullets.Where(b => !b.Removed).Select(b => new BulletView(b.X, b.Y, b.Owner, b.Index, b.Node, b.Desc.ObjectId, b.Path.Angle, b.Friendly)).ToArray();
     sealed class Bullet
     {
@@ -115,8 +115,8 @@ public sealed class EncounterSession : IEncounterSession
         var type = SimEngine.Data.IdToObjectType[entity];
         // Keep spawned instances on the edited behavior too; unrelated minions use their production definitions.
         engine.Server.BehaviorDb.Definitions[type] = Tuple.Create(root, engine.Server.BehaviorDb.Definitions[type].Item2);
-        boss = (Enemy)engine.World.CreateNewEntity(type,(float)arena.BossX,(float)arena.BossY);
-        foreach(var actor in arena.Actors)engine.World.CreateNewEntity(SimEngine.Data.IdToObjectType[actor.EntityId],(float)actor.X,(float)actor.Y);
+        boss = NativeMapFile.SpawnConfigured(engine,new(entity,arena.BossX,arena.BossY,arena.BossConfig));
+        foreach(var actor in arena.Actors)NativeMapFile.SpawnConfigured(engine,actor);
         engine.FlushAdds();
         PlayerHp = weapon.Stats[0]; engine.Actor.HP = PlayerHp;
         if (phase != null)
