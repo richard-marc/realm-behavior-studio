@@ -46,28 +46,28 @@ public sealed partial class EncounterViewport : FrameworkElement
         MouseWheel += (_, e) =>
         {
             var cursor = e.GetPosition(this); var world = World(cursor);
-            scale = Math.Clamp(scale * (e.Delta > 0 ? 1.12 : 1 / 1.12), Attack == null && Movement == null ? 8 : .001, 100);
+            scale = Math.Clamp(scale * (e.Delta > 0 ? 1.12 : 1 / 1.12), Path != null ? 1e-36 : Attack == null && Movement == null ? 8 : .001, 100);
             pan = new Vector(cursor.X - ActualWidth / 2 - (world.X - 64.5) * scale, cursor.Y - ActualHeight / 2 - (world.Y - 64.5) * scale); InvalidateVisual();
         };
-        KeyDown += (_, e) => { if (e.Key == Key.Escape && (attackDrag != null || movementDrag != null)) { CancelAttackDrag(); CancelMovementDrag(); ReleaseMouseCapture(); e.Handled = true; return; } keys.Add(e.Key); if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right) e.Handled = true; };
+        KeyDown += (_, e) => { if (e.Key == Key.Escape && (attackDrag != null || movementDrag != null || pathDrag != null)) { CancelAttackDrag(); CancelMovementDrag(); CancelPathDrag(); ReleaseMouseCapture(); e.Handled = true; return; } keys.Add(e.Key); if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right) e.Handled = true; };
         KeyUp += (_, e) => keys.Remove(e.Key); LostKeyboardFocus += (_, _) => keys.Clear();
         MouseDown += (_, e) =>
         {
             Focus(); if (e.ChangedButton == MouseButton.Middle) { drag = e.GetPosition(this); CaptureMouse(); return; }
-            if (e.ChangedButton == MouseButton.Left && (BeginAttackDrag(e.GetPosition(this)) || BeginMovementDrag(e.GetPosition(this)))) { CaptureMouse(); e.Handled = true; return; }
+            if (e.ChangedButton == MouseButton.Left && (BeginAttackDrag(e.GetPosition(this)) || BeginMovementDrag(e.GetPosition(this)) || BeginPathDrag(e.GetPosition(this)))) { CaptureMouse(); e.Handled = true; return; }
             if (e.ChangedButton == MouseButton.Right && Session != null)
             {
                 var w = HitWorld(e.GetPosition(this)); var bullet = Session.Projectiles.OrderBy(b => Math.Pow(b.X - w.X, 2) + Math.Pow(b.Y - w.Y, 2)).FirstOrDefault();
                 if (bullet?.NodeId is { } id && Math.Abs(bullet.X - w.X) < 1 && Math.Abs(bullet.Y - w.Y) < 1) Selected?.Invoke(id);
             }
         };
-        MouseMove += (_, e) => { if (attackDrag != null) { MoveAttackDrag(e.GetPosition(this)); e.Handled = true; } else if (movementDrag != null) { MoveMovementDrag(e.GetPosition(this)); e.Handled = true; } else if (drag is { } previous) { var next = e.GetPosition(this); pan += next - previous; drag = next; InvalidateVisual(); } };
-        MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Left && (attackDrag != null || movementDrag != null)) { EndAttackDrag(); EndMovementDrag(); ReleaseMouseCapture(); e.Handled = true; } if (e.ChangedButton == MouseButton.Middle) { drag = null; ReleaseMouseCapture(); } };
-        LostMouseCapture += (_, _) => { drag = null; CancelAttackDrag(); CancelMovementDrag(); };
+        MouseMove += (_, e) => { if (attackDrag != null) { MoveAttackDrag(e.GetPosition(this)); e.Handled = true; } else if (movementDrag != null) { MoveMovementDrag(e.GetPosition(this)); e.Handled = true; } else if (pathDrag != null) { MovePathDrag(e.GetPosition(this)); e.Handled = true; } else if (drag is { } previous) { var next = e.GetPosition(this); pan += next - previous; drag = next; InvalidateVisual(); } };
+        MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Left && (attackDrag != null || movementDrag != null || pathDrag != null)) { EndAttackDrag(); EndMovementDrag(); EndPathDrag(); ReleaseMouseCapture(); e.Handled = true; } if (e.ChangedButton == MouseButton.Middle) { drag = null; ReleaseMouseCapture(); } };
+        LostMouseCapture += (_, _) => { drag = null; CancelAttackDrag(); CancelMovementDrag(); CancelPathDrag(); };
     }
     public EncounterInput Input()
     {
-        if (Attack != null || Movement != null) return new();
+        if (Attack != null || Movement != null || Path != null) return new();
         bool Held(params Key[] values) => IsKeyboardFocusWithin && values.Any(keys.Contains);
         var aim = HitWorld(Mouse.GetPosition(this));
         return new((Held(Key.D, Key.Right) ? 1 : 0) - (Held(Key.A, Key.Left) ? 1 : 0), (Held(Key.S, Key.Down) ? 1 : 0) - (Held(Key.W, Key.Up) ? 1 : 0), IsMouseOver && Mouse.LeftButton == MouseButtonState.Pressed, aim.X, aim.Y);
@@ -86,6 +86,7 @@ public sealed partial class EncounterViewport : FrameworkElement
         dc.DrawLine(guide, new(origin.X, 0), new(origin.X, ActualHeight)); dc.DrawLine(guide, new(0, origin.Y), new(ActualWidth, origin.Y));
         if (Session is not { } session)
         {
+            if (Path != null) { DrawPath(dc); return; }
             if (Movement != null) { DrawMovement(dc); return; }
             DrawCharacter(dc, PreviewEntity, origin, SpriteAction.Stand, 0, 0);
             if (Attack != null) { DrawAttack(dc); return; }

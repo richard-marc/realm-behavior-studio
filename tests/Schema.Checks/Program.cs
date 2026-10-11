@@ -226,4 +226,82 @@ var ignoredNode = ignoredDoc.Entities.Single().Root.Descendants().Single(n => n.
 Check(adapter.EntityParameterFor(ignoredDoc, ignoredNode)!.InactiveReason != null, "The picker explains when native checkAttackTarget makes the XML target unused");
 Reject(() => adapter.ApplyEntityReference(ignoredDoc, "Cave Pirate Brawler", ignoredNode.Id, ignoredDoc.Revision, "target", "Cave Pirate Brawler"), "Inactive XML targets cannot be changed through the resource picker");
 Check(RapleAdapter.EntityParameterFor("Transform")?.Scope == EntityResourceScope.Resolvable && RapleAdapter.EntityParameterFor("TransformOnDeath")?.Scope == EntityResourceScope.Resolvable && RapleAdapter.EntityParameterFor("EngineTransform") == null, "Transform mappings follow native Resolve while context-specific EngineTransform retains its source boundary");
+foreach (var (expression, kind, anchor, first, second) in new[] {
+    ("new MoveTo(.3f, 68.5f, 65.5f)", "MoveTo", NativePathAnchor.Map, 68.5, 65.5),
+    ("new MoveTo2(2f, -1f, speed: .3)", "MoveTo2", NativePathAnchor.StateEntry, 2d, -1d),
+    ("new MoveTo3(68.5f, 65.5f, isMapPosition: true, instant: true)", "MoveTo3", NativePathAnchor.Map, 68.5, 65.5),
+    ("new SpawnRelativeMove(.3f, 2f, -1f)", "SpawnRelativeMove", NativePathAnchor.Spawn, 2d, -1d),
+    ("new MoveLine(.3, direction: 90, distance: 2)", "MoveLine", NativePathAnchor.CurrentPosition, 90d, 2d),
+    ("new NewMove(distance: -2f, angle: 90f)", "NewMove", NativePathAnchor.CurrentPosition, 90d, -2d) })
+{
+    var pathDoc = Doc("new State(" + expression + ")"); var pathNode = pathDoc.Entities.Single().Root.Children.Single();
+    var parsedPath = adapter.ReadPathPattern(pathDoc, pathNode);
+    Check(parsedPath != null && parsedPath.Kind == kind && parsedPath.Anchor == anchor && parsedPath.First == first && parsedPath.Second == second && adapter.Primitives.Single(p => p.Name == kind).Simulatable, "Native path binds its real constructor, units and anchor: " + kind);
+}
+var defaultNewMove = Doc("new State(new NewMove())"); var defaultNewMoveNode = defaultNewMove.Entities.Single().Root.Children.Single();
+Check(adapter.ReadPathPattern(defaultNewMove, defaultNewMoveNode) is { First: 0, Second: 3, Speed: 1, Cooldown: 10 } && adapter.ParametersFor(defaultNewMove, defaultNewMoveNode).Single(p => p.Name == "cooldown").Unit == "seconds" && adapter.Overloads("NewMove").Single().Parameters.Single(p => p.Name == "cooldown").Unit == "seconds", "NewMove retains native defaults and reports its DeltaTime cooldown in seconds");
+var continuous = Doc("new State(new MoveLine(.3))"); var continuousNode = continuous.Entities.Single().Root.Children.Single();
+Check(adapter.ReadPathPattern(continuous, continuousNode) is { Continuous: true } continuousPattern && continuousPattern.Destination(64.5, 64.5) == null, "Native zero-distance MoveLine is continuous and has no invented finite endpoint");
+using (var native = new EncounterSession(adapter, continuous, "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); native.Step(new()); Check(Math.Abs(native.Entities.Single().X - 64.8) < .00001, "Native continuous MoveLine advances on each real enemy tick");
+}
+var finiteLine = Doc("new State(new MoveLine(.3, distance: .1))");
+using (var native = new EncounterSession(adapter, finiteLine, "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); var first = native.Entities.Single().X; native.Step(new());
+    Check(Math.Abs(first - 64.65) < .00001 && native.Entities.Single().X == first, "Native finite MoveLine overshoots a shorter requested distance by one full step rather than a guessed arrival clamp");
+}
+using (var native = new EncounterSession(adapter, Doc("new State(new MoveLine(.3, distance: -1))"), "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); Check(native.Entities.Single().X == 64.5, "Native negative MoveLine distance remains inactive instead of being converted into a reverse path");
+}
+var destinationDoc = Doc("new State(new MoveTo(.3f, 64.6f, 64.5f))"); var destinationNode = destinationDoc.Entities.Single().Root.Children.Single();
+using (var native = new EncounterSession(adapter, destinationDoc, "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); Check(native.Entities.Single().X == 64.6f, "Native MoveTo clamps its final step exactly to its reachable destination");
+}
+var destinationBefore = destinationDoc.Source; var destinationRevision = destinationDoc.Revision;
+adapter.ApplyPathValues(destinationDoc, "Cave Pirate Brawler", destinationNode.Id, destinationRevision, new Dictionary<string, double> { ["x"] = 68.25, ["y"] = 65.75 });
+Check(destinationDoc.Revision == destinationRevision + 1 && destinationDoc.Find(destinationNode.Id).Parameters.Single(p => p.Name == "x").Expression == "68.25f" && destinationDoc.Find(destinationNode.Id).Parameters.Single(p => p.Name == "y").Expression == "65.75f", "Destination coordinates use native float literals and one atomic paired source patch");
+Check(destinationDoc.Find(destinationNode.Id).Parameters.Single(p => p.Name == "speed").Expression == ".3f", "Destination authoring retains native speed and action identity");
+destinationDoc.Undo(); Check(destinationDoc.Source == destinationBefore, "One Undo restores both native destination coordinates");
+Reject(() => adapter.ApplyPathValues(destinationDoc, "Cave Pirate Brawler", destinationNode.Id, destinationDoc.Revision - 1, new Dictionary<string, double> { ["x"] = 68 }), "Native destination patches reject stale revisions");
+Reject(() => adapter.ApplyPathValues(destinationDoc, "Cave Pirate Brawler", destinationNode.Id, destinationDoc.Revision, new Dictionary<string, double> { ["speed"] = 1 }), "Path gestures cannot rewrite unrelated native parameters");
+Reject(() => adapter.ApplyPathValues(destinationDoc, "Cave Pirate Brawler", destinationNode.Id, destinationDoc.Revision, new Dictionary<string, double> { ["x"] = double.MaxValue }), "Native float coordinate overflow rejects without source changes");
+destinationDoc.LockedNodes.Add(destinationNode.Id);
+Reject(() => adapter.ApplyPathValues(destinationDoc, "Cave Pirate Brawler", destinationNode.Id, destinationDoc.Revision, new Dictionary<string, double> { ["x"] = 68 }), "Native path patches honor shared source locks");
+foreach (var (expression, expected) in new[] { ("new MoveTo2(2f, 0f, speed: .3)", 70.15), ("new SpawnRelativeMove(.3f, 2f, 0f)", 69.85) })
+{
+    using var native = new EncounterSession(adapter, Doc("new State(new State(\"idle\"), new State(\"moving\", " + expression + "))"), "Cave Pirate Brawler", 7, new());
+    var relocatedBoss = (Enemy)typeof(EncounterSession).GetField("boss", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(native)!;
+    native.Step(new()); relocatedBoss.Move(70, 64.5f); relocatedBoss.SwitchTo(relocatedBoss.CurrentState.Parent.States.Single(s => s.Name == "moving")); native.Step(new());
+    Check(Math.Abs(native.Entities.Single().X - expected) < .00001, "Native state-entry and first-tick spawn anchors differ after relocation: " + expression);
+}
+using (var native = new EncounterSession(adapter, Doc("new State(new MoveTo2(68.5f, 64.5f, isMapPosition: true, instant: true))"), "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); Check(native.Entities.Single().X == 68.5f, "Native instant MoveTo2 moves on entry instead of simulating a smooth interpolation path");
+}
+var orderedPathDoc = Doc("new State(new OrderedBehavior(new NewMove(speed: 1f, distance: 1f, cooldown: 10f), new NewMove(speed: 1f, distance: 1f, angle: 90f, cooldown: 10f)), new Shoot(8, coolDown: 100))");
+using (var native = new EncounterSession(adapter, orderedPathDoc, "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); var first = native.Entities.Single(); var independentShot = native.Shots.Count == 1; native.Step(new()); var arrival = native.Entities.Single(); native.Step(new()); var next = native.Entities.Single(); native.Step(new()); var resumed = native.Entities.Single();
+    Check(first.X == 65 && first.Y == 64.5 && arrival.X == 65.5 && arrival.Y == 64.5 && next.X == 65.5 && next.Y == 65 && resumed.Y == 64.5 && independentShot, "Native OrderedBehavior suppresses later ordered children while moving, advances on an idle tick and reactivates an earlier destination after another child moves the host");
+}
+using (var native = new EncounterSession(adapter, defaultNewMove, "Cave Pirate Brawler", 7, new()))
+{
+    native.Step(new()); Check(native.Entities.Single().X == 64.5, "NewMove placed directly in a normal State remains inactive because only TickCoreOrdered implements movement");
+}
+var orderedChild = orderedPathDoc.Entities.Single().Root.Descendants().First(n => n.Kind == "NewMove");
+Check(adapter.EffectiveCallbacks(orderedPathDoc, orderedChild) is [{ Stage: "Ongoing", Method: "TickCoreOrdered" }] && adapter.EffectiveCallbacks(defaultNewMove, defaultNewMoveNode).All(c => c.Stage != "Ongoing"), "Lifecycle provenance shows ordered-only movement without inventing entry/exit forwarding or normal ticks");
+var pathProject = new StudioProject { Source = "class Fixture { void Build() { db.Init(\"Cave Pirate Brawler\", new State(new MoveTo(.3f, 68.5f, 64.5f), new MoveLine(.3, direction: 90))); } }", Seed = 7 };
+var sampledPath = await NativeMovementPreview.SampleAsync(adapter, pathProject, durationMs: 200);
+Check(sampledPath.Points.Length == 3 && sampledPath.Points.Select(p => p.Ms).SequenceEqual([0L, 100L, 200L]) && Math.Abs(sampledPath.Points[1].X - 64.65) < .00001 && Math.Abs(sampledPath.Points[1].Y - 64.65) < .00001, "Whole-phase path samples execute both native movement actions in source order with authoritative tick times");
+var repeatedPath = await NativeMovementPreview.SampleAsync(adapter, pathProject, durationMs: 200);
+Check(sampledPath.Points.SequenceEqual(repeatedPath.Points) && sampledPath.SourceSha256 == repeatedPath.SourceSha256 && sampledPath.Seed == 7, "Native movement sampling repeats its seed/input and retains source provenance");
+using (var cancelled = new CancellationTokenSource())
+{
+    cancelled.Cancel(); var rejected = false; try { await NativeMovementPreview.SampleAsync(adapter, pathProject, cancellation: cancelled.Token); } catch (OperationCanceledException) { rejected = true; }
+    Check(rejected, "Cancelled native movement requests do not construct a preview session");
+}
 Console.WriteLine($"{count} native schema checks passed.");

@@ -85,7 +85,7 @@ public partial class MainWindow
             if (constructorChoices.SelectedItem is not NativeOverload choice) return;
             var missing = choice.Parameters.Where(p => p.Default == "required" && string.IsNullOrWhiteSpace(constructorInputs[p.Name].Text)).ToArray();
             var supplied = choice.Parameters.Where(p => !string.IsNullOrWhiteSpace(constructorInputs[p.Name].Text)).Select(p => p.Name + ": " + constructorInputs[p.Name].Text.Trim());
-            constructorPreview.Text = "new " + choice.Name + "(" + string.Join(", ", supplied) + ")";
+            constructorPreview.Text = "new " + adapter.CreationTypeName(choice.Name) + "(" + string.Join(", ", supplied) + ")";
             var binding = RapleAdapter.Binding(constructorPreview.Text);
             var compatible = document.AcceptsChild(owner.Id, constructorPreview.Text, replace);
             createNativeButton.IsEnabled = missing.Length == 0 && binding.Errors.Length == 0 && !binding.RequiresContext && RegionEditable(owner) && compatible;
@@ -121,7 +121,12 @@ public partial class MainWindow
         if (kind == "Taunt" && parameter.Name == "text") return "new[] { \"Ready.\" }";
         if (kind == "Prioritize" && parameter.Name == "children") return "new CycleBehavior[] { new Wander(.3) }";
         if (kind == "OnDeathBehavior" && parameter.Name == "behavior") return "new ConditionEffectBehavior(ConditionEffectIndex.Invulnerable)";
+        if (kind == "OrderedBehavior" && parameter.Name == "children") return "new Behavior[] { new " + adapter.CreationTypeName("NewMove") + "() }";
         if (parameter.Default != "required") return "";
+        if (parameter.Name == "speed" && parameter.Type is "Single" or "float") return "0.3f";
+        if (kind == "MoveTo" && parameter.Name is "x" or "y") return parameter.Name == "x" ? "68.5f" : "64.5f";
+        if (kind is "MoveTo2" or "MoveTo3" && parameter.Name is "X" or "Y") return parameter.Name == "X" ? "4f" : "0f";
+        if (kind == "SpawnRelativeMove" && parameter.Name is "offsetX" or "offsetY") return parameter.Name == "offsetX" ? "4f" : "0f";
         return parameter.Name switch {
             "radius" => "8", "speed" => "0.3", "time" or "period" => "3000", "threshold" => "0.7", "coolDown" or "cooldown" => "new Cooldown(1000, 0)",
             "targetState" => document.StateName(owner.Id) is { } name ? PhaseLiteral(name) : "",

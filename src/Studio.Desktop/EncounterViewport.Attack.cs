@@ -19,6 +19,7 @@ public sealed partial class EncounterViewport
         set
         {
             if (value != null && movement != null) Movement = null;
+            if (value != null && path != null) Path = null;
             if (attack == null && value != null) attackCamera = (scale, pan);
             CancelAttackDrag(); attack = value;
             if (value == null && attackCamera is { } camera) { scale = camera.Scale; pan = camera.Pan; attackCamera = null; }

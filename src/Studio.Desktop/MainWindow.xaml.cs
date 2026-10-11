@@ -45,10 +45,11 @@ public partial class MainWindow : Window
         InitializeSelectionControls();
         Viewport.AttackEdited += ApplyAttackEdit;
         Viewport.MovementEdited += ApplyMovementEdit;
+        Viewport.PathEdited += ApplyPathEdit;
         autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); };
         PreviewKeyDown += Shortcut;
         Loaded += (_, _) => { Try(Initialize); CompositionTarget.Rendering += Advance; };
-        Closing += async (_, _) => { CompositionTarget.Rendering -= Advance; session = null; SaveWorkspaceLayout(); if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); aiCancellation?.Cancel(); if (codex != null) await codex.DisposeAsync(); };
+        Closing += async (_, _) => { ClearPathEditor(); CompositionTarget.Rendering -= Advance; session = null; SaveWorkspaceLayout(); if (initialized && !arguments.Contains("--smoke")) Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot())); aiCancellation?.Cancel(); if (codex != null) await codex.DisposeAsync(); };
     }
     string ServerPath()
     {
@@ -142,6 +143,7 @@ public partial class MainWindow : Window
             selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();
             RefreshAttackSelection();
             RefreshMovementSelection();
+            RefreshPathSelection();
             if (!retainNodeSelection) { nodeSelection.Clear(); nodeSelection.Add(id); selectionAnchor = id; }
             RefreshSelectionVisuals();
             SelectTreeNode(id); if (WorkspaceTabs.SelectedIndex == 1) ParametersTab.IsSelected = true;
@@ -165,6 +167,7 @@ public partial class MainWindow : Window
             AddArgumentControls(selectedNode);
             AddAttackControls(selectedNode);
             AddMovementControls(selectedNode);
+            AddPathControls(selectedNode);
             AddProjectileControls(selectedNode);
             AddEntityControls(selectedNode);
             AddTransitionSummary(id);

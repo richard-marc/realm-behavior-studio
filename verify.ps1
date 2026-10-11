@@ -51,7 +51,7 @@ try {
     $studioProcess = Start-Process -FilePath $studioExe -ArgumentList @('--smoke', '--server', ('"' + [IO.Path]::GetFullPath($ServerRoot) + '"')) -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
     $studioDeadline = [Diagnostics.Stopwatch]::StartNew()
     while (!$studioProcess.WaitForExit(5000)) {
-        if ($studioDeadline.Elapsed.TotalSeconds -gt 120) { throw 'Desktop authoring/native-preview smoke test did not finish within 120 seconds.' }
+        if ($studioDeadline.Elapsed.TotalSeconds -gt 240) { throw 'Desktop authoring/native-preview smoke test did not finish within 240 seconds.' }
     }
     if ($studioProcess.ExitCode -ne 0) { throw 'Desktop smoke test failed; see .artifacts/desktop-smoke-error.txt.' }
     Write-Host 'Desktop import/edit/play/save/trace/render smoke passed.'

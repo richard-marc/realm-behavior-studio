@@ -17,7 +17,11 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     const double StudioContextSpeed = .3;
     const string StudioContextPhaseName = "source name";
     const string StudioContextEntityId = "Ghost Ship";
+    const float StudioContextPathX = 68.5f;
+    static float StudioContextPathUnknown { get { throw new System.InvalidOperationException("path authoring must not execute this getter"); } }
+    static bool StudioContextPathMode { get { throw new System.InvalidOperationException("path authoring must not execute anchor mode"); } }
     static State StudioContextRoot(int count = 4, double speed = .3) => new State(new State("source factory", new TKR.WorldServer.logic.behaviors.Follow(speed, range: 1), StudioContextFan(count)));
+    static State StudioContextPathRoot() => new State(new State("source path", new TKR.WorldServer.logic.behaviors.MoveTo(.3f, 68.5f, 64.5f)));
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(int count = 4, double range = 8) => new TKR.WorldServer.logic.behaviors.Shoot(range, count: count, shootAngle: 12, fixedAngle: 90, coolDown: 200);
     static TKR.WorldServer.logic.behaviors.Shoot StudioContextFan(string text) => new TKR.WorldServer.logic.behaviors.Shoot(8, count: text.Length);
     static State StudioContextShared { get { throw new System.InvalidOperationException("authoring must not execute this getter"); } }
@@ -488,6 +492,41 @@ await using (var native = await CompiledRuntime.StartAsync(server, project with 
     Check(native.Entities.Any(e => e.Name == "Ghost Ship") && native.Entities.All(e => e.Name != "Cave Pirate Brawler"), "The edited complete original assembly executes native Transform into the selected XML enemy");
     native.ExportTrace(Path.Combine(output, "entity-transform-trace.json"));
 }
+var constantPath = Doc("new State(new MoveTo(.3f, StudioContextPathX + 1f, 65.5f))"); var constantPathNode = Root(constantPath).Children.Single();
+Check(adapter.ReadPathPattern(constantPath, constantPathNode) is { Anchor: NativePathAnchor.Map, First: 69.5, Second: 65.5 }, "Native path coordinates read compiler float constants and arithmetic in the complete original source scope");
+var unknownPathSpeed = Doc("new State(new MoveTo(StudioContextPathUnknown, 68.5f, 64.5f))"); var unknownPathSpeedNode = Root(unknownPathSpeed).Children.Single(); var pathSpeedBefore = unknownPathSpeed.Source;
+Check(adapter.ReadPathPattern(unknownPathSpeed, unknownPathSpeedNode) is { First: 68.5, Second: 64.5, Speed: null }, "Unknown speed getters do not block independent destination authoring or execute during inspection");
+var pathSpeedRevision = unknownPathSpeed.Revision;
+adapter.ApplyPathValues(unknownPathSpeed, "Cave Pirate Brawler", unknownPathSpeedNode.Id, pathSpeedRevision, new Dictionary<string, double> { ["x"] = 67.25, ["y"] = 66.75 });
+Check(unknownPathSpeed.Revision == pathSpeedRevision + 1 && unknownPathSpeed.Find(unknownPathSpeedNode.Id).Parameters.Single(p => p.Name == "x").Expression == "67.25f" && unknownPathSpeed.Find(unknownPathSpeedNode.Id).Parameters.Single(p => p.Name == "speed").Expression == "StudioContextPathUnknown", "Paired native coordinates become genuine float expressions without rewriting an unknown speed getter");
+unknownPathSpeed.Undo(); Check(unknownPathSpeed.Source == pathSpeedBefore, "One source-scoped Undo restores both original coordinates and the untouched getter");
+var unknownCoordinate = Doc("new State(new MoveTo(.3f, StudioContextPathUnknown, 64.5f))");
+Check(adapter.ReadPathPattern(unknownCoordinate, Root(unknownCoordinate).Children.Single()) == null, "Unknown coordinate getters remain source boundaries rather than invented destination handles");
+var unknownAnchor = Doc("new State(new MoveTo2(2f, 0f, isMapPosition: StudioContextPathMode))");
+Check(adapter.ReadPathPattern(unknownAnchor, Root(unknownAnchor).Children.Single()) == null, "An unknown map/entry mode does not invent the native anchor or invoke a getter");
+var aliasPathSource = "using StudioPathAlias = TKR.WorldServer.logic.behaviors.SpawnRelativeMove;\n" + Doc("new State(new StudioPathAlias(.3f, 2f, 0f))").Source;
+var aliasPath = new BehaviorDocument(aliasPathSource, adapter, sourceFile: file);
+Check(adapter.ReadPathPattern(aliasPath, Root(aliasPath).Children.Single()) is { Kind: "SpawnRelativeMove", Anchor: NativePathAnchor.Spawn, First: 2 }, "Source aliases resolve the actual native path class and its spawn anchor");
+Check(adapter.PathKind(factory, Root(factory)) == null, "A generated State factory retains its source boundary instead of receiving guessed path handles");
+var newMoveExpression = "new " + adapter.CreationTypeName("NewMove") + "(speed: 1f, distance: 1f, cooldown: 10f)";
+var sourceNewMove = Doc("new State(new " + adapter.CreationTypeName("OrderedBehavior") + "(" + newMoveExpression + ", new " + adapter.CreationTypeName("NewMove") + "(speed: 1f, distance: 1f, angle: 90f, cooldown: 10f)), new Shoot(8, coolDown: 100))"); var sourceNewMoveNode = Root(sourceNewMove).Descendants().First(n => n.Kind == "NewMove");
+Check(newMoveExpression.Contains("global::TKR.WorldServer.logic.behaviors.@new.movements.NewMove") && adapter.ReadPathPattern(sourceNewMove, sourceNewMoveNode) is { Second: 1, Cooldown: 10 } && adapter.ParametersFor(sourceNewMove, sourceNewMoveNode).Single(p => p.Name == "cooldown").Unit == "seconds", "Native creation qualifies escaped namespaces and preserves actual source-bound NewMove units");
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = sourceNewMove.Source, Identities = sourceNewMove.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new()); var first = native.Entities.Single(); var orderedSiblingFired = native.Shots.Count == 1; await native.AdvanceAsync(new()); var arrival = native.Entities.Single(); await native.AdvanceAsync(new()); var next = native.Entities.Single(); await native.AdvanceAsync(new()); var resumed = native.Entities.Single();
+    Check(first.X == 65 && first.Y == 64.5 && arrival.X == 65.5 && arrival.Y == 64.5 && next.Y == 65 && resumed.Y == 64.5 && orderedSiblingFired, "The complete original compiled assembly confirms ordered movement dispatch, arrival, next-child movement and first-child reactivation");
+    native.ExportTrace(Path.Combine(output, "native-path-controller-trace.json"));
+}
+var combinedPath = Doc("new State(new MoveTo(.3f, 68.5f, 64.5f), new MoveLine(.3, direction: 90))");
+await using (var native = await CompiledRuntime.StartAsync(server, project with { Source = combinedPath.Source, Identities = combinedPath.Identities }, artifactRoot: output))
+{
+    await native.AdvanceAsync(new()); var moved = native.Entities.Single();
+    Check(Math.Abs(moved.X - 64.65) < .00001 && Math.Abs(moved.Y - 64.65) < .00001, "Compiled original movement combinations confirm the whole-phase preview's native source-order samples");
+    native.ExportTrace(Path.Combine(output, "combined-path-trace.json"));
+}
+var sampledFactory = Doc("StudioContextPathRoot()");
+var compiledPathSample = await NativeMovementPreview.SampleAsync(adapter, project with { Source = sampledFactory.Source, Identities = sampledFactory.Identities }, durationMs: 200);
+Check(compiledPathSample.Runtime == "Compiled source" && compiledPathSample.Points.Length == 3 && Math.Abs(compiledPathSample.Points.Last().X - 64.8) < .00001 && compiledPathSample.Points.Last().Y == 64.5 && compiledPathSample.Points.Last().Phase == "source path", "Native phase sampling uses the compiled source path for generated roots and returns authoritative factory movement and phase snapshots");
 Check(File.ReadAllText(file) == original, "Source-context editing and compiled execution leave the original game file unchanged");
 File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { checks }, BehaviorDocument.JsonOptions));
 Console.WriteLine($"{checks.Count} source-context checks passed.");

@@ -25,6 +25,8 @@ public partial class MainWindow
         if (movementEditorButton != null) movementEditorButton.IsEnabled = editable;
         if (movementDirection != null) movementDirection.IsEnabled = editable;
         RefreshMovementSelection();
+        if (pathEditorButton != null) pathEditorButton.IsEnabled = editable;
+        RefreshPathSelection();
         UpdateProjectileControls();
         UpdateEntityControls();
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
