@@ -22,7 +22,7 @@ public partial class MainWindow
     void MaximizeWindow(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     void CloseWindow(object sender, RoutedEventArgs e) => Close();
     void TogglePlay(object sender, RoutedEventArgs e) { if (running) Pause(sender, e); else Play(sender, e); UpdatePlayButton(); }
-    void UpdatePlayButton() { PlayButton.Content = runtimeStarting != null ? "Preparing…" : running ? "Ⅱ  Pause" : "▶  Play"; PlayButton.IsEnabled = runtimeStarting == null; }
+    void UpdatePlayButton() { PlayButton.Content = runtimeStarting != null ? "Preparing…" : running ? "Ⅱ  Pause" : "▶  Play";var requirement=selectedEntity==null?null:adapter.PreviewContextRequirement(document,selectedEntity.Id);PlayButton.IsEnabled=runtimeStarting==null&&requirement==null;PlayButton.ToolTip=requirement; }
     void ResetCamera(object sender, RoutedEventArgs e) => Viewport.ResetCamera();
     void BreakpointChanged(object sender, SelectionChangedEventArgs e)
     { if (session != null) session.BreakpointKind = Breakpoint.SelectedIndex > 0 ? ((ComboBoxItem)Breakpoint.SelectedItem).Content.ToString() : null; }

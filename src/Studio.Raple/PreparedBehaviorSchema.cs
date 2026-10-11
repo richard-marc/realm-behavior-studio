@@ -9,11 +9,13 @@ public sealed class PreparedBehaviorSchema : IBehaviorSchema
     readonly RapleAdapter adapter;
     readonly IReadOnlyDictionary<(int Start, string Expression), SourceExpression> bindings;
     readonly int position;
-    public PreparedBehaviorSchema(RapleAdapter adapter, IEnumerable<RuntimeSourceBinding> bindings)
-        : this(adapter, bindings.ToDictionary(b => (b.Start, b.Expression), b => b.Description), -1) { }
-    PreparedBehaviorSchema(RapleAdapter adapter, IReadOnlyDictionary<(int Start, string Expression), SourceExpression> bindings, int position)
-    { this.adapter = adapter; this.bindings = bindings; this.position = position; }
-    public IBehaviorSchema At(int start) => new PreparedBehaviorSchema(adapter, bindings, start);
+    readonly IReadOnlyList<EncounterSource> registrations;
+    public PreparedBehaviorSchema(RapleAdapter adapter, IEnumerable<RuntimeSourceBinding> bindings,IReadOnlyList<EncounterSource>? registrations=null)
+        : this(adapter, bindings.ToDictionary(b => (b.Start, b.Expression), b => b.Description), -1,registrations??[]) { }
+    PreparedBehaviorSchema(RapleAdapter adapter, IReadOnlyDictionary<(int Start, string Expression), SourceExpression> bindings, int position,IReadOnlyList<EncounterSource> registrations)
+    { this.adapter = adapter; this.bindings = bindings; this.position = position;this.registrations=registrations; }
+    public IReadOnlyList<EncounterSource> AdditionalEncounters()=>registrations;
+    public IBehaviorSchema At(int start) => new PreparedBehaviorSchema(adapter, bindings, start,registrations);
     public SourceExpression? DescribeExpression(string expression) => bindings.GetValueOrDefault((position, expression));
     public string[] ParameterNames(string kind) => adapter.ParameterNames(kind);
     public string[] ConstructorParameterNames(string expression) => DescribeExpression(expression)?.ArgumentNames ?? adapter.ConstructorParameterNames(expression);

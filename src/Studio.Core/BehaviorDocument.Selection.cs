@@ -10,14 +10,14 @@ public sealed partial class BehaviorDocument
 {
     public IReadOnlyList<BehaviorNode> NormalizeSelection(IEnumerable<Guid> ids)
     {
-        var selected = ids.Distinct().Select(Find).OrderBy(n => n.Start).ToArray();
+        var selected = ids.Distinct().Select(Find).DistinctBy(n=>(n.Start,n.Length,n.Kind,n.Argument?.Name)).OrderBy(n => n.Start).ToArray();
         if (selected.Length == 0) throw new ArgumentException("Select at least one phase or action.");
-        return selected.Where(n => !selected.Any(ancestor => ancestor.Id != n.Id && n.Path.StartsWith(ancestor.Path + "/", StringComparison.Ordinal))).ToArray();
+        return selected.Where(n => !selected.Any(ancestor => ancestor.Id != n.Id && (n.Path.StartsWith(ancestor.Path + "/", StringComparison.Ordinal)||SharesLockedRegion(n,ancestor,false)))).ToArray();
     }
     void EditableContainer(BehaviorNode parent)
     {
         if (ChildContainer(parent.Id).Id != parent.Id) throw new ArgumentException("Choose the typed argument list as the destination.");
-        if (LockedNodes.Select(Find).Any(locked => parent.Path == locked.Path || parent.Path.StartsWith(locked.Path + "/", StringComparison.Ordinal)))
+        if (LockedNodes.Select(Find).Any(locked => parent.Path == locked.Path || parent.Path.StartsWith(locked.Path + "/", StringComparison.Ordinal) || SharesLockedRegion(parent,locked,false)))
             throw new InvalidOperationException("The destination phase or an ancestor is locked.");
     }
     public BehaviorClipboard CopyNodes(IEnumerable<Guid> ids)
@@ -166,9 +166,18 @@ public sealed partial class BehaviorDocument
     void RewriteChildren(Dictionary<Guid, List<BehaviorNode>> orders, Dictionary<Guid, ArgumentSyntax> additions, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
         var tree = CSharpSyntaxTree.ParseText(Source).GetRoot();
-        var containers = orders.Keys.GroupBy(id => NodeExpression(tree, Find(id))).ToDictionary(g => g.Key, g => g.ToArray());
         var expressions = ChildExpressions(tree);
         foreach (var addition in additions) expressions[addition.Key] = addition.Value.Expression.WithTriviaFrom(addition.Value);
+        // Range projections have distinct editor IDs but one physical child slot.
+        // Rewrite that slot once, while retaining each order for identity layout.
+        var slots=orders.Keys.GroupBy(id=>{var n=Find(id);return(n.Start,n.Length,n.Argument?.Name);}).ToArray();
+        foreach(var slot in slots)
+        {
+            var expected=orders[slot.First()].Select(n=>expressions[n.Id].ToString()).ToArray();
+            if(slot.Any(id=>!orders[id].Select(n=>expressions[n.Id].ToString()).SequenceEqual(expected)))
+                throw new ArgumentException("Conflicting edits target the same shared source slot.");
+        }
+        var containers=slots.Select(s=>s.First()).GroupBy(id=>NodeExpression(tree,Find(id))).ToDictionary(g=>g.Key,g=>g.ToArray());
         foreach (var order in orders)
         {
             var parent = Find(order.Key); var slot = Slot(parent);

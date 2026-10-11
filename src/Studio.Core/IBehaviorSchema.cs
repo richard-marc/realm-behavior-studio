@@ -6,6 +6,12 @@ public record ChildArgument(string Name, string ElementType, bool IsArray, bool 
     public bool IsCollection => IsArray || CollectionType != null;
 }
 public record SourceParameter(string Name, string Type, string Default);
+// Candidate source projections, not proof that native global initialization
+// registered an entity. The actual loader decides range/definition precedence.
+public record EncounterSource(string EntityId,int CallStart,int RootStart,int RootLength,bool Shared,string Boundary)
+{
+    public int OrderStart { get; init; } = -1;
+}
 public record SourceExpression(string Kind, string Label, bool IsState, IReadOnlyList<SourceParameter> Parameters,
     string[] ArgumentNames, IReadOnlyList<ChildArgument> Children)
 {
@@ -18,6 +24,7 @@ public interface IBehaviorSchema
     IBehaviorSchema ForSource(string source, string? sourceFile) => this;
     IBehaviorSchema At(int position) => this;
     SourceExpression? DescribeExpression(string expression) => null;
+    IReadOnlyList<EncounterSource> AdditionalEncounters() => [];
     // null means that a phase-reference owner cannot be resolved without execution.
     bool? TargetsPhaseOf(string expression, string parameter, string ownerEntity, string targetEntity) => parameter.StartsWith("targetState", StringComparison.Ordinal) && ownerEntity == targetEntity;
     string? PhaseEntityParameter(string expression, string phaseParameter) => null;

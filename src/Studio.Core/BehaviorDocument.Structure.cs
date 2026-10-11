@@ -10,12 +10,26 @@ public sealed partial class BehaviorDocument
     public static string? LiteralString(string expression) => SyntaxFactory.ParseExpression(expression) is LiteralExpressionSyntax { Token.Value: string value } ? value : null;
     public string? StateName(Guid id) => Find(id).Kind == "State" ? Find(id).Parameters.Select(p => LiteralString(p.Expression)).FirstOrDefault(v => v != null) : null;
     EntityBehavior OwningEntity(Guid id) => Entities.Single(e => e.Root.Descendants().Any(n => n.Id == id));
-    bool? ReferencesEntityPhase(BehaviorNode node, Parameter parameter, EntityBehavior target) => SchemaAt(node) is { } binding
-        ? binding.TargetsPhaseOf(Expression(node), parameter.Name, OwningEntity(node.Id).EntityId, target.EntityId)
-        : parameter.Name.StartsWith("targetState", StringComparison.Ordinal) && OwningEntity(node.Id).EntityId == target.EntityId;
+    IEnumerable<EntityBehavior> SharedEntities(EntityBehavior entity)=>entity.Registration?.Shared==true
+        ?Entities.Where(e=>e.Registration?.Shared==true&&e.Root.Start==entity.Root.Start&&e.Root.Length==entity.Root.Length):[entity];
+    bool? ReferencesEntityPhase(BehaviorNode node, Parameter parameter, EntityBehavior target)
+    {
+        var owner=OwningEntity(node.Id);var binding=SchemaAt(node);
+        var scopes=SharedEntities(target).Select(entity=>binding!=null
+            ?binding.TargetsPhaseOf(Expression(node),parameter.Name,owner.EntityId,entity.EntityId)
+            :parameter.Name.StartsWith("targetState",StringComparison.Ordinal)&&owner.EntityId==entity.EntityId).ToArray();
+        return scopes.Contains(true)?true:scopes.Contains(null)?null:false;
+    }
+    bool SharesLockedRegion(BehaviorNode node,BehaviorNode locked,bool descendants)
+    {
+        var owner=OwningEntity(node.Id);var lockOwner=OwningEntity(locked.Id);
+        if(owner.Registration?.Shared!=true||lockOwner.Registration?.Shared!=true||owner.Root.Start!=lockOwner.Root.Start||owner.Root.Length!=lockOwner.Root.Length)return false;
+        var path=node.Path[owner.EntityId.Length..];var lockPath=locked.Path[lockOwner.EntityId.Length..];
+        return path==lockPath||path.StartsWith(lockPath+"/",StringComparison.Ordinal)||descendants&&lockPath.StartsWith(path+"/",StringComparison.Ordinal);
+    }
     void Editable(BehaviorNode node)
     {
-        if (LockedNodes.Select(Find).Any(locked => node.Path == locked.Path || node.Path.StartsWith(locked.Path + "/")) || node.Descendants().Any(n => LockedNodes.Contains(n.Id)))
+        if (LockedNodes.Select(Find).Any(locked => node.Path == locked.Path || node.Path.StartsWith(locked.Path + "/") || SharesLockedRegion(node,locked,true)) || node.Descendants().Any(n => LockedNodes.Contains(n.Id)))
             throw new InvalidOperationException("This region, a descendant or an ancestor is locked.");
     }
     BehaviorNode StructuralParent(BehaviorNode node)
@@ -46,7 +60,7 @@ public sealed partial class BehaviorDocument
         if (name == oldName) return;
         var entity = OwningEntity(id);
         if (entity.Root.Descendants().Any(n => n.Id != id && n.Kind == "State" && StateName(n.Id) == name)) throw new ArgumentException("A phase already uses that name.");
-        LiteralReferences(entity, [oldName]); Editable(node);
+        LiteralReferences(entity,[oldName]); Editable(node);
         var edits = new List<(int Start, int Length, string Text)>();
         var nameParameter = node.Parameters.First(p => LiteralString(p.Expression) == oldName);
         var literal = SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(name)).ToFullString();
@@ -57,7 +71,7 @@ public sealed partial class BehaviorDocument
                 Editable(reference); edits.Add((parameter.Start, parameter.Length, literal));
             }
         var changed = Source;
-        foreach (var edit in edits.OrderByDescending(e => e.Start)) changed = changed.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Text);
+        foreach (var edit in edits.Distinct().OrderByDescending(e => e.Start)) changed = changed.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Text);
         CommitStructure(changed, [], validate);
     }
     public Guid DuplicateNode(Guid id, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
@@ -76,6 +90,21 @@ public sealed partial class BehaviorDocument
     static ObjectCreationExpressionSyntax Creation(SyntaxNode tree, BehaviorNode node) => tree.DescendantNodes().OfType<ObjectCreationExpressionSyntax>().Single(c => c.SpanStart == node.Start && c.Span.Length == node.Length);
     void CommitStructure(string changed, Dictionary<Guid, List<BehaviorNode>> orders, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
+        var originals=Entities.SelectMany(e=>e.Root.Descendants()).ToDictionary(n=>n.Id);
+        foreach(var order in orders.ToArray())
+        {
+            var parent=Find(order.Key);var owner=OwningEntity(parent.Id);if(owner.Registration?.Shared!=true)continue;
+            foreach(var alias in Entities.Where(e=>e!=owner&&e.Registration?.Shared==true&&e.Root.Start==owner.Root.Start&&e.Root.Length==owner.Root.Length))
+            {
+                var nodes=alias.Root.Descendants().ToArray();
+                BehaviorNode Project(BehaviorNode node)
+                {
+                    if(originals.TryGetValue(node.Id,out var original))return nodes.Single(n=>n.Start==original.Start&&n.Length==original.Length&&n.Kind==original.Kind&&n.Argument?.Name==original.Argument?.Name);
+                    return node with {Id=Guid.NewGuid(),Children=node.Children.Select(Project).ToArray()};
+                }
+                var target=Project(parent);if(!orders.ContainsKey(target.Id))orders.Add(target.Id,order.Value.Select(Project).ToList());
+            }
+        }
         var layout = new Dictionary<string, Guid>(StringComparer.Ordinal);
         void Walk(BehaviorNode node, string path)
         {

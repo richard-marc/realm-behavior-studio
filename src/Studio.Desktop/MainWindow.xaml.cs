@@ -125,8 +125,11 @@ public partial class MainWindow : Window
         EntitySprite.Source = sprites.Get(selectedEntity.Id); Viewport.PreviewEntity = selectedEntity.Id; Viewport.InvalidateVisual();
         EntitySubtitle.Text = $"{Path.GetFileNameWithoutExtension(selectedEntity.SourceFile)}  /  revision {document.Revision}";
         var entity = document.Entities.FirstOrDefault(e => e.EntityId == selectedEntity.Id);
+        SharedTemplateNotice.Visibility=entity?.Registration?.Shared==true?Visibility.Visible:Visibility.Collapsed;
+        SharedTemplateNotice.Text=entity?.Registration?.Shared==true?$"Shared template · {document.Entities.Count(e=>e.Registration?.Shared==true&&e.Root.Start==entity.Root.Start)} variants · edits change shared source":"";
+        SharedTemplateNotice.ToolTip=entity?.Registration?.Boundary;UpdatePlayButton();
         BehaviorTree.Items.Clear();
-        if (entity == null) { Status.Text = "Selected entity has no .Init definition in this document."; return; }
+        if (entity == null) { Status.Text = "Selected entity has no source registration in this document."; return; }
         TreeViewItem Item(BehaviorNode n)
         {
             var item = new TreeViewItem { Header = n.Label, Tag = n, IsExpanded = !CollapsedNodes.Contains(n.Id) };

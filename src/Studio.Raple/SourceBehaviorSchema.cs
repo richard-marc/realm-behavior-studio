@@ -45,12 +45,15 @@ internal sealed class SourceBehaviorSchema : IBehaviorSchema
         public Context(CSharpCompilation compiler, SyntaxTree tree) { Binding = new(() => (compiler, tree)); Prepared = true; }
         public readonly Dictionary<(int Position, string Expression), SourceExpression?> Descriptions = new();
         SemanticModel? model;
+        IReadOnlyList<EncounterSource>? encounters;
+        public IReadOnlyList<EncounterSource> Encounters=>encounters??=NativeRegistrations.Discover(Model).Where(r=>r.Shared).ToArray();
         public SemanticModel Model => model ??= Binding.Value.Compilation.GetSemanticModel(Binding.Value.Tree);
     }
     readonly RapleAdapter adapter;
     readonly Context context;
     readonly int position;
     public bool HasSourceContext => true;
+    public IReadOnlyList<EncounterSource> AdditionalEncounters()=>context.Encounters;
     public string FragmentRoot(IReadOnlyList<string> expressions) => adapter.FragmentRoot(expressions);
     public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => adapter.CollectionFragmentRoot(expressions);
     public string ChildList(string expression, string parameter, IReadOnlyList<string> children)

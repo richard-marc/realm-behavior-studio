@@ -11,6 +11,7 @@ public partial class MainWindow
     }
     async Task<bool> StartSessionAsync(string? phase = null)
     {
+        if(adapter.PreviewContextRequirement(document,selectedEntity!.Id) is {} requirement)throw new InvalidOperationException(requirement);
         await AwaitCombatCancellation();
         ClearViewportEditors();
         if (pathPreviewTask != null) await pathPreviewTask;

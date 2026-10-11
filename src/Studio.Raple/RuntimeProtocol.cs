@@ -4,7 +4,7 @@ namespace Studio.Raple;
 
 public record RuntimeLimits(int StartupSeconds = 30, int CommandSeconds = 3, long MemoryBytes = 1_073_741_824);
 public record RuntimeSourceBinding(int Start, string Expression, SourceExpression Description);
-public record RuntimeStart(string ServerRoot, StudioProject Project, string ResourceHash, string? Phase = null, RuntimeSourceBinding[]? SourceBindings = null);
+public record RuntimeStart(string ServerRoot, StudioProject Project, string ResourceHash, string? Phase = null, RuntimeSourceBinding[]? SourceBindings = null,EncounterSource[]? Registrations=null);
 public record RuntimeRequest(int Version, long Sequence, string Command, RuntimeStart? Start = null, EncounterInput? Input = null,
     int DurationMs = 100, double Fraction = 1, string? Breakpoint = null, CombatPreviewOptions? Preview = null, bool Density = true);
 public record RuntimeResponse(int Version, long Sequence, RuntimeFrame? Frame = null, string? Error = null, CombatSample? Preview = null);
@@ -18,7 +18,7 @@ public record NativeRuntimeStamp(int Version, string BuildId, NativeSourceStamp 
 
 public static class RuntimeProtocol
 {
-    public const int Version = 5;
+    public const int Version = 6;
     public const int MaxLineLength = 8 * 1024 * 1024;
     public static RuntimeFrame Capture(EncounterSession session, ref int events, ref int shots, ref int playerShots, ref int movements,ref long arenaRevision)
     {

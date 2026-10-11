@@ -11,7 +11,7 @@ namespace Studio.Raple;
 
 public record PrimitiveParameter(string Name, string Type, string Default, string Unit, string Explanation);
 public record Primitive(string Name, string Category, IReadOnlyList<PrimitiveParameter> Parameters, bool Simulatable);
-public record CatalogEntry(string Id, ushort ObjectType, string SourceFile)
+public record CatalogEntry(string Id, ushort ObjectType, string SourceFile,string RuntimeKind="Enemy")
 {
     public override string ToString() => Id;
 }
@@ -92,11 +92,19 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         var result = new List<CatalogEntry>();
         foreach (var file in Directory.EnumerateFiles(Path.Combine(ServerRoot, "TKR.WorldServer/logic/db"), "*.cs"))
         {
-            foreach (var id in EntityIds(File.ReadAllText(file), file))
-                if (SimEngine.Data.IdToObjectType.TryGetValue(id, out var type) && SimEngine.Data.ObjectDescs[type].Enemy)
-                    result.Add(new(id, type, file));
+            var source=File.ReadAllText(file);var ranges=source.Contains("InitMany",StringComparison.Ordinal)?ForSource(source,file).AdditionalEncounters().Select(r=>r.EntityId).ToHashSet(StringComparer.Ordinal):[];
+            foreach (var id in EntityIds(source, file))
+                if (SimEngine.Data.IdToObjectType.TryGetValue(id, out var type) && SimEngine.Data.ObjectDescs.TryGetValue(type,out var desc) && (desc.Enemy||ranges.Contains(id)))
+                    result.Add(new(id, type, file,desc.Enemy||desc.Class=="Character"?"Enemy":desc.Class));
         }
         return result.OrderBy(e => e.Id).ToArray();
+    }
+    public string? PreviewContextRequirement(BehaviorDocument document,string id)
+    {
+        if(document.Entities.SingleOrDefault(e=>e.EntityId==id)?.Root.Descendants().Any(n=>NativeKind(document,n)=="PetFollow")==true)
+            return "PetFollow authoring is available; playback needs an actual Pet and its player owner context, beyond the current enemy prototype.";
+        return SimEngine.Data.IdToObjectType.TryGetValue(id,out var type)&&SimEngine.Data.ObjectDescs.TryGetValue(type,out var desc)&&!desc.Enemy&&desc.Class!="Character"
+            ?desc.Class+" authoring is available; playback needs its actual world/player owner context, beyond the current enemy prototype.":null;
     }
     public IReadOnlyList<string> EntityIds(string source, string sourceFile)
     {
@@ -104,6 +112,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         // in every file. Resolve the selected document fully when it is opened.
         var ids = new BehaviorDocument(source, this).Entities.Select(e => e.EntityId).ToList();
         var scoped = ForSource(source, sourceFile);
+        if(source.Contains("InitMany",StringComparison.Ordinal))ids.AddRange(scoped.AdditionalEncounters().Select(r=>r.EntityId).Where(id=>!ids.Contains(id)));
         foreach (var call in CSharpSyntaxTree.ParseText(source).GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             if (call.Expression is not MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Init" } || call.ArgumentList.Arguments.Count < 2 ||
@@ -168,6 +177,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     public State BuildState(BehaviorDocument document, string entityId)
     {
         var entity = document.Entities.Single(e => e.EntityId == entityId);
+        if(entity.Registration?.Shared==true)throw new InvalidOperationException("Shared native range templates use compiled preview so the original factory and registration order execute.");
         var errors = Validate(document, entityId).Where(d => d.IsError).ToArray();
         if (errors.Length > 0) throw new ArgumentException(string.Join("\n", errors.Select(d => d.Message)));
         var expression = SyntaxFactory.ParseExpression(document.Expression(entity.Root));
@@ -177,7 +187,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         typeof(State).GetMethod("ResolveChildren", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(root, [states]);
         return root;
     }
-    public bool NeedsCompiledRuntime(BehaviorDocument document, string entityId) => document.Entities.Single(e => e.EntityId == entityId)
+    public bool NeedsCompiledRuntime(BehaviorDocument document, string entityId) => document.Entities.Single(e => e.EntityId == entityId).Registration?.Shared==true || document.Entities.Single(e => e.EntityId == entityId)
         .Root.Descendants().Any(n => n.Kind != "ArgumentGroup" && (document.SchemaAt(n)?.DescribeExpression(document.Expression(n))?.RequiresCompiled == true || !Supported.Contains(n.Kind) || Binding(document.Expression(n)).RequiresContext));
     public static object? Evaluate(ExpressionSyntax expr, Type expected)
     {

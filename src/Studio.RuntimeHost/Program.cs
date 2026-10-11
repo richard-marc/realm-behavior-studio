@@ -37,7 +37,7 @@ while (Console.ReadLine() is { } line)
             var adapter = new RapleAdapter(start.ServerRoot);
             var project = start.Project;
             if (project.Version != 1) throw new ArgumentException("Unsupported project version.");
-            var document = new BehaviorDocument(project.Source, new PreparedBehaviorSchema(adapter, start.SourceBindings ?? []), project.Identities);
+            var document = new BehaviorDocument(project.Source, new PreparedBehaviorSchema(adapter, start.SourceBindings ?? [],start.Registrations), project.Identities);
             session = new(adapter, document, project.EntityId, project.Seed, project.Player, project.ArenaSize, start.Phase, originalRuntimeReference: true,arena:project.Arena);
             if (SourceVerification.Fingerprint(resourceRoot, "*") != start.ResourceHash) throw new InvalidOperationException("Game resources changed during runtime initialization. Restart with the current resources.");
         }

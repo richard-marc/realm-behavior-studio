@@ -16,7 +16,10 @@ public sealed record BehaviorNode(Guid Id, string Path, string Kind, string Labe
     public IEnumerable<BehaviorNode> Descendants() => new[] { this }.Concat(Children.SelectMany(n => n.Descendants()));
     public override string ToString() => Label;
 }
-public record EntityBehavior(string EntityId, int Start, BehaviorNode Root);
+public record EntityBehavior(string EntityId, int Start, BehaviorNode Root)
+{
+    public EncounterSource? Registration { get; init; }
+}
 public record EditOperation(Guid NodeId, string Parameter, string Expression);
 public record DocumentPatch(long ExpectedRevision, string Description, IReadOnlyList<EditOperation> Operations);
 public record DocumentDiagnostic(string Message, Guid? NodeId = null, bool IsError = true);
@@ -55,6 +58,7 @@ public sealed partial class BehaviorDocument
     IBehaviorSchema? schema;
     public IBehaviorSchema? SchemaAt(BehaviorNode node) => schema?.At(node.Start);
     public IEnumerable<DocumentDiagnostic> SourceDiagnostics() => schema?.SourceDiagnostics() ?? [];
+    public IReadOnlyList<EncounterSource> EncounterSources => schema?.AdditionalEncounters() ?? [];
     public BehaviorDocument(string source, IBehaviorSchema schema, IEnumerable<NodeIdentity>? identities = null, string? sourceFile = null) : this(source, schema.ParameterNames, identities, schema, sourceFile) { }
     public BehaviorDocument(string source, Func<string, string[]>? parameterNames = null, IEnumerable<NodeIdentity>? identities = null, IBehaviorSchema? schema = null, string? sourceFile = null)
     {
@@ -79,14 +83,25 @@ public sealed partial class BehaviorDocument
         if (Diagnostics.Count != 0) return;
         var result = new List<EntityBehavior>();
         var usedIdentities = new HashSet<Guid>();
-        foreach (var call in tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
+        var syntax=tree.GetRoot();
+        var roots=new List<(string EntityId,int Start,int Order,ExpressionSyntax Root,EncounterSource? Registration)>();
+        foreach(var call in syntax.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             if (call.Expression is not MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Init" } || call.ArgumentList.Arguments.Count < 2) continue;
             if (call.ArgumentList.Arguments[0].Expression is not LiteralExpressionSyntax id || !id.IsKind(SyntaxKind.StringLiteralExpression)) continue;
             var creation = call.ArgumentList.Arguments[1].Expression;
             if (creation is not ObjectCreationExpressionSyntax { Type: { } type } || type.GetLastToken().ValueText != "State")
                 if (schema?.At(creation.SpanStart).DescribeExpression(creation.ToString())?.IsState != true) continue;
-            var entityId = id.Token.ValueText;
+            roots.Add((id.Token.ValueText,call.SpanStart,((MemberAccessExpressionSyntax)call.Expression).Name.SpanStart,creation,null));
+        }
+        foreach(var registration in EncounterSources)
+        {
+            var expression=syntax.DescendantNodes().OfType<ExpressionSyntax>().FirstOrDefault(n=>n.SpanStart==registration.RootStart&&n.Span.Length==registration.RootLength);
+            if(expression!=null)roots.Add((registration.EntityId,registration.CallStart,registration.OrderStart<0?registration.CallStart:registration.OrderStart,expression,registration));
+        }
+        foreach(var encounter in roots.OrderBy(r=>r.Order).GroupBy(r=>r.EntityId,StringComparer.Ordinal).Select(g=>g.First()))
+        {
+            var entityId=encounter.EntityId;var creation=encounter.Root;
             BehaviorNode Read(ExpressionSyntax c, string path, string? legacyPath = null)
             {
                 var scoped = schema?.At(c.SpanStart);
@@ -177,7 +192,7 @@ public sealed partial class BehaviorDocument
                 if (old != null) usedIdentities.Add(old.Id);
                 return new(old?.Id ?? Guid.NewGuid(), path, "Opaque", "Opaque: " + expression, expression.SpanStart, expression.Span.Length, [], []);
             }
-            result.Add(new(entityId, call.SpanStart, Read(creation, entityId + "/root")));
+            result.Add(new(entityId, encounter.Start, Read(creation, entityId + "/root")){Registration=encounter.Registration});
         }
         Entities = result;
     }
@@ -196,8 +211,7 @@ public sealed partial class BehaviorDocument
         foreach (var operation in patch.Operations)
         {
             var n = Find(operation.NodeId);
-            if (LockedNodes.Select(Find).Any(locked => n.Path == locked.Path || n.Path.StartsWith(locked.Path + "/"))) throw new InvalidOperationException("This behavior region or an ancestor is locked.");
-            if (n.Descendants().Any(child => LockedNodes.Contains(child.Id))) throw new InvalidOperationException("This behavior contains a locked region.");
+            Editable(n);
             var p = n.Parameters.FirstOrDefault(p => p.Name == operation.Parameter);
             var expr = SyntaxFactory.ParseExpression(operation.Expression);
             if (expr.ContainsDiagnostics || expr.FullSpan.Length != operation.Expression.Length) throw new ArgumentException("Enter a valid C# value.");
@@ -215,7 +229,7 @@ public sealed partial class BehaviorDocument
             }
         }
         var changed = Source;
-        foreach (var group in edits.GroupBy(e => e.Start).OrderByDescending(g => g.Key))
+        foreach (var group in edits.Distinct().GroupBy(e => e.Start).OrderByDescending(g => g.Key))
         {
             var edit = group.First();
             if (group.Count() > 1 && group.Any(e => e.Length != 0)) throw new ArgumentException("Overlapping parameter edits are not allowed.");

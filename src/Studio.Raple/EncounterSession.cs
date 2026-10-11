@@ -87,6 +87,7 @@ public sealed class EncounterSession : IEncounterSession
     public EncounterSession(RapleAdapter adapter, BehaviorDocument doc, string entity, int seed, PlayerPreset player, int arenaSize = 48, string? phase = null, bool originalRuntimeReference = false,ArenaPreset? arena = null)
     {
         var watch = Stopwatch.StartNew(); document = doc; entityId = entity; this.seed = seed; preset = player; compiledSource = originalRuntimeReference;
+        if(adapter.PreviewContextRequirement(doc,entity) is {} requirement)throw new InvalidOperationException(requirement);
         arena??=new();NativeArena.Validate(arena);
         if (player.Hp < 1 || player.Hp > 1000000 || player.Speed < 0 || player.Speed > 500 || player.Defense < 0 || player.Defense > 10000 || player.Attack < 0 || player.Attack > 500 || player.Dexterity < 0 || player.Dexterity > 500) throw new ArgumentException("Player values are outside supported bounds.");
         if (!double.IsFinite(player.StartX) || !double.IsFinite(player.StartY) || player.StartX < 0 || player.StartY < 0 || (float)player.StartX >= 128 || (float)player.StartY >= 128) throw new ArgumentException("Player start must be inside the 128-tile prototype map.");
