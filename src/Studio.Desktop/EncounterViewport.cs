@@ -110,7 +110,7 @@ public sealed partial class EncounterViewport : FrameworkElement
             var period = moved ? (int)(.5 / Math.Sqrt(vx * vx + vy * vy)) : 0;
             if (moved) period += 400 - period % 400;
             var characterSize=e.Size.HasValue?Math.Max(0,e.Size.Value)/100d:Sprites!.Size(e.Name);
-            DrawCharacter(dc, e.Name, p, moved ? SpriteAction.Walk : SpriteAction.Stand, moved ? renderMs / period % 1 : 0, facings.GetValueOrDefault(e.Id),characterSize:characterSize);
+            DrawCharacter(dc, e.Name, p, moved ? SpriteAction.Walk : SpriteAction.Stand, moved ? renderMs / period % 1 : 0, facings.GetValueOrDefault(e.Id),characterSize:characterSize,altTexture:e.TextureIndex??0);
             var width = Math.Clamp(scale * .8 * characterSize, 26, 90);
             var image = Sprites!.Get(e.Name); var bounds = image == null ? new Rect(p.X - 12, p.Y - 24, 24, 24) : CharacterBounds(p, scale, characterSize, image, Sprites.Elevation(e.Name));
             var top = bounds.Top - 10;
@@ -155,9 +155,9 @@ public sealed partial class EncounterViewport : FrameworkElement
         else dc.DrawRectangle(null, pen, new(point.X - radius, point.Y - radius, radius * 2, radius * 2));
         dc.DrawEllipse(Brush(color), null, point, 1.5, 1.5);
     }
-    void DrawCharacter(DrawingContext dc, string id, Point point, SpriteAction action, double phase, double facing, double? spriteTile = null,double? characterSize=null)
+    void DrawCharacter(DrawingContext dc, string id, Point point, SpriteAction action, double phase, double facing, double? spriteTile = null,double? characterSize=null,int altTexture=0)
     {
-        var frame = Sprites?.Character(id, action, phase, facing) ?? default;
+        var frame = Sprites?.Character(id, action, phase, facing,altTexture) ?? default;
         var image = frame.Image;
         var tile = spriteTile ?? scale;
         dc.DrawEllipse(Brush("#090A0C"), null, point + new Vector(0, 1), tile * .4, tile * .12);

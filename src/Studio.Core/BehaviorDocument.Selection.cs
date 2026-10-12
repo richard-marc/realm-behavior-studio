@@ -155,7 +155,7 @@ public sealed partial class BehaviorDocument
             if (phaseNames.Count > 0) LiteralReferences(entityGroup.Key, phaseNames);
             foreach (var reference in AllNodes.Where(n => !removed.Contains(n.Id) && n.Parameters.Any(p => ReferencesEntityPhase(n, p, entityGroup.Key) == true && PhaseLiterals(p.Expression)?.Any(v=>phaseNames.Contains(v.Name))==true)))
             {
-                if (!reference.Kind.EndsWith("Transition", StringComparison.Ordinal)) throw new ArgumentException("Update actions referencing deleted phases first.");
+                if (!reference.IsTransition) throw new ArgumentException("Update actions referencing deleted phases first.");
                 StructuralParent(reference); Editable(reference); deletions.Add(reference);
             }
         }

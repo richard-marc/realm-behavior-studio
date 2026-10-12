@@ -14,7 +14,7 @@ public partial class MainWindow
             string.Create(CultureInfo.InvariantCulture, $"{actor.Name} · #{actor.Id}\nPhase: {actor.Phase}\nHP {actor.Hp} / {actor.MaxHp} · position {actor.X:0.###}, {actor.Y:0.###}\n") +
             (actor.ParentId is { } parent ? "Native parent: #" + parent : "Native parent: unassigned") +
             "\nSpawned by behavior: " + (actor.SpawnedByBehavior ? "yes" : "no")+"\nDefense: "+actor.Defense+
-            (actor.Damage is {} damage?"\nRecorded damage: "+damage.RecordedDamage+"\nDamage credited to present players: "+damage.PresentPlayerDamage+
+            "\nSize: "+actor.Size+" · texture stat: "+actor.AltTexture+" · visible texture: "+actor.TextureIndex+"\nGlow: "+(actor.GlowColor is {} glow?glow.ToString("X6",CultureInfo.InvariantCulture):"unavailable")+" · projectile size base: "+actor.ProjectileSizeBase+(actor.Damage is {} damage?"\nRecorded damage: "+damage.RecordedDamage+"\nDamage credited to present players: "+damage.PresentPlayerDamage+
                 (damage.ParentActorId is {} counterParent?"\nCounter parent: #"+counterParent:"")+string.Concat(damage.Players.Select(p=>"\nPlayer #"+p.PlayerId+": "+p.Damage)):""))).ToArray() ?? [];
         if (rows.SequenceEqual(runtimeActorRows)) return;
         var selected = (RuntimeActors.SelectedItem as RuntimeActorChoice)?.Id;

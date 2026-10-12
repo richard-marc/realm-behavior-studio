@@ -12,6 +12,7 @@ public sealed record BehaviorNode(Guid Id, string Path, string Kind, string Labe
     public ChildArgument? Argument { get; init; }
     public bool ArgumentFromCall { get; init; }
     public bool ArgumentRequiresSource { get; init; }
+    public bool IsTransition=>Kind.EndsWith("Transition",StringComparison.Ordinal)||Kind=="SizeTransformComplete";
     public IReadOnlyList<BehaviorNode> StateChildren => Kind == "State" ? Children.SelectMany(n => n.Kind == "ArgumentGroup" ? n.Children : [n]).ToArray() : Children;
     public IEnumerable<BehaviorNode> Descendants() => new[] { this }.Concat(Children.SelectMany(n => n.Descendants()));
     public override string ToString() => Label;
@@ -141,7 +142,7 @@ public sealed partial class BehaviorDocument
                 if (c is not ObjectCreationExpressionSyntax && description == null) return Opaque(c, path, legacyPath);
                 var kind = description?.Kind ?? (c is ObjectCreationExpressionSyntax constructor ? constructor.Type.GetLastToken().ValueText : "Opaque");
                 var pars = scoped?.ConstructorParameterNames(c.ToString()) ?? names(kind);
-                var args = c switch { ObjectCreationExpressionSyntax constructorCall => constructorCall.ArgumentList?.Arguments ?? default,
+                var args = c switch { BaseObjectCreationExpressionSyntax constructorCall => constructorCall.ArgumentList?.Arguments ?? default,
                     InvocationExpressionSyntax factoryCall => factoryCall.ArgumentList.Arguments, _ => default };
                 var parameters = new List<Parameter>();
                 var children = new List<BehaviorNode>();
@@ -201,7 +202,7 @@ public sealed partial class BehaviorDocument
                             : nullList ? [] : supplied.Select((p, i) => Read(p.arg.Expression, groupPath + "/" + i, legacyPaths[p.i])).ToArray();
                         children.Add(new BehaviorNode(oldGroup?.Id ?? Guid.NewGuid(), groupPath, "ArgumentGroup", slot.Name + " · " + (requiresSource ? "source" : unassignedList ? "unassigned" : ChildListCount(elements)), expression.SpanStart, expression.Span.Length, [], elements) { Argument = slot, ArgumentFromCall = fromCall, ArgumentRequiresSource = requiresSource });
                     }
-                if (c is ObjectCreationExpressionSyntax { Initializer: { Expressions.Count: > 0 } initialization }) children.Add(Opaque(initialization, path + "/" + children.Count) with { Label = "Source initializer" });
+                if (c is BaseObjectCreationExpressionSyntax { Initializer: { Expressions.Count: > 0 } initialization }) children.Add(Opaque(initialization, path + "/" + children.Count) with { Label = "Source initializer" });
                 var matches = identities.Where(n => n.Kind == kind && n.Signature == c.ToString() && n.Path.StartsWith(entityId + "/") && !usedIdentities.Contains(n.Id)).ToArray();
                 var legacy = legacyPath == null ? null : identities.FirstOrDefault(n => n.Path == legacyPath && n.Signature == c.ToString() && n.Kind == kind && !usedIdentities.Contains(n.Id));
                 var old = matches.Length == 1 ? matches[0] : legacy ?? identities.FirstOrDefault(n => n.Path == path && (n.Kind == kind || (kind is "Factory" or "Reference") && n.Kind == "Opaque" && n.Signature == c.ToString()) && !usedIdentities.Contains(n.Id));

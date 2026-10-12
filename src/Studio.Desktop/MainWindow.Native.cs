@@ -130,6 +130,8 @@ public partial class MainWindow
         if(kind=="DamageTakenTransition"&&parameter.Name=="damage")return "100";
         if(kind=="GiveTemporaryDefense"&&parameter.Name=="amount")return "20";
         if(kind=="HealSelf"&&parameter.Name=="amount")return "50";
+        if(kind=="SetAltTexture"&&parameter.Name=="minValue")return "0";
+        if(kind=="ChangeSize"&&parameter.Name is "rate" or "target")return parameter.Name=="rate"?"10":"150";
         if (parameter.Default != "required") return "";
         if (parameter.Name == "speed" && parameter.Type is "Single" or "float") return "0.3f";
         if (kind == "MoveTo" && parameter.Name is "x" or "y") return parameter.Name == "x" ? "68.5f" : "64.5f";

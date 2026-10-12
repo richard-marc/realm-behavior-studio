@@ -83,16 +83,23 @@ public sealed class ClientSprites
         }
         Current = this;
     }
-    public BitmapSource? Get(string id, int frame = 0, bool down = false) => GetRaw(id, frame, down ? 2 : 0);
+    public BitmapSource? Get(string id, int frame = 0, bool down = false,int altTexture=0) => GetRaw(id, frame, down ? 2 : 0,altTexture);
     public BitmapSource? GetGround(ushort type)=>Get("@ground:"+type);
-    BitmapSource? GetRaw(string id, int frame, int direction)
+    XElement? Texture(string id,int alternate)
     {
-        var key = id + ":" + frame + ":" + direction;
+        if(!objects.TryGetValue(id,out var root))return null;
+        var xml=alternate==0?root:root.Elements("AltTexture").LastOrDefault(e=>TextureId((string?)e.Attribute("id"))==alternate)??root;
+        return xml.Element("Texture")??xml.Element("AnimatedTexture")??xml.Element("RandomTexture")?.Elements().FirstOrDefault();
+    }
+    static int? TextureId(string? text)=>text!=null&&text.StartsWith("0x",StringComparison.OrdinalIgnoreCase)&&int.TryParse(text[2..],NumberStyles.HexNumber,CultureInfo.InvariantCulture,out var hex)?hex:int.TryParse(text,NumberStyles.Integer,CultureInfo.InvariantCulture,out var index)?index:null;
+    BitmapSource? GetRaw(string id, int frame, int direction,int altTexture=0)
+    {
+        var key = id + ":" + altTexture + ":" + frame + ":" + direction;
         if (frames.TryGetValue(key, out var cached)) return cached;
         BitmapSource? result = null;
         if (objects.TryGetValue(id, out var xml))
         {
-            var texture = xml.Element("Texture") ?? xml.Element("AnimatedTexture") ?? xml.Element("RandomTexture")?.Elements().FirstOrDefault();
+            var texture = Texture(id,altTexture);
             if (texture?.Element("File") is { } file && sheets.TryGetValue(file.Value, out var sheet))
             {
                 try
@@ -125,10 +132,10 @@ public sealed class ClientSprites
         if (result == null) Missing.Add(id);
         return frames[key] = result;
     }
-    Sheet? ObjectSheet(string id)
+    Sheet? ObjectSheet(string id,int altTexture=0)
     {
         if (!objects.TryGetValue(id, out var xml)) return null;
-        var texture = xml.Element("Texture") ?? xml.Element("AnimatedTexture") ?? xml.Element("RandomTexture")?.Elements().FirstOrDefault();
+        var texture = Texture(id,altTexture);
         return texture?.Element("File") is { } file ? sheets.GetValueOrDefault(file.Value) : null;
     }
     bool Empty(BitmapSource? frame)
@@ -151,32 +158,32 @@ public sealed class ClientSprites
         var result = BitmapSource.Create(image.PixelWidth, image.PixelHeight, 96, 96, PixelFormats.Bgra32, null, mirrored, stride); result.Freeze();
         return symmetricWalks[image] = result;
     }
-    public CharacterFrame Character(string id, SpriteAction action, double phase, double facing)
+    public CharacterFrame Character(string id, SpriteAction action, double phase, double facing,int altTexture=0)
     {
-        var sheet = ObjectSheet(id);
-        if (sheet is not { Animated: true }) return new(Get(id), false);
+        var sheet = ObjectSheet(id,altTexture);
+        if (sheet is not { Animated: true }) return new(Get(id,altTexture:altTexture), false);
         bool Has(int dir) => dir == 3 ? sheet.CellHeight >= sheet.Height * 3 :
             dir == 2 ? sheet.FirstDown || sheet.CellHeight >= sheet.Height * 2 : !sheet.FirstDown || sheet.CellHeight >= sheet.Height * 2;
         var sector = Math.Clamp((int)(Math.IEEERemainder(facing, Math.PI * 2) / (Math.PI / 4) + 4) % 8, 0, 7);
         var dir = FacingDirections[sector].First(Has); var flip = dir == 1; var rawDir = flip ? 0 : dir;
         var second = phase % 1 >= .5;
         var frame = action == SpriteAction.Stand ? 0 : action == SpriteAction.Walk ? (second ? 2 : 1) : (second ? 5 : 4);
-        var image = GetRaw(id, frame, rawDir);
+        var image = GetRaw(id, frame, rawDir,altTexture);
         if (action == SpriteAction.Attack)
         {
-            var first = GetRaw(id, 4, rawDir); var last = GetRaw(id, 5, rawDir);
-            if (Empty(first) && Empty(last)) { frame = second ? 2 : 1; image = GetRaw(id, frame, rawDir); }
-            else if (Empty(image)) { frame = Empty(first) ? 5 : 4; image = GetRaw(id, frame, rawDir); }
-            if (frame == 5 && !Empty(GetRaw(id, 6, rawDir)) && image != null)
+            var first = GetRaw(id, 4, rawDir,altTexture); var last = GetRaw(id, 5, rawDir,altTexture);
+            if (Empty(first) && Empty(last)) { frame = second ? 2 : 1; image = GetRaw(id, frame, rawDir,altTexture); }
+            else if (Empty(image)) { frame = Empty(first) ? 5 : 4; image = GetRaw(id, frame, rawDir,altTexture); }
+            if (frame == 5 && !Empty(GetRaw(id, 6, rawDir,altTexture)) && image != null)
             {
-                var key = id + ":" + rawDir;
+                var key = id + ":" + altTexture + ":" + rawDir;
                 if (!extendedAttacks.TryGetValue(key, out var composite))
                 {
                     var visual = new DrawingVisual();
                     using (var dc = visual.RenderOpen())
                     {
                         dc.DrawImage(image, new Rect(sheet.Width, 0, sheet.Width, sheet.Height));
-                        dc.DrawImage(GetRaw(id, 6, rawDir), new Rect(sheet.Width * 2, 0, sheet.Width, sheet.Height));
+                        dc.DrawImage(GetRaw(id, 6, rawDir,altTexture), new Rect(sheet.Width * 2, 0, sheet.Width, sheet.Height));
                     }
                     var bitmap = new RenderTargetBitmap(sheet.Width * 3, sheet.Height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual); bitmap.Freeze();
                     extendedAttacks[key] = composite = bitmap;
@@ -186,7 +193,7 @@ public sealed class ClientSprites
         }
         if (Empty(image))
         {
-            image = GetRaw(id, frame == 2 && dir is 2 or 3 ? 1 : 0, rawDir);
+            image = GetRaw(id, frame == 2 && dir is 2 or 3 ? 1 : 0, rawDir,altTexture);
             if (frame == 2 && dir is 2 or 3 && image != null) image = SymmetricWalk(image);
         }
         return new(image, flip);

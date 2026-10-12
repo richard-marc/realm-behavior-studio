@@ -29,7 +29,7 @@ public sealed partial class BehaviorDocument
         if (slots.Count != 1) throw new ArgumentException("Select a typed argument list or phase with one known child slot.");
         var group = node.Children.SingleOrDefault(n => n.Kind == "ArgumentGroup");
         if (group != null) return group;
-        if (SyntaxFactory.ParseExpression(Expression(node)) is ObjectCreationExpressionSyntax { Initializer.Expressions.Count: > 0 }) throw new ArgumentException("This source initializer may add hidden children or references. Open Source to edit this region.");
+        if (SyntaxFactory.ParseExpression(Expression(node)) is BaseObjectCreationExpressionSyntax { Initializer.Expressions.Count: > 0 }) throw new ArgumentException("This source initializer may add hidden children or references. Open Source to edit this region.");
         if (!slots[0].IsParams && slots[0].IsCollection) throw new ArgumentException("Create an explicit collection for this child parameter first.");
         return node;
     }
@@ -63,13 +63,14 @@ public sealed partial class BehaviorDocument
     ExpressionSyntax NodeExpression(SyntaxNode tree, BehaviorNode node) => tree.DescendantNodes().OfType<ExpressionSyntax>().Single(n => n.SpanStart == node.Start && n.Span.Length == node.Length);
     static ArgumentListSyntax CallArguments(ExpressionSyntax expression) => expression switch
     {
-        ObjectCreationExpressionSyntax { ArgumentList: { } args } => args,
+        BaseObjectCreationExpressionSyntax { ArgumentList: { } args } => args,
         InvocationExpressionSyntax call => call.ArgumentList,
         _ => throw new ArgumentException("This expression has no editable argument list.")
     };
     static ExpressionSyntax WithCallArguments(ExpressionSyntax expression, ArgumentListSyntax arguments) => expression switch
     {
         ObjectCreationExpressionSyntax constructor => constructor.WithArgumentList(arguments),
+        ImplicitObjectCreationExpressionSyntax constructor => constructor.WithArgumentList(arguments),
         InvocationExpressionSyntax call => call.WithArgumentList(arguments),
         _ => throw new ArgumentException("This expression has no editable argument list.")
     };

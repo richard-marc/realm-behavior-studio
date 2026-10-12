@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -84,9 +84,22 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string FormatDefault(ParameterInfo p) => p.DefaultValue == null ? (p.ParameterType.IsValueType ? "default" : "null") : Convert.ToString(p.DefaultValue, CultureInfo.InvariantCulture) ?? "default";
     public string[] ParameterNames(string kind) => kind == "State" ? ["name"] : EngineAssembly.GetTypes().Where(t => t.Name == kind && typeof(IStateChildren).IsAssignableFrom(t))
         .SelectMany(t => t.GetConstructors()).SelectMany(c => c.GetParameters()).Select(p => p.Name!).Distinct().ToArray();
-    static string Unit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
+    static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "multiplier" when kind=="SizeTransform"=>"Multiplier of this actor's size on entry. The original animation grows smoothly, then shrinks back to that size.",
+        "growMs" when kind=="SizeTransform"=>"Native smooth-step growth duration in milliseconds. Zero grows immediately on the first native tick.",
+        "shrinkMs" when kind=="SizeTransform"=>"Native smooth-step return duration. An HP interruption shrinks from the visible intermediate size.",
+        "maxDurationMs" when kind=="SizeTransform"=>"Time from entry to the start of shrinking, including growth. Null uses only the HP threshold; at least one stopping condition is required.",
+        "hpThreshold" when kind=="SizeTransform"=>"Shrink when current HP / maximum HP is less than or equal to this fraction. Null uses only the timeout.",
+        "glowColor" when kind=="SizeTransform"=>"Native RGB glow value. The animation restores the actor's previous glow on completion or exit.",
+        "scaleProjectiles" when kind=="SizeTransform"=>"Changes the native ProjectileSizeBase setting during this transform and restores it on completion/exit. Full client projectile scaling is not yet rendered by this preview.",
+        "transform" when kind=="SizeTransformComplete"=>"Reference to the SAME SizeTransform instance running on this actor. A separately constructed transform never completes this transition.",
+        "rate" when kind=="ChangeSize"=>"Size points added by the native callback, then a 150 ms countdown. With 100 ms enemy ticks, changes normally occur every third tick. A wrong-signed rate can clamp straight to the target. Size persists after exit.",
+        "target" when kind=="ChangeSize"=>"Native size points, with 100 as ordinary scale. The rate's direction is retained; the source does not correct a rate pointing away from the target.",
+        "minValue" when kind=="SetAltTexture"=>"First XML AltTexture ID, applied on entry. Zero restores the base texture; undefined IDs leave the client's previous texture intact.",
+        "maxValue" when kind=="SetAltTexture"=>"Last ID in the native integer sequence. -1 holds the first texture. Undefined IDs still consume their native timer slots.",
+        "loop" when kind=="SetAltTexture"=>"Wraps from maxValue to minValue. This does not skip undefined XML IDs; leaving the phase does not restore the original texture.",
         "damage" when kind=="DamageTakenTransition"=>"Inclusive threshold for the original counter's damage credited to players currently present in their world. This is not HP lost since phase entry.",
         "wipeProgress" when kind=="DamageTakenTransition"=>"In this game source, this flag only resets a local accumulator that already starts at zero. It does not clear stored damage; credit persists across phases.",
         "entity" when kind=="EntityHpLessTransition"=>"Case-insensitive substring of the native XML ID name. The nearest match can be this host; null matches any name. The runtime expects that match to be an Enemy.",
@@ -104,6 +117,16 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "states" when kind=="TimedRandomTransition"=>"The native random transition chooses uniformly among these list entries. Repeating a phase name increases its chance; order and duplicates are retained.",
         "randomizedTime" when kind=="TimedRandomTransition"=>"The initial native countdown is Random.Next(time), then runs on 100 ms ticks. A zero time chooses immediately.",
         _ => "Constructor parameter from the supplied runtime. Expressions beyond literal values may require advanced source editing."
+    };
+    static string Unit(string name,string? kind=null)=>kind switch
+    {
+        "SizeTransform" when name is "growMs" or "shrinkMs" or "maxDurationMs"=>"ms",
+        "SizeTransform" when name=="multiplier"=>"× entry size",
+        "SizeTransform" when name=="hpThreshold"=>"fraction of max HP",
+        "SizeTransform" when name=="glowColor"=>"RGB",
+        "ChangeSize" when name is "rate" or "target"=>"size points",
+        "SetAltTexture" when name is "minValue" or "maxValue"=>"texture ID",
+        _=>DefaultUnit(name,kind)
     };
     public IReadOnlyList<CatalogEntry> Catalog()
     {
@@ -158,6 +181,15 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                 if (n.Kind == "Opaque") yield return new("Visual structure is incomplete; the original expression is retained.", n.Id, false);
                 else if (!Supported.Contains(n.Kind)) yield return new($"{n.Kind} requires compiled source preview. Its game-context fidelity is not yet certified.", n.Id, false);
                 var binding = Binding(document.Expression(n));
+                if(n.Kind=="SizeTransform")
+                {
+                    var sizeExpression=SyntaxFactory.ParseExpression(document.Expression(n));
+                    if(sizeExpression is ImplicitObjectCreationExpressionSyntax implicitSize)sizeExpression=SyntaxFactory.ObjectCreationExpression(SyntaxFactory.ParseTypeName(CreationTypeName("SizeTransform"))).WithArgumentList(implicitSize.ArgumentList).NormalizeWhitespace();
+                    string? sizeError=null;
+                    if(!Binding(sizeExpression.ToString()).RequiresContext)try{Evaluate(sizeExpression,RuntimeType("SizeTransform"));}catch(Exception error){sizeError=error.GetBaseException().Message;}
+                    if(sizeError!=null)yield return new("SizeTransform: "+sizeError,n.Id);
+                }
+                if(n.Kind=="SizeTransformComplete"&&(n.Parameters.Any(p=>p.Name=="transform"&&SyntaxFactory.ParseExpression(p.Expression) is BaseObjectCreationExpressionSyntax)||n.Children.SelectMany(c=>c.Descendants()).Any(c=>c.Kind=="SizeTransform")))yield return new("Reference the same SizeTransform instance running in the phase; a new transform inside this transition is never ticked.",n.Id);
                 if(n.Kind=="TimedRandomTransition")
                 {
                     if(document.PhaseChoices(n.Id) is {Count:0})yield return new("A native random transition needs at least one phase choice.",n.Id);

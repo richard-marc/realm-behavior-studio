@@ -19,7 +19,7 @@ public static class BehaviorAnalysis
     static readonly HashSet<string> Known = ["State", "ArgumentGroup", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
         "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
         "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "SizeTransform", "ChangeSize", "SetAltTexture", "SizeTransformComplete"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
     static double? Number(BehaviorNode node, string parameter)
     {
@@ -39,6 +39,7 @@ public static class BehaviorAnalysis
         "TimedRandomTransition"=>$"After {Value(node,"time")} ms · choose"+(Value(node,"randomizedTime","false")=="true"?" · random start":""),
         "HpLessTransition" => Number(node, "threshold") is { } hp ? $"HP < {hp * 100:0.##}%" : $"HP < {Value(node, "threshold")}",
         "DamageTakenTransition"=>$"Credited damage ≥ {Value(node,"damage")}",
+        "SizeTransformComplete"=>"Size transform complete",
         "EntityHpLessTransition"=>$"Nearest name {Value(node,"entity")} · HP < "+(Number(node,"threshold") is {} entityHp?$"{entityHp*100:0.##}%":Value(node,"threshold")),
         "PlayerWithinTransition" => $"Player within {Value(node, "dist")} tiles" + (Value(node, "seeInvis", "false") == "true" ? " · sees invisible" : ""),
         "EntityExistsTransition" => $"{Resource(node)} within {Value(node, "dist")} tiles",
@@ -72,7 +73,7 @@ public static class BehaviorAnalysis
         var edges = new List<PhaseTransition>(); var diagnostics = new List<DocumentDiagnostic>();
         foreach (var state in states)
         {
-            var transitions = state.StateChildren.Where(n => n.Kind.EndsWith("Transition", StringComparison.Ordinal)).ToArray();
+            var transitions = state.StateChildren.Where(n => n.IsTransition).ToArray();
             for (var i = 0; i < transitions.Length; i++)
             {
                 var node = transitions[i]; var expression = Expression(node, "targetState");

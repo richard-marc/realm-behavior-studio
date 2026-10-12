@@ -17,7 +17,7 @@ public record EncounterInput(double X = 0, double Y = 0, bool Attack = false, do
 public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null, int? ActorId = null, int? ParentId = null);
 public record DamageContribution(int PlayerId,int Damage);
 public record DamageCounterView(int RecordedDamage,int PresentPlayerDamage,int? ParentActorId,ImmutableArray<DamageContribution> Players);
-public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox, EntityMotion? Motion = null, int? ParentId = null, bool SpawnedByBehavior = false,int? Size=null,string? DisplayName=null,int? Defense=null,DamageCounterView? Damage=null);
+public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox, EntityMotion? Motion = null, int? ParentId = null, bool SpawnedByBehavior = false,int? Size=null,string? DisplayName=null,int? Defense=null,DamageCounterView? Damage=null,int? AltTexture=null,int? TextureIndex=null,int? GlowColor=null,int? ProjectileSizeBase=null);
 public record BulletView(float X, float Y, int OwnerId, int ProjectileIndex, Guid? NodeId, string TextureId, double Angle, bool Friendly);
 public record ReplayInput(long Ms, EncounterInput Input, int DurationMs = 100);
 public record Emission(long Ms, int OwnerId, int Index, int Count, int BulletId, float X, float Y, float Angle, float AngleIncrement, int Damage);
@@ -36,6 +36,7 @@ public sealed class EncounterSession : IEncounterSession
     readonly Dictionary<int, string> lastStates = [];
     readonly Dictionary<int, EntityMotion> motions = [];
     readonly Dictionary<int, (string Name, int? Parent)> liveActors = [];
+    readonly Dictionary<int,(ushort Type,int Texture,int Size,int Alt,int Glow,int Projectile)> appearances=[];
     readonly PlayerPreset preset;
     readonly string entityId;
     readonly int seed;
@@ -81,7 +82,7 @@ public sealed class EncounterSession : IEncounterSession
     IReadOnlyList<Emission> IEncounterSession.PlayerShots => PlayerShots;
     IReadOnlyList<ReplayInput> IEncounterSession.Inputs => Inputs;
     public IReadOnlyList<EntityView> Entities => engine.World.Enemies.Values.Where(e => !e.Dead)
-        .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id), e.ParentEntity?.Id, e.SpawnedByBehavior,e.Size,e.Name,e.Defense,CounterView(e))).ToArray();
+        .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id), e.ParentEntity?.Id, e.SpawnedByBehavior,e.Size,e.Name,e.Defense,CounterView(e),e.AltTextureIndex,appearances.GetValueOrDefault(e.Id).Texture,e.GlowEnemy,e.ProjectileSizeBase)).ToArray();
     static DamageCounterView CounterView(Enemy enemy)
     {
         var counter=enemy.DamageCounter;var players=counter.GetPlayerData().Select(p=>new DamageContribution(p.Item1.Id,p.Item2)).OrderBy(p=>p.PlayerId).ToImmutableArray();
@@ -298,6 +299,15 @@ public sealed class EncounterSession : IEncounterSession
     }
     void ObserveActorRemovals()
     {
+        foreach(var actor in engine.World.Enemies.Values.Where(e=>!e.Dead))
+        {
+            var previous=appearances.GetValueOrDefault(actor.Id);
+            var texture=AlternateTextures.Resolve(actor.ObjectDesc.IdName,actor.AltTextureIndex,previous.Type==actor.ObjectType?previous.Texture:0);
+            var current=(actor.ObjectType,texture,actor.Size,actor.AltTextureIndex,actor.GlowEnemy,actor.ProjectileSizeBase);
+            if(appearances.ContainsKey(actor.Id)&&current!=previous)Add("appearance",actor.ObjectDesc.IdName+": size "+actor.Size+" · texture "+actor.AltTextureIndex+" (visible "+texture+")",actor:actor.Id);
+            appearances[actor.Id]=current;
+        }
+        foreach(var removed in appearances.Keys.Where(id=>!engine.World.Enemies.TryGetValue(id,out var actor)||actor.Dead).ToArray())appearances.Remove(removed);
         foreach (var (id, previous) in liveActors.Where(pair => !engine.World.Enemies.TryGetValue(pair.Key, out var actor) || actor.Dead).ToArray())
         {
             Add("despawn", previous.Name + " is no longer active in the native world.", actor: id, parent: previous.Parent);

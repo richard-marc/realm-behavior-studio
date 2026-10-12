@@ -150,11 +150,11 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
         var model = Model; var type = model.GetTypeInfo(expression).Type;
         if (!Child(type)) return null;
         var symbol = model.GetSymbolInfo(expression).Symbol;
-        if (expression is not (InvocationExpressionSyntax or ObjectCreationExpressionSyntax))
+        if (expression is not (InvocationExpressionSyntax or BaseObjectCreationExpressionSyntax))
             return symbol is IFieldSymbol or IPropertySymbol or ILocalSymbol or IParameterSymbol
                 ? new("Reference", symbol.Name, StateType(type), [], [], []) : null;
         if (symbol is not IMethodSymbol method) return null; // Never choose an ambiguous overload.
-        var arguments = expression is InvocationExpressionSyntax call ? call.ArgumentList.Arguments : ((ObjectCreationExpressionSyntax)expression).ArgumentList!.Arguments;
+        var arguments = expression is InvocationExpressionSyntax call ? call.ArgumentList.Arguments : ((BaseObjectCreationExpressionSyntax)expression).ArgumentList?.Arguments??default;
         var slots = new string[arguments.Count]; var expandedIndices = new Dictionary<string, int>();
         for (var i = 0; i < arguments.Count; i++)
         {
@@ -166,7 +166,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
             slots[i] = parameter.Name + (expanded ? "[" + count + "]" : "");
         }
         var children = method.Parameters.Where(p => Child(Element(p.Type)))
-            .Select(p => new ChildArgument(p.Name, Element(p.Type).Name, p.Type is IArrayTypeSymbol, p.IsParams, !Collection(p.Type) && !p.IsOptional || expression is ObjectCreationExpressionSyntax && type!.Name == "Prioritize" ? 1 : 0)
+            .Select(p => new ChildArgument(p.Name, Element(p.Type).Name, p.Type is IArrayTypeSymbol, p.IsParams, !Collection(p.Type) && !p.IsOptional || expression is BaseObjectCreationExpressionSyntax && type!.Name == "Prioritize" ? 1 : 0)
             { CollectionType = p.Type is not IArrayTypeSymbol && Collection(p.Type) ? p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) : null }).ToArray();
         var standalone = RapleAdapter.Binding(text);
         var actualType = method.ContainingType.ToDisplayString().Replace("@", "");
@@ -175,7 +175,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
         return new(kind,
             expression is InvocationExpressionSyntax ? method.Name + " · " + type!.Name : type!.Name,
             StateType(type), method.Parameters.Select(p => new SourceParameter(p.Name, TypeName(p.Type), Default(p))).ToArray(), slots, children)
-        { RequiresCompiled = expression is InvocationExpressionSyntax or ObjectCreationExpressionSyntax { Initializer: not null } || standalone.RequiresContext || standalone.Constructor is not { } constructor || constructor.DeclaringType?.FullName?.Replace('+', '.') != actualType ||
+        { RequiresCompiled = expression is InvocationExpressionSyntax or BaseObjectCreationExpressionSyntax { Initializer: not null } || standalone.RequiresContext || standalone.Constructor is not { } constructor || constructor.DeclaringType?.FullName?.Replace('+', '.') != actualType ||
             constructor.GetParameters().Length != method.Parameters.Length || !method.Parameters.Zip(constructor.GetParameters()).All(p => SameType(p.First.Type, p.Second.ParameterType)) };
     }
     public IEnumerable<DocumentDiagnostic> SourceDiagnostics() => (adapter.HasAdditionalSources ? context.Binding.Value.Compilation.GetDiagnostics() : Model.GetDiagnostics()).Where(d => d.Severity == DiagnosticSeverity.Error)
