@@ -25,6 +25,16 @@ public partial class MainWindow
     }
     void DeleteWorkspacePhase(Guid id)
         =>DeleteWorkspacePhases([id]);
+    void GroupWorkspacePhases(IEnumerable<Guid> ids,string name)
+    {
+        var selected=document.NormalizeSelection(ids);var parent=document.Parent(selected[0].Id)??throw new ArgumentException("Select child nodes to group.");
+        var plan=SourcePhaseRefactor.Group(adapter,Snapshot(),document.SourceFile!,selected.Select(n=>n.Id),name,chooseUniqueName:true);
+        var record=plan.After.AdditionalSources.FirstOrDefault(s=>s.SourceFile.Equals(document.SourceFile,StringComparison.OrdinalIgnoreCase));
+        var grouped=new BehaviorDocument(record?.Source??plan.After.Source,adapter.ForProject(plan.After),record?.Identities??plan.After.Identities,document.SourceFile);
+        var oldIds=document.Identities.Select(i=>i.Id).ToHashSet();
+        var group=grouped.Find(parent.Id).Children.Single(n=>n.Kind=="State"&&!oldIds.Contains(n.Id));
+        ApplyWorkspacePhaseEdit(plan,group.Id,"Grouped");
+    }
     void DeleteWorkspacePhases(IEnumerable<Guid> ids)
     {
         var nodes=document.NormalizeSelection(ids);var removed=nodes.SelectMany(n=>n.Descendants()).Select(n=>n.Id).ToHashSet();
@@ -51,7 +61,7 @@ public partial class MainWindow
                 if(record!=null){editing.LockedNodes.UnionWith(record.LockedNodes);collapsedByDocument[editing]=record.CollapsedNodes.ToHashSet();}
                 dependencyDocuments[change.SourceFile]=editing;
             }
-            if(editing.Source!=change.Before)throw new InvalidOperationException("A source file changed during phase checking. Rename the current revision again.");
+            if(editing.Source!=change.Before)throw new InvalidOperationException("A source file changed during phase checking. Retry with the current revision.");
             affected.Add(editing);
         }
         var committed=new List<BehaviorDocument>();

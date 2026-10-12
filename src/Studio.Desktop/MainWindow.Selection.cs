@@ -164,7 +164,10 @@ public partial class MainWindow
         if(adapter.HasAdditionalSources&&document.NormalizeSelection(nodeSelection).Any(n=>n.Descendants().Any(c=>c.Kind=="State"))){DeleteWorkspacePhases(nodeSelection);return;}
         var parent = document.DeleteNodes(nodeSelection, ValidateAuthoring); Changed(parent);
     });
-    void GroupSelectedNodes() => Try(() => { var id = document.GroupNodes(nodeSelection, NextPhaseName(), ValidateAuthoring); Changed(id); });
+    void GroupSelectedNodes() => Try(() => {
+        if(adapter.HasAdditionalSources||definitionViewKey!=null){GroupWorkspacePhases(nodeSelection,NextPhaseName());return;}
+        var id = document.GroupNodes(nodeSelection, NextPhaseName(), ValidateAuthoring); Changed(id);
+    });
     void UngroupSelectedPhase() => Try(() => { if (selectedNode != null) Changed(document.UngroupState(selectedNode.Id, ValidateAuthoring)); });
     void SyncCollapsedGraph() { if (document != null) Graph.CollapsedNodes = CollapsedNodes.ToHashSet(); }
     void TogglePhaseCollapse(Guid id)

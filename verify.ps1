@@ -57,6 +57,9 @@ try {
     & dotnet run --project tests/DeleteWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/workspace-delete-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/workspace-delete-checks.log' -Tail 25; throw 'Coordinated workspace deletion checks failed.' }
     Get-Content '.artifacts/workspace-delete-checks.log' -Tail 1
+    & dotnet run --project tests/GroupWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/workspace-group-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/workspace-group-checks.log' -Tail 25; throw 'Coordinated workspace grouping checks failed.' }
+    Get-Content '.artifacts/workspace-group-checks.log' -Tail 1
     & dotnet run --project tests/Transformation.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/transformation-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/transformation-checks.log' -Tail 25; throw 'Native transformation checks failed.' }
     Get-Content '.artifacts/transformation-checks.log' -Tail 1
