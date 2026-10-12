@@ -11,7 +11,7 @@ public sealed record EntityResource(string Id, string DisplayName, ushort Object
     public string Title => Id;
     public string Summary => $"{RuntimeKind} · 0x{ObjectType:X4}" + (RuntimeKind == "Enemy" ? $" · HP {MaxHp} · defense {Defense}" : "") + (string.IsNullOrWhiteSpace(Group) ? "" : "\n" + Group);
 }
-public sealed record EntityParameter(string Name, string Label, EntityResourceScope Scope, bool AllowsPlayer, string? InactiveReason = null, int? RequiredProjectileIndex = null);
+public sealed record EntityParameter(string Name, string Label, EntityResourceScope Scope, bool AllowsPlayer, string? InactiveReason = null, int? RequiredProjectileIndex = null,bool NameFragment=false);
 public sealed record EntityReference(bool Known, string? Id);
 
 public static class EntityResources
@@ -19,7 +19,7 @@ public static class EntityResources
     static bool MatchesScope(EntityResource resource,EntityResourceScope scope)=>scope == EntityResourceScope.Resolvable || scope == EntityResourceScope.Enemy && resource.RuntimeKind == "Enemy" || scope == EntityResourceScope.Queryable && resource.Queryable;
     static bool HasProjectile(ObjectDesc desc,int? required)=>required is not {} index||desc.Projectiles.TryGetValue(index,out var projectile)&&projectile.BulletType==index;
     public static IReadOnlyList<EntityResource> Catalog(EntityParameter parameter)=>Catalog(parameter.Scope).Where(resource=>HasProjectile(SimEngine.Data.ObjectDescs[resource.ObjectType],parameter.RequiredProjectileIndex)).ToArray();
-    public static bool Accepts(EntityParameter parameter,string id)=>SimEngine.Data.IdToObjectType.TryGetValue(id,out var type)&&SimEngine.Data.ObjectDescs.TryGetValue(type,out var desc)&&MatchesScope(Describe(id,desc),parameter.Scope)&&HasProjectile(desc,parameter.RequiredProjectileIndex);
+    public static bool Accepts(EntityParameter parameter,string id)=>parameter.NameFragment?Catalog(parameter).Any(resource=>resource.SpriteId==id):SimEngine.Data.IdToObjectType.TryGetValue(id,out var type)&&SimEngine.Data.ObjectDescs.TryGetValue(type,out var desc)&&MatchesScope(Describe(id,desc),parameter.Scope)&&HasProjectile(desc,parameter.RequiredProjectileIndex);
     // Resolve the ID map first: XML aliases and repeated IDs must expose the
     // descriptor the native constructor actually resolves, including its sprite.
     public static IReadOnlyList<EntityResource> Catalog(EntityResourceScope scope) => SimEngine.Data.IdToObjectType
@@ -52,6 +52,7 @@ public sealed partial class RapleAdapter
         "OrderOnDeath" => new("target", "Ordered entity", EntityResourceScope.Queryable, false),
         "Follow" or "Orbit" => new("target", "Target entity", EntityResourceScope.Queryable, true),
         "EntityExistsTransition" => new("target", "Required entity", EntityResourceScope.Queryable, false),
+        "EntityHpLessTransition"=>new("entity","Nearest enemy name",EntityResourceScope.Enemy,false,NameFragment:true),
         "EntityNotExistsTransition" => new("target", "Absent entity", EntityResourceScope.Queryable, true),
         "Transform" or "TransformOnDeath" => new("target", "Transform into", EntityResourceScope.Resolvable, false),
         _ => null

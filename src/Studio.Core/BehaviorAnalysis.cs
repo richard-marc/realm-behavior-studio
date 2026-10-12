@@ -18,7 +18,8 @@ public static class BehaviorAnalysis
 {
     static readonly HashSet<string> Known = ["State", "ArgumentGroup", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
         "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
-        "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior", "TimedRandomTransition"];
+        "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior", "TimedRandomTransition",
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
     static double? Number(BehaviorNode node, string parameter)
     {
@@ -37,6 +38,8 @@ public static class BehaviorAnalysis
         "TimedTransition" => $"After {Value(node, "time")} ms" + (Value(node, "randomized", "false") == "true" ? " · random start" : ""),
         "TimedRandomTransition"=>$"After {Value(node,"time")} ms · choose"+(Value(node,"randomizedTime","false")=="true"?" · random start":""),
         "HpLessTransition" => Number(node, "threshold") is { } hp ? $"HP < {hp * 100:0.##}%" : $"HP < {Value(node, "threshold")}",
+        "DamageTakenTransition"=>$"Credited damage ≥ {Value(node,"damage")}",
+        "EntityHpLessTransition"=>$"Nearest name {Value(node,"entity")} · HP < "+(Number(node,"threshold") is {} entityHp?$"{entityHp*100:0.##}%":Value(node,"threshold")),
         "PlayerWithinTransition" => $"Player within {Value(node, "dist")} tiles" + (Value(node, "seeInvis", "false") == "true" ? " · sees invisible" : ""),
         "EntityExistsTransition" => $"{Resource(node)} within {Value(node, "dist")} tiles",
         "EntityNotExistsTransition" => Value(node, "checkAttackTarget", "false") == "true" ? "Attack target absent" : $"No {(Value(node, "target") == "null" ? "player" : Resource(node))} within {Value(node, "dist")} tiles",
@@ -49,6 +52,8 @@ public static class BehaviorAnalysis
         if(earlier.Kind=="TimedRandomTransition"&&Number(earlier,"time")==0&&ChoiceTargets(earlier) is {Count:>0})return true;
         if (earlier.Kind != later.Kind) return false;
         if (earlier.Kind == "HpLessTransition") return Number(earlier, "threshold") is { } a && Number(later, "threshold") is { } b && a >= b;
+        if(earlier.Kind=="DamageTakenTransition")return Number(earlier,"damage") is {} a&&Number(later,"damage") is {} b&&a<=b;
+        if(earlier.Kind=="EntityHpLessTransition")return BehaviorDocument.LiteralString(Value(earlier,"entity")) is {} aName&&BehaviorDocument.LiteralString(Value(later,"entity")) is {} bName&&string.Equals(aName,bName,StringComparison.OrdinalIgnoreCase)&&Number(earlier,"dist") is {} distance&&distance==Number(later,"dist")&&Number(earlier,"threshold") is {} a&&Number(later,"threshold") is {} b&&a>=b;
         if (earlier.Kind == "PlayerWithinTransition") return Number(earlier, "dist") is { } a && Number(later, "dist") is { } b && a >= b &&
             Value(earlier, "seeInvis", "false") == Value(later, "seeInvis", "false");
         return false;

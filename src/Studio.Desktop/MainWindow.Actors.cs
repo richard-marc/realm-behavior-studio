@@ -13,7 +13,9 @@ public partial class MainWindow
             actor.Name + " · #" + actor.Id, actor.Name,
             string.Create(CultureInfo.InvariantCulture, $"{actor.Name} · #{actor.Id}\nPhase: {actor.Phase}\nHP {actor.Hp} / {actor.MaxHp} · position {actor.X:0.###}, {actor.Y:0.###}\n") +
             (actor.ParentId is { } parent ? "Native parent: #" + parent : "Native parent: unassigned") +
-            "\nSpawned by behavior: " + (actor.SpawnedByBehavior ? "yes" : "no"))).ToArray() ?? [];
+            "\nSpawned by behavior: " + (actor.SpawnedByBehavior ? "yes" : "no")+"\nDefense: "+actor.Defense+
+            (actor.Damage is {} damage?"\nRecorded damage: "+damage.RecordedDamage+"\nDamage credited to present players: "+damage.PresentPlayerDamage+
+                (damage.ParentActorId is {} counterParent?"\nCounter parent: #"+counterParent:"")+string.Concat(damage.Players.Select(p=>"\nPlayer #"+p.PlayerId+": "+p.Damage)):""))).ToArray() ?? [];
         if (rows.SequenceEqual(runtimeActorRows)) return;
         var selected = (RuntimeActors.SelectedItem as RuntimeActorChoice)?.Id;
         runtimeActorRows = rows; RuntimeActors.ItemsSource = rows;

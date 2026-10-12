@@ -20,7 +20,7 @@ public partial class MainWindow
     Button? creationUseEntityButton;
     static IReadOnlyList<EntityChoice> EntityChoicesFor(EntityParameter parameter)
     {
-        var choices = EntityResources.Catalog(parameter).Select(resource => new EntityChoice(resource.Id, resource.Title, resource.SpriteId, resource.Summary + (parameter.RequiredProjectileIndex is {} index ? "\nRequired XML projectile #"+index : "") + (parameter.Scope == EntityResourceScope.Resolvable && resource.RuntimeKind != "Enemy" ? "\nAdditional world context may be required during Play." : ""))).ToList();
+        var choices = EntityResources.Catalog(parameter).Select(resource => new EntityChoice(parameter.NameFragment?resource.SpriteId:resource.Id, parameter.NameFragment?resource.SpriteId:resource.Title, resource.SpriteId, resource.Summary + (parameter.NameFragment?"\nNative name substring lookup; includes this host and ignores display-name overrides.":"") + (parameter.RequiredProjectileIndex is {} index ? "\nRequired XML projectile #"+index : "") + (parameter.Scope == EntityResourceScope.Resolvable && resource.RuntimeKind != "Enemy" ? "\nAdditional world context may be required during Play." : ""))).DistinctBy(choice=>choice.Id).ToList();
         if (parameter.AllowsPlayer) choices.Insert(0, new(null, "Nearest player", "Wizard", "Native null target · searches the player collision index"));
         return choices;
     }
@@ -74,10 +74,10 @@ public partial class MainWindow
         var list = entityChoices = new ListBox { MaxHeight = 210, ItemTemplate = (DataTemplate)FindResource("EntityChoiceTemplate") }; panel.Children.Add(list);
         var info = entityInfo = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = EncounterViewport.Brush("#929D96"), Margin = new(0, 8, 0, 0) }; panel.Children.Add(info);
         var use = useEntityButton = new Button { Content = "Use entity", Margin = new(0, 10, 0, 0), IsEnabled = false }; panel.Children.Add(use);
-        var title = parameter.Label + " · " + (!current.Known ? "source expression" : current.Id ?? (parameter.AllowsPlayer ? "nearest player" : "no entity"));
+        var title = parameter.Label + " · " + (!current.Known ? "source expression" : current.Id ?? (parameter.NameFragment?"any enemy name":parameter.AllowsPlayer ? "nearest player" : "no entity"));
         var picker = entityPicker = new Expander { Header = new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 230, ToolTip = title }, Content = panel, Margin = new(0, 10, 0, 0) }; Inspector.Children.Add(picker);
         IReadOnlyList<EntityChoice> choices = [];
-        string EmptyInfo() => parameter.InactiveReason ?? (!current.Known ? "Choose an entity to replace this source expression." : current.Id == null && !parameter.AllowsPlayer ? "This parameter needs an entity." : choices.All(choice => choice.Id != current.Id) ? "The current ID is absent from this parameter's eligible XML entities." : "Select an entity to inspect its XML definition.");
+        string EmptyInfo() => parameter.InactiveReason ?? (parameter.NameFragment?"This is a native name substring, not an exact type query. The nearest match may be this host. Null matches any name; display-name overrides are ignored. Choose an Enemy compatible with the runtime cast.":!current.Known ? "Choose an entity to replace this source expression." : current.Id == null && !parameter.AllowsPlayer ? "This parameter needs an entity." : choices.All(choice => choice.Id != current.Id) ? "The current ID is absent from this parameter's eligible XML entities." : "Select an entity to inspect its XML definition.");
         list.SelectionChanged += (_, _) => { info.Text = parameter.InactiveReason ?? (list.SelectedItem is EntityChoice choice ? choice.Summary : EmptyInfo()); UpdateEntityControls(); };
         void Filter()
         {

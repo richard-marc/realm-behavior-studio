@@ -42,7 +42,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
-        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition"];
+        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root)
     {
@@ -74,9 +75,15 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string FormatDefault(ParameterInfo p) => p.DefaultValue == null ? (p.ParameterType.IsValueType ? "default" : "null") : Convert.ToString(p.DefaultValue, CultureInfo.InvariantCulture) ?? "default";
     public string[] ParameterNames(string kind) => kind == "State" ? ["name"] : EngineAssembly.GetTypes().Where(t => t.Name == kind && typeof(IStateChildren).IsAssignableFrom(t))
         .SelectMany(t => t.GetConstructors()).SelectMany(c => c.GetParameters()).Select(p => p.Name!).Distinct().ToArray();
-    static string Unit(string name, string? kind = null) => kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
+    static string Unit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "damage" when kind=="DamageTakenTransition"=>"Inclusive threshold for the original counter's damage credited to players currently present in their world. This is not HP lost since phase entry.",
+        "wipeProgress" when kind=="DamageTakenTransition"=>"In this game source, this flag only resets a local accumulator that already starts at zero. It does not clear stored damage; credit persists across phases.",
+        "entity" when kind=="EntityHpLessTransition"=>"Case-insensitive substring of the native XML ID name. The nearest match can be this host; null matches any name. The runtime expects that match to be an Enemy.",
+        "amount" when kind=="HealSelf"=>"Added by the original HealSelf. Percentage uses current HP, not maximum HP. Null adds zero; an increment equal to current HP is skipped by this source.",
+        "percentage" when kind=="HealSelf"=>"Interprets amount as a percent of current HP; the original code truncates to an integer and clamps the resulting HP to maximum.",
+        "amount" when kind=="GiveTemporaryDefense"=>"Added on native phase entry and subtracted on phase exit. Negative values reduce defense. It is not a replacement XML defense value.",
         "coolDown" => "Runtime countdown, quantized to 100 ms ticks. Shoot generally adds a tick between volleys; 0 normalizes to its runtime default.",
         "threshold" => "HpLessTransition uses strict less-than, not less-than-or-equal.",
         "shootAngle" => "Spacing between adjacent shots in degrees; omitted spacing defaults to 360 / count.",

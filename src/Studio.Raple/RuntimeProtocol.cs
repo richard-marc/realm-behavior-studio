@@ -18,7 +18,7 @@ public record NativeRuntimeStamp(int Version, string BuildId, NativeSourceStamp 
 
 public static class RuntimeProtocol
 {
-    public const int Version = 8;
+    public const int Version = 9;
     public const int MaxLineLength = 8 * 1024 * 1024;
     public static RuntimeFrame Capture(EncounterSession session, ref int events, ref int shots, ref int playerShots, ref int movements,ref long arenaRevision,ref int effects)
     {

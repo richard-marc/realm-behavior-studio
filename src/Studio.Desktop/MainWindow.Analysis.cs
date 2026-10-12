@@ -47,5 +47,6 @@ public partial class MainWindow
             Foreground = EncounterViewport.Brush("#CFD3DB"), Margin = new(0, 12, 0, 4) });
         Inspector.Children.Add(new TextBlock { Text = $"Priority {edge.Priority} · first matching transition wins", TextWrapping = TextWrapping.Wrap,
             Foreground = EncounterViewport.Brush("#92969F"), FontSize = 11, ToolTip = "Child transitions take precedence over parents. Use Organize to move this transition up or down. Timer conditions run on the native 100 ms tick." });
+        if(edge.Node.Kind=="DamageTakenTransition")Inspector.Children.Add(new TextBlock{Text="Credit persists across phases. In this game, wipeProgress does not clear the stored counter. Details → Actors shows the damage credited to present players.",TextWrapping=TextWrapping.Wrap,FontSize=11,Foreground=EncounterViewport.Brush("#92969F"),Margin=new(0,8,0,0)});
     }
 }
