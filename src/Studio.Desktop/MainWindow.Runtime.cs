@@ -11,13 +11,13 @@ public partial class MainWindow
     }
     async Task<bool> StartSessionAsync(string? phase = null)
     {
-        if(adapter.PreviewContextRequirement(document,selectedEntity!.Id) is {} requirement)throw new InvalidOperationException(requirement);
+        if(adapter.PreviewContextRequirement(PrimaryDocument,selectedEntity!.Id) is {} requirement)throw new InvalidOperationException(requirement);
         await AwaitCombatCancellation();
         ClearViewportEditors();
         if (pathPreviewTask != null) await pathPreviewTask;
         session = null; running = false; Viewport.Session = null;
         RefreshRuntimeActors();
-        if (!adapter.NeedsCompiledRuntime(document, selectedEntity!.Id)) { StartSession(phase); return true; }
+        if (!adapter.NeedsCompiledRuntime(PrimaryDocument, selectedEntity!.Id)) { StartSession(phase); return true; }
         var project = Snapshot(); var expectedDocument = document; var revision = document.Revision;var expectedScenario=scenarioRevision;
         using var cancellation = new CancellationTokenSource(); runtimeStarting = cancellation;
         Status.Text = "Preparing encounter…"; UpdatePlayButton();

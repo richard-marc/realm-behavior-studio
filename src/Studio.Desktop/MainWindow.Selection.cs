@@ -120,8 +120,8 @@ public partial class MainWindow
     void ApplyNodeDrop(NodeDrag drag, Guid destination, int index, bool copy)
     {
         if (drag.Revision != document.Revision || drag.EntityId != selectedEntity?.Id) throw new ArgumentException("The dragged selection belongs to an older revision or another encounter.");
-        var ids = copy ? document.PasteNodes(destination, index, document.CopyNodes(drag.Ids), d => adapter.Validate(d, selectedEntity!.Id)) : drag.Ids;
-        if (!copy) document.MoveNodes(ids, destination, index, d => adapter.Validate(d, selectedEntity!.Id));
+        var ids = copy ? document.PasteNodes(destination, index, document.CopyNodes(drag.Ids), ValidateAuthoring) : drag.Ids;
+        if (!copy) document.MoveNodes(ids, destination, index, ValidateAuthoring);
         ChangedSelection(ids);
     }
     void SelectAuthoringNode(Guid id, ModifierKeys modifiers)
@@ -158,11 +158,11 @@ public partial class MainWindow
         var clipboard = readNodeClipboard() ?? throw new ArgumentException("Copy phases or actions from Studio first.");
         var target = selectedNode != null && document.CanEditChildren(selectedNode.Id) ? document.ChildContainer(selectedNode.Id) : selectedNode == null ? null : document.Parent(selectedNode.Id);
         if (target == null) return;
-        ChangedSelection(document.PasteNodes(target.Id, target.Children.Count, clipboard, d => adapter.Validate(d, selectedEntity!.Id)));
+        ChangedSelection(document.PasteNodes(target.Id, target.Children.Count, clipboard, ValidateAuthoring));
     });
-    void DeleteSelectedNodes() => Try(() => { var parent = document.DeleteNodes(nodeSelection, d => adapter.Validate(d, selectedEntity!.Id)); Changed(parent); });
-    void GroupSelectedNodes() => Try(() => { var id = document.GroupNodes(nodeSelection, NextPhaseName(), d => adapter.Validate(d, selectedEntity!.Id)); Changed(id); });
-    void UngroupSelectedPhase() => Try(() => { if (selectedNode != null) Changed(document.UngroupState(selectedNode.Id, d => adapter.Validate(d, selectedEntity!.Id))); });
+    void DeleteSelectedNodes() => Try(() => { var parent = document.DeleteNodes(nodeSelection, ValidateAuthoring); Changed(parent); });
+    void GroupSelectedNodes() => Try(() => { var id = document.GroupNodes(nodeSelection, NextPhaseName(), ValidateAuthoring); Changed(id); });
+    void UngroupSelectedPhase() => Try(() => { if (selectedNode != null) Changed(document.UngroupState(selectedNode.Id, ValidateAuthoring)); });
     void SyncCollapsedGraph() { if (document != null) Graph.CollapsedNodes = CollapsedNodes.ToHashSet(); }
     void TogglePhaseCollapse(Guid id)
     {
@@ -199,7 +199,7 @@ public partial class MainWindow
             var id = node.Id;
             yield return new("Go to " + node.Label, node.Kind + " · " + node.Path, () => SelectNode(id));
             if (canEdit && document.CanEditChildren(node.Id) && document.ChildContainer(node.Id).Id == node.Id && !nodeSelection.Any(selected => node.Path == document.Find(selected).Path || node.Path.StartsWith(document.Find(selected).Path + "/", StringComparison.Ordinal)))
-                yield return new("Move selection into " + node.Label, "Append in source order · one undo", () => Try(() => { var ids = nodeSelection.ToArray(); document.MoveNodes(ids, id, document.ChildContainer(id).Children.Count, d => adapter.Validate(d, selectedEntity!.Id)); ChangedSelection(ids); }));
+                yield return new("Move selection into " + node.Label, "Append in source order · one undo", () => Try(() => { var ids = nodeSelection.ToArray(); document.MoveNodes(ids, id, document.ChildContainer(id).Children.Count, ValidateAuthoring); ChangedSelection(ids); }));
         }
     }
     void CommandSearchChanged(object sender, TextChangedEventArgs e) { if (document != null) PopulateCommands(); }

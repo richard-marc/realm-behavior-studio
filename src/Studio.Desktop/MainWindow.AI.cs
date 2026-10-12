@@ -87,13 +87,13 @@ public partial class MainWindow
         switch (tool)
         {
             case "inspect_selection": return new { revision = document.Revision, entity = selectedEntity!.Id, selectedNode = selectedNode?.Id,
-                brief = Brief.Text, nodes = document.Entities.First(e => e.EntityId == selectedEntity.Id).Root.Descendants().Select(n => new { n.Id, n.Kind, n.Label, n.Parameters, locked = document.LockedNodes.Contains(n.Id) }), coverage = "Partial runtime host; no full fidelity certification" };
+                brief = Brief.Text, sourceFile=document.SourceFile, nodes = AuthoringRoot.Descendants().Select(n => new { n.Id, n.Kind, n.Label, n.Parameters, locked = !RegionEditable(n) }), coverage = "Partial runtime host; no full fidelity certification" };
             case "search_primitives": return adapter.Primitives.Where(p => p.Name.Contains(args.GetProperty("query").GetString()!, StringComparison.OrdinalIgnoreCase)).Take(30).ToArray();
             case "propose_patch":
                 var proposed = JsonSerializer.Deserialize<DocumentPatch>(args.GetRawText()) ?? throw new ArgumentException("Invalid document patch.");
                 if (proposed.Operations.Count > 64) throw new ArgumentException("Too many operations.");
                 if (proposed.ExpectedRevision != document.Revision) throw new InvalidOperationException("The proposal is stale; inspect the document again.");
-                var selectedIds = document.Entities.First(e => e.EntityId == selectedEntity!.Id).Root.Descendants().Select(n => n.Id).ToHashSet();
+                var selectedIds = AuthoringRoot.Descendants().Select(n => n.Id).ToHashSet();
                 if (proposed.Operations.Any(o => !selectedIds.Contains(o.NodeId))) throw new InvalidOperationException("Proposal refers to a node outside the shared entity.");
                 ValidateProposal(proposed); Proposal.Text = JsonSerializer.Serialize(proposed, BehaviorDocument.JsonOptions);
                 return new { status = "previewed", changes = proposed.Operations.Count, applied = false };
@@ -106,12 +106,12 @@ public partial class MainWindow
                 if (args.GetProperty("previewProposal").GetBoolean())
                 {
                     if (pendingProposal == null || pendingProposal.ExpectedRevision != document.Revision) throw new InvalidOperationException("No current proposal to preview.");
-                    candidate.Apply(pendingProposal with { ExpectedRevision = 0 }, d => adapter.Validate(d, selectedEntity!.Id));
+                    candidate.Apply(pendingProposal with { ExpectedRevision = 0 }, ValidateAuthoring);
                 }
                 running = false; session = null; Viewport.Session = null; UpdatePlayButton(); Viewport.InvalidateVisual();
                 var preset = ReadPreset();
                 using IEncounterSession sim = adapter.NeedsCompiledRuntime(candidate, selectedEntity!.Id)
-                    ? await CompiledRuntime.StartAsync(adapter.ServerRoot, Snapshot() with { Source = candidate.Source, Identities = candidate.Identities }, cancellation: aiCancellation?.Token ?? default)
+                    ? await CompiledRuntime.StartAsync(adapter.ServerRoot, ProjectForDocument(candidate), cancellation: aiCancellation?.Token ?? default)
                     : new EncounterSession(adapter, candidate, selectedEntity.Id, int.Parse(Seed.Text), preset, int.Parse(ArenaSize.Text), arena:arenaPreset);
                 for (var elapsed = 0; elapsed < duration; elapsed += 100) await sim.AdvanceAsync(new(), 100, aiCancellation?.Token ?? default);
                 return new { durationMs = duration, sim.Seed, inputs = "stationary; no attacks", player = preset, sim.PlayerHp, sim.Coverage, entityLimit = 128, projectileLimit = 20000, events = sim.Events.TakeLast(120) };

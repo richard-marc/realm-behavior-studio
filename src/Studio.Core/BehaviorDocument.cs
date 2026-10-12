@@ -71,6 +71,7 @@ public sealed partial class BehaviorDocument
     public IEnumerable<EntityBehavior> AllRoots=>Entities.Concat(Definitions);
     public IEnumerable<BehaviorNode> AllNodes=>AllRoots.SelectMany(e=>e.Root.Descendants());
     public IReadOnlyList<EntityBehavior> ReferencedDefinitions(BehaviorNode node)=>Definitions.Where(d=>d.Definition!.Uses.Any(u=>u.Start>=node.Start&&u.Start+u.Length<=node.Start+node.Length)).ToArray();
+    public IReadOnlyList<SourceDefinitionReference> ExternalDefinitions(BehaviorNode node)=>schema?.ExternalDefinitions(node.Start,node.Length)??[];
     public IReadOnlyList<DocumentDiagnostic> Diagnostics { get; private set; } = [];
     public HashSet<Guid> LockedNodes { get; } = [];
     readonly Stack<(string Source, List<NodeIdentity> Ids)> undo = new(), redo = new();

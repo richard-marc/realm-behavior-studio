@@ -114,7 +114,7 @@ public partial class MainWindow
         if (fragmentEditing == null || fragmentCapturing) throw new ArgumentException("Choose a saved fragment.");
         var values = fragmentFields.ToDictionary(f => f.Parameter.Name, f => f.Input.Text, StringComparer.Ordinal);
         var phases = fragmentPhaseTargets.ToDictionary(f => f.Key, f => f.Value.SelectedItem as string ?? throw new ArgumentException("Choose a destination for external phase '" + f.Key + "'."), StringComparer.Ordinal);
-        return destination.ImportFragment(destination.Revision, target, destination.Find(target).Children.Count, fragmentEditing, values, phases, FragmentSelfOrders.IsChecked == true, d => adapter.Validate(d, selectedEntity!.Id));
+        return destination.ImportFragment(destination.Revision, target, destination.Find(target).Children.Count, fragmentEditing, values, phases, FragmentSelfOrders.IsChecked == true, ValidateAuthoring);
     }
     void PreviewFragmentInsertion(object sender, RoutedEventArgs e) => Try(PrepareFragmentPreview);
     void PrepareFragmentPreview()

@@ -24,16 +24,51 @@ internal sealed partial class SourceBehaviorSchema
             (ExternalFiles.Count==0?"":" Known references also occur in "+string.Join(", ",ExternalFiles.Order(StringComparer.OrdinalIgnoreCase).Select(Path.GetFileName))+"; phase-name changes need those source documents."));
     }
     public IReadOnlyList<SourceDefinition> SourceDefinitions()=>context.Definitions??=DiscoverDefinitions();
+    public IReadOnlyList<SourceDefinitionReference> ExternalDefinitions(int start,int length)
+    {
+        var model=Model;
+        return model.SyntaxTree.GetRoot().DescendantNodes().OfType<ExpressionSyntax>()
+            .Where(e=>e.SpanStart>=start&&e.Span.End<=start+length&&e is InvocationExpressionSyntax or IdentifierNameSyntax or MemberAccessExpressionSyntax)
+            .Select(e=>model.GetSymbolInfo(e).Symbol).Where(s=>s!=null)
+            .Where(s=>s switch{IMethodSymbol m=>Child(Element(m.ReturnType)),IFieldSymbol f=>Child(Element(f.Type)),IPropertySymbol p=>Child(Element(p.Type)),_=>false})
+            .SelectMany(s=>s!.DeclaringSyntaxReferences.Select(r=>r.GetSyntax()).Where(d=>d.SyntaxTree!=model.SyntaxTree)
+                .SelectMany(d=>DefinitionBodies(d).SelectMany(ExpandBranches).Select(b=>new SourceDefinitionReference(d.SyntaxTree.FilePath,s.Name,b.Expression.SpanStart,b.Expression.Span.Length))))
+            .Distinct().ToArray();
+    }
     IReadOnlyList<SourceDefinition> DiscoverDefinitions()
     {
         var model=Model;var tree=model.SyntaxTree;var syntax=tree.GetRoot();
         var expressions=syntax.DescendantNodes().OfType<ExpressionSyntax>().GroupBy(e=>(e.SpanStart,e.Span.Length)).ToDictionary(g=>g.Key,g=>g.First());
         var queue=new Queue<(ExpressionSyntax Expression,string Entity,bool Complete)>();
-        foreach(var registration in NativeRegistrations.Discover(model))
-            if(expressions.TryGetValue((registration.RootStart,registration.RootLength),out var root))queue.Enqueue((root,registration.EntityId,root is ObjectCreationExpressionSyntax or InvocationExpressionSyntax or IdentifierNameSyntax or MemberAccessExpressionSyntax));
-        var seen=new HashSet<(int Start,int Length,string Entity,bool Complete)>();var definitions=new Dictionary<string,DefinitionBuilder>(StringComparer.Ordinal);
+        var compilation=context.Binding.Value.Compilation;
+        var seen=new HashSet<(SyntaxTree Tree,int Start,int Length,string Entity,bool Complete)>();var definitions=new Dictionary<string,DefinitionBuilder>(StringComparer.Ordinal);
         static bool IsScope(SyntaxNode node)=>node is MethodDeclarationSyntax or LocalFunctionStatementSyntax or PropertyDeclarationSyntax or AnonymousFunctionExpressionSyntax||node is VariableDeclaratorSyntax&&node.Parent?.Parent is FieldDeclarationSyntax;
         static SyntaxNode? ScopeOf(SyntaxNode node)=>node.Ancestors().FirstOrDefault(IsScope);
+        IEnumerable<SyntaxTree> CallerTrees()
+        {
+            var files=new HashSet<SyntaxTree>{tree};
+            var known=new HashSet<ISymbol>(definitions.Values.Select(d=>d.Symbol),SymbolEqualityComparer.Default);
+            var recent=known.ToArray();
+            while(recent.Length!=0)
+            {
+                var next=new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+                foreach(var other in compilation.SyntaxTrees)
+                {
+                    var text=other.GetText().ToString();var candidates=recent.Where(s=>text.Contains(s.Name,StringComparison.Ordinal)).ToArray();if(candidates.Length==0)continue;
+                    var otherModel=compilation.GetSemanticModel(other);
+                    foreach(var reference in other.GetRoot().DescendantNodes().OfType<ExpressionSyntax>().Where(e=>e is InvocationExpressionSyntax or IdentifierNameSyntax or MemberAccessExpressionSyntax))
+                    {
+                        if(!candidates.Any(s=>s.Name==ReferenceName(reference))||otherModel.GetSymbolInfo(reference).Symbol is not {} symbol||!candidates.Any(s=>SymbolEqualityComparer.Default.Equals(s,symbol.OriginalDefinition)))continue;
+                        files.Add(other);
+                        var scope=ScopeOf(reference);var owner=scope==null?null:otherModel.GetDeclaredSymbol(scope);
+                        var type=owner switch{IMethodSymbol m=>m.ReturnType,IPropertySymbol p=>p.Type,IFieldSymbol f=>f.Type,ILocalSymbol l=>l.Type,_=>null};
+                        if(owner!=null&&type!=null&&Child(Element(type))&&known.Add(owner.OriginalDefinition))next.Add(owner.OriginalDefinition);
+                    }
+                }
+                recent=next.ToArray();
+            }
+            return files;
+        }
         string ScopeKey(SyntaxNode declaration)
         {
             var scope=ScopeOf(declaration);if(scope==null)return "<file>";
@@ -50,7 +85,14 @@ internal sealed partial class SourceBehaviorSchema
                 var type=symbol switch {IMethodSymbol method=>method.ReturnType,IFieldSymbol field=>field.Type,IPropertySymbol property=>property.Type,ILocalSymbol localValue=>localValue.Type,_=>null};
                 if(type==null||!Child(Element(type)))return;
                 var declared=symbol!.DeclaringSyntaxReferences.Select(r=>r.GetSyntax()).Where(n=>n.SyntaxTree==tree).ToArray();
-                if(declared.Length==0)return; // Never copy or execute another source file implicitly.
+                if(declared.Length==0)
+                {
+                    if(adapter.HasAdditionalSources&&entity.Length>0)
+                        foreach(var body in symbol.DeclaringSyntaxReferences.Select(r=>r.GetSyntax()).SelectMany(DefinitionBodies).SelectMany(ExpandBranches))
+                            queue.Enqueue((body.Expression,entity,complete&&body.Complete));
+                    return; // Traverse source ownership without copying or executing another file.
+                }
+                if(reference!=null&&reference.SyntaxTree!=tree)complete=false;
                 var key="$definition/"+symbol.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
                 if(symbol is IMethodSymbol {MethodKind:MethodKind.LocalFunction})key="$definition/"+ScopeKey(declared[0])+"/function:"+symbol.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
                 if(symbol is ILocalSymbol local)
@@ -67,7 +109,7 @@ internal sealed partial class SourceBehaviorSchema
                     ChildArgument? collection=Collection(type)?new("elements",Element(type).Name,type is IArrayTypeSymbol,false)
                         {CollectionType=type is IArrayTypeSymbol?null:type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}:null;
                     if(!definitions.TryGetValue(id,out var definition))definitions.Add(id,definition=new(id,symbol.Name+(bodies.Length==1?"":" · branch "+(index+1)),body,collection,symbol));
-                    if(reference!=null)definition.Uses.Add(new(reference.SpanStart,reference.Span.Length));
+                    if(reference?.SyntaxTree==tree)definition.Uses.Add(new(reference.SpanStart,reference.Span.Length));
                     if(entity.Length>0){definition.Encounters.Add(entity);definition.CompleteContexts&=complete;}
                     queue.Enqueue((body.Expression,entity,complete&&body.Complete));
                 }
@@ -75,15 +117,24 @@ internal sealed partial class SourceBehaviorSchema
         // Catalog declared bodies independently of reachability so removing a call preserves body IDs and locks.
         foreach(var declaration in syntax.DescendantNodes().Where(n=>n is MethodDeclarationSyntax or PropertyDeclarationSyntax or VariableDeclaratorSyntax or LocalFunctionStatementSyntax))
             AddDefinition(model.GetDeclaredSymbol(declaration),null,"",true);
+        // Walk only registrations that can reach these exact symbols. This preserves all
+        // known source callers while avoiding a traversal of every unrelated game encounter.
+        foreach(var registrationTree in adapter.HasAdditionalSources?CallerTrees():[tree])
+        {
+            var registrationExpressions=registrationTree==tree?expressions:registrationTree.GetRoot().DescendantNodes().OfType<ExpressionSyntax>().GroupBy(e=>(e.SpanStart,e.Span.Length)).ToDictionary(g=>g.Key,g=>g.First());
+            foreach(var registration in NativeRegistrations.Discover(compilation.GetSemanticModel(registrationTree)))
+                if(registrationExpressions.TryGetValue((registration.RootStart,registration.RootLength),out var root))queue.Enqueue((root,registration.EntityId,root is ObjectCreationExpressionSyntax or InvocationExpressionSyntax or IdentifierNameSyntax or MemberAccessExpressionSyntax));
+        }
         while(queue.TryDequeue(out var pending))
         {
-            if(!seen.Add((pending.Expression.SpanStart,pending.Expression.Span.Length,pending.Entity,pending.Complete)))continue;
+            if(!seen.Add((pending.Expression.SyntaxTree,pending.Expression.SpanStart,pending.Expression.Span.Length,pending.Entity,pending.Complete)))continue;
+            var referenceModel=compilation.GetSemanticModel(pending.Expression.SyntaxTree);
             foreach(var reference in pending.Expression.DescendantNodesAndSelf().OfType<ExpressionSyntax>())
             {
                 if(reference is not (InvocationExpressionSyntax or IdentifierNameSyntax or MemberAccessExpressionSyntax)||
                     reference.Parent is InvocationExpressionSyntax invocation&&invocation.Expression==reference||
                     reference.Parent is MemberAccessExpressionSyntax member&&member.Name==reference)continue;
-                AddDefinition(model.GetSymbolInfo(reference).Symbol,reference,pending.Entity,pending.Complete);
+                AddDefinition(referenceModel.GetSymbolInfo(reference).Symbol,reference,pending.Entity,pending.Complete);
             }
         }
         foreach(var other in context.Binding.Value.Compilation.SyntaxTrees.Where(t=>t!=tree))

@@ -61,7 +61,8 @@ public partial class MainWindow
         ["console"] = [consoleMode == 0 ? ConsoleRow.ActualHeight : consoleHeight, consoleMode],
         ["workspace"] = [WorkspaceTabs.SelectedIndex]
         };
-        if(definitionViewKey!=null)result["definition:"+definitionViewKey]=[1];return result;
+        if(definitionViewKey!=null)result["definition:"+definitionViewKey]=[1];
+        if(encounterDocument!=null)result["definition-file:"+document.SourceFile]=[1];return result;
     }
     void RestoreLayout(Dictionary<string, double[]> layout)
     {
@@ -76,6 +77,14 @@ public partial class MainWindow
         }
         if (layout.TryGetValue("workspace", out var workspace) && workspace.Length > 0 && double.IsFinite(workspace[0])) WorkspaceTabs.SelectedIndex = Math.Clamp((int)workspace[0], 0, WorkspaceTabs.Items.Count - 1);
         var definition=layout.Keys.FirstOrDefault(k=>k.StartsWith("definition:",StringComparison.Ordinal));
+        var definitionFile=layout.Keys.FirstOrDefault(k=>k.StartsWith("definition-file:",StringComparison.Ordinal));
+        if(definition!=null&&definitionFile!=null&&SourceDependencies().FirstOrDefault(s=>s.SourceFile.Equals(definitionFile[16..],StringComparison.OrdinalIgnoreCase)) is {} source)
+        {
+            var dependency=new Studio.Core.BehaviorDocument(source.Source,adapter,source.Identities,source.SourceFile);
+            if(dependency.Definitions.FirstOrDefault(d=>d.EntityId==definition[11..]&&d.Definition!.Encounters.Contains(selectedEntity!.Id)) is {} body)
+                EditExternalDefinition(new(source.SourceFile,body.Definition!.Label,body.Root.Start,body.Root.Length));
+            return;
+        }
         if(definition!=null&&document.Definitions.Any(d=>d.EntityId==definition[11..]&&d.Definition!.Encounters.Contains(selectedEntity!.Id)))EditDefinition(definition[11..]);
     }
     void LoadWorkspaceLayout()

@@ -58,7 +58,7 @@ public sealed class StateGraph : FrameworkElement
             dc.DrawRoundedRectangle(EncounterViewport.Brush("#202226"), new Pen(EncounterViewport.Brush(root.Id == highlight ? "#98B4C3" : "#3D414A"), 1), rect, 9, 9);
             Text(dc, DefinitionLabel==null?"SOURCE ENCOUNTER":"SHARED SOURCE DEFINITION", new(34, 29), 10, "#858B95", 290);
             Text(dc, DefinitionLabel??root.Label, new(34, 49), 15, "#E8E9EC", 290);
-            Text(dc, DefinitionLabel==null?"Phases are generated when the game loads":"Used by callers in this source document", new(34, 82), 11, "#92969F", 290);
+            Text(dc, DefinitionLabel==null?"Phases are generated when the game loads":"Shared source · edits affect its callers", new(34, 82), 11, "#92969F", 290);
             Text(dc, DefinitionLabel==null?"Select to edit its source arguments":"Select to edit its actual source contents", new(34, 106), 11, "#91A69D", 290);
             return;
         }

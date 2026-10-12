@@ -8,6 +8,7 @@ namespace Studio.Desktop;
 public partial class MainWindow
 {
     TextBox? phaseNameInput;
+    Button? parameterApplyButton;
     Button? renamePhaseButton, duplicateStructureButton, upStructureButton, downStructureButton, deleteStructureButton;
     Expander? organizeExpander;
     static string PhaseLiteral(string name) => SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(name)).ToFullString();
@@ -16,10 +17,11 @@ public partial class MainWindow
         var names = AuthoringRoot.Descendants().Where(n => n.Kind == "State").Select(n => document.StateName(n.Id)).ToHashSet();
         var index = 1; while (names.Contains("phase-" + index)) index++; return "phase-" + index;
     }
-    bool RegionEditable(BehaviorNode node) => document.CanEditRegion(node.Id);
+    bool RegionEditable(BehaviorNode node) => (encounterDocument==null||PrimaryDocument.LockedNodes.Count==0)&&document.CanEditRegion(node.Id);
     void UpdateOrganizeButtons()
     {
         if (selectedNode == null) return; var editable = RegionEditable(selectedNode);
+        if(parameterApplyButton!=null)parameterApplyButton.IsEnabled=editable;
         if (attackEditorButton != null) attackEditorButton.IsEnabled = editable;
         RefreshAttackSelection();
         if (movementEditorButton != null) movementEditorButton.IsEnabled = editable;
@@ -71,21 +73,21 @@ public partial class MainWindow
     void RenameSelectedPhase(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null || phaseNameInput == null) return;
-        var id = selectedNode.Id; var before = document.Revision; document.RenameState(id, phaseNameInput.Text, d => adapter.Validate(d, selectedEntity!.Id)); if (document.Revision != before) Changed(id);
+        var id = selectedNode.Id; var before = document.Revision; document.RenameState(id, phaseNameInput.Text, ValidateAuthoring); if (document.Revision != before) Changed(id);
     });
     void DuplicateSelectedNode(object sender, RoutedEventArgs e) => Try(() =>
     {
-        if (selectedNode == null) return; var copy = document.DuplicateNode(selectedNode.Id, d => adapter.Validate(d, selectedEntity!.Id)); Changed(copy);
+        if (selectedNode == null) return; var copy = document.DuplicateNode(selectedNode.Id, ValidateAuthoring); Changed(copy);
     });
     void MoveSelectedNodeUp(object sender, RoutedEventArgs e) => MoveSelectedNode(-1);
     void MoveSelectedNodeDown(object sender, RoutedEventArgs e) => MoveSelectedNode(1);
     void MoveSelectedNode(int direction) => Try(() =>
     {
-        if (selectedNode == null) return; var id = selectedNode.Id; var before = document.Revision; document.MoveNode(id, direction, d => adapter.Validate(d, selectedEntity!.Id)); if (document.Revision != before) Changed(id);
+        if (selectedNode == null) return; var id = selectedNode.Id; var before = document.Revision; document.MoveNode(id, direction, ValidateAuthoring); if (document.Revision != before) Changed(id);
     });
     void DeleteSelectedNode(object sender, RoutedEventArgs e) => Try(() =>
     {
-        if (selectedNode == null) return; var parent = document.DeleteNode(selectedNode.Id, d => adapter.Validate(d, selectedEntity!.Id)); Changed(parent);
+        if (selectedNode == null) return; var parent = document.DeleteNode(selectedNode.Id, ValidateAuthoring); Changed(parent);
     });
     void SelectTreeNode(Guid id)
     {

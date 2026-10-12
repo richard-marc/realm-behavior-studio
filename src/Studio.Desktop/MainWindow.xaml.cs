@@ -86,7 +86,7 @@ public partial class MainWindow : Window
         Status.Text = $"Ready · cold runtime initialization {cold.StartMs:0} ms";
         autosaveTimer.Start();
         Status.Text = $"{catalog.Count} source entities · {adapter.Primitives.Count} runtime constructors · all editing works offline";
-        if (arguments.Contains("--smoke")) Dispatcher.BeginInvoke(new Action(()=>{if(arguments.Contains("--source-set-smoke"))SourceSetSmoke();else Smoke();}), DispatcherPriority.ApplicationIdle);
+        if (arguments.Contains("--smoke")) Dispatcher.BeginInvoke(new Action(()=>{if(arguments.Contains("--external-definition-smoke"))ExternalDefinitionSmoke();else if(arguments.Contains("--source-set-smoke"))SourceSetSmoke();else Smoke();}), DispatcherPriority.ApplicationIdle);
     }
     void Try(Action action)
     {
@@ -95,10 +95,10 @@ public partial class MainWindow : Window
     string RecoveryPath() => Path.Combine(recoveryDir, (selectedEntity?.ObjectType.ToString("X4") ?? "project") + ".rbs.recovery");
     StudioProject Snapshot() => new()
     {
-        SourceFile = selectedEntity!.SourceFile, Source = document.Source, Identities = document.Identities,
+        SourceFile = selectedEntity!.SourceFile, Source = PrimaryDocument.Source, Identities = PrimaryDocument.Identities,
         AdditionalSources = SourceDependencies(),
         EntityId = selectedEntity.Id, Brief = Brief.Text, Player = ReadPreset(), Seed = int.Parse(Seed.Text), ArenaSize = int.Parse(ArenaSize.Text), Arena=arenaPreset,
-        Layout = CaptureLayout(), LockedNodes = document.LockedNodes.ToList(), CollapsedNodes = CollapsedNodes.ToList()
+        Layout = CaptureLayout(), LockedNodes = PrimaryDocument.LockedNodes.ToList(), CollapsedNodes = collapsedByDocument.GetValueOrDefault(PrimaryDocument,[]).ToList()
     };
     PlayerPreset ReadPreset() => new(int.Parse(PlayerHp.Text), int.Parse(PlayerSpeed.Text), int.Parse(PlayerDefense.Text), Invulnerable.IsChecked == true, Spectator.IsChecked == true,
         selectedWeaponId, int.Parse(PlayerAttack.Text), int.Parse(PlayerDexterity.Text), double.Parse(PlayerStartX.Text, System.Globalization.CultureInfo.InvariantCulture), double.Parse(PlayerStartY.Text, System.Globalization.CultureInfo.InvariantCulture));
@@ -110,9 +110,12 @@ public partial class MainWindow : Window
         Try(() =>
         {
             if (selectedEntity != null && document != null && !arguments.Contains("--smoke")) BehaviorDocument.Save(RecoveryPath(), Snapshot());
+            LeaveExternalDefinition();
             RememberSourceDraft();displayedSourceFile=null;
             if(selectedEntity!=null&&sourceDependencies.Count!=0)
                 sourceDependencies[selectedEntity.SourceFile]=new(selectedEntity.SourceFile,document.Source){Identities=document.Identities,LockedNodes=document.LockedNodes.ToList(),CollapsedNodes=CollapsedNodes.ToList()};
+            if(selectedEntity!=null)dependencyDocuments.Remove(selectedEntity.SourceFile);
+            dependencyDocuments.Remove(entry.SourceFile);
             selectedEntity = entry; session = null; running = false; Viewport.Session = null;
             if(sourceDependencies.TryGetValue(entry.SourceFile,out var dependency))
                 documents[entry.SourceFile]=document=new BehaviorDocument(dependency.Source,adapter,dependency.Identities,entry.SourceFile);
@@ -132,11 +135,12 @@ public partial class MainWindow : Window
         EntityTitle.Text = selectedEntity.Id; RefreshSourceFiles();
         EntitySprite.Source = sprites.Get(selectedEntity.Id); Viewport.PreviewEntity = selectedEntity.Id; Viewport.InvalidateVisual();
         EntitySubtitle.Text = $"{Path.GetFileNameWithoutExtension(selectedEntity.SourceFile)}  /  revision {document.Revision}";
-        var entity = document.Entities.FirstOrDefault(e => e.EntityId == selectedEntity.Id);
+        var entity = PrimaryDocument.Entities.FirstOrDefault(e => e.EntityId == selectedEntity.Id);
         var definition=document.Definitions.FirstOrDefault(d=>d.EntityId==definitionViewKey&&d.Definition!.Encounters.Contains(selectedEntity.Id));
+        if(definition==null&&encounterDocument!=null){LeaveExternalDefinition();RefreshDocument(selection);return;}
         if(definition==null)definitionViewKey=null;
         DefinitionBanner.Visibility=definition==null?Visibility.Collapsed:Visibility.Visible;
-        DefinitionTitle.Text=definition==null?"":$"Editing {definition.Definition!.Label} · {definition.Definition.Encounters.Count} {(definition.Definition.Encounters.Count==1?"caller":"callers")} in this document";
+        DefinitionTitle.Text=definition==null?"":$"Editing {definition.Definition!.Label} · {System.IO.Path.GetFileName(document.SourceFile)} · {definition.Definition.Encounters.Count} {(definition.Definition.Encounters.Count==1?"caller":"callers")}";
         DefinitionTitle.ToolTip=definition?.Definition?.Boundary;Graph.DefinitionLabel=definition?.Definition?.Label;
         SharedTemplateNotice.Visibility=entity?.Registration?.Shared==true?Visibility.Visible:Visibility.Collapsed;
         SharedTemplateNotice.Text=entity?.Registration?.Shared==true?$"Shared template · {document.Entities.Count(e=>e.Registration?.Shared==true&&e.Root.Start==entity.Root.Start)} variants · edits change shared source":"";
@@ -163,11 +167,13 @@ public partial class MainWindow : Window
     void NodeSelected(object sender, RoutedPropertyChangedEventArgs<object> e) { if (e.NewValue is TreeViewItem { Tag: BehaviorNode n } && n.Id != selectedNode?.Id) SelectAuthoringNode(n.Id, Keyboard.Modifiers); }
     void SelectNode(Guid id)
     {
+        if(encounterDocument!=null&&!document.AllNodes.Any(n=>n.Id==id)&&PrimaryDocument.AllNodes.Any(n=>n.Id==id))
+        {LeaveExternalDefinition();RefreshDocument(id);return;}
         if (selectedNode?.Id != id) ClearFragmentPreview();
         if (selectedNode?.Id != id) ClearCombatPreview();
         Try(() =>
         {
-            selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();
+            selectedNode = document.Find(id); Graph.Highlight = id; Inspector.Children.Clear();parameterApplyButton=null;
             RefreshFragmentDestinations();
             RefreshAttackSelection();
             RefreshMovementSelection();
@@ -221,24 +227,24 @@ public partial class MainWindow : Window
                 }
                 if (optional.Children.Count > 0) Inspector.Children.Add(new Expander { Header = "More supported parameters", Content = optional, Foreground = Brushes.LightSlateGray, Margin = new(0, 12, 0, 6) });
             }
-            var apply = new Button { Content = "Apply changes", Margin = new(0, 18, 0, 0) };
+            var apply = new Button { Content = "Apply changes", Margin = new(0, 18, 0, 0),IsEnabled=RegionEditable(selectedNode) };parameterApplyButton=apply;
             apply.Click += (_, _) => Try(() =>
             {
                 var operations = inputs.Where(i => i.Input.Text != i.Parameter.Expression).Select(i => new EditOperation(id, i.Parameter.Name, i.Input.Text)).ToArray();
                 if (operations.Length == 0) return;
-                document.Apply(new(document.Revision, "Edit " + selectedNode.Label, operations), d => adapter.Validate(d, selectedEntity!.Id)); Changed(id);
+                document.Apply(new(document.Revision, "Edit " + selectedNode.Label, operations), ValidateAuthoring); Changed(id);
             });
             if (selectedNode.Kind is not ("State" or "ArgumentGroup") && inputs.Count > 0) Inspector.Children.Add(apply);
             if (selectedNode.Kind == "State")
             {
                 var add = new Button { Content = "+ Add child phase" };
-                add.Click += (_, _) => Try(() => { document.AddChild(id, "new State(" + PhaseLiteral(NextPhaseName()) + ")", d => adapter.Validate(d, selectedEntity!.Id)); Changed(id); }); Inspector.Children.Add(add);
+                add.Click += (_, _) => Try(() => { document.AddChild(id, "new State(" + PhaseLiteral(NextPhaseName()) + ")", ValidateAuthoring); Changed(id); }); Inspector.Children.Add(add);
             }
             foreach (var diagnostic in ReviewDiagnostics().Where(d => d.NodeId == id)) Inspector.Children.Add(new TextBlock { Text = diagnostic.Message, TextWrapping = TextWrapping.Wrap, Foreground = EncounterViewport.Brush(diagnostic.IsError ? "#E5A195" : "#DAAE84"), Margin = new(0, 12, 0, 0) });
             if (selectedNode.Parameters.Any(p => p.Name == "count")) Proposal.Text = JsonSerializer.Serialize(new DocumentPatch(document.Revision, "Increase shot count", [new(id, "count", "3")]), BehaviorDocument.JsonOptions);
         });
     }
-    void Changed(Guid? id = null) { running = false; session = null; Viewport.Session = null; RebindSourceWorkspace(); UpdatePlayButton(); RefreshDocument(id); Status.Text += " · changes take effect on next Play"; }
+    void Changed(Guid? id = null) { CaptureVisualDependencyEdit();running = false; session = null; Viewport.Session = null; RebindSourceWorkspace(); UpdatePlayButton(); RefreshDocument(id); Status.Text += " · changes take effect on next Play"; }
     void AddPrimitive(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null || Primitives.SelectedItem is not Primitive p) return;
@@ -248,7 +254,7 @@ public partial class MainWindow : Window
     void StartSession(string? phase = null)
     {
         ClearViewportEditors();
-        session = new EncounterSession(adapter, document, selectedEntity!.Id, int.Parse(Seed.Text), ReadPreset(), int.Parse(ArenaSize.Text), phase, arena:arenaPreset);
+        session = new EncounterSession(adapter, PrimaryDocument, selectedEntity!.Id, int.Parse(Seed.Text), ReadPreset(), int.Parse(ArenaSize.Text), phase, arena:arenaPreset);
         BindSession(phase);
     }
     void BindSession(string? phase)
@@ -323,15 +329,15 @@ public partial class MainWindow : Window
     void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow { Event.NodeId: { } id }) SelectNode(id); }
     void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => { BranchTimeline(); session.SetBossHpFraction(e.NewValue / 100); UpdateSession(); }); }
     void ApplySource(object sender, RoutedEventArgs e) => Try(ApplySourceBuffer);
-    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if (SourceWorkspace.IsSelected && UndoSourceBuffer(false)) {} else if (document.Undo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
-    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if (SourceWorkspace.IsSelected && UndoSourceBuffer(true)) {} else if (document.Redo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
+    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if ((SourceWorkspace.IsSelected||encounterDocument!=null) && UndoSourceBuffer(false)) {} else if (document.Undo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
+    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if ((SourceWorkspace.IsSelected||encounterDocument!=null) && UndoSourceBuffer(true)) {} else if (document.Redo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
     void ImportSource(object sender, RoutedEventArgs e) => Try(() =>
     {
         var dialog = new OpenFileDialog { Filter = "C# behavior files|*.cs", InitialDirectory = Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db") };
         if (dialog.ShowDialog() != true) return;
         var d = new BehaviorDocument(File.ReadAllText(dialog.FileName), adapter, sourceFile: dialog.FileName); var id = d.Entities.FirstOrDefault()?.EntityId ?? throw new ArgumentException("No .Init entity definition found.");
         var known = catalog.FirstOrDefault(c => c.Id == id) ?? throw new ArgumentException("This entity has no resource definition in the supplied server.");
-        selectedEntity = known with { SourceFile = dialog.FileName }; document = d; documents[dialog.FileName] = d; projectPath = null; Changed();
+        encounterDocument=null;selectedEntity = known with { SourceFile = dialog.FileName }; document = d; documents[dialog.FileName] = d; projectPath = null; Changed();
     });
     void SaveProject(object sender, RoutedEventArgs e) => Try(() =>
     {
@@ -392,11 +398,11 @@ public partial class MainWindow : Window
         if (proposal.ExpectedRevision != document.Revision) throw new InvalidOperationException("This proposal is stale.");
         var candidate = new BehaviorDocument(document.Source, adapter, document.Identities, document.SourceFile);
         foreach (var id in document.LockedNodes) candidate.LockedNodes.Add(id);
-        candidate.Apply(proposal with { ExpectedRevision = 0 }, d => adapter.Validate(d, selectedEntity!.Id));
+        candidate.Apply(proposal with { ExpectedRevision = 0 }, ValidateAuthoring);
         pendingProposal = proposal;
         ProposalPreview.Text = proposal.Description + "\n" + string.Join("\n", proposal.Operations.Select(o => document.Find(o.NodeId).Label + "." + o.Parameter + " → " + o.Expression));
     }
-    void ApplyProposal(object sender, RoutedEventArgs e) => Try(() => { if (pendingProposal == null) throw new ArgumentException("Preview a proposal first."); document.Apply(pendingProposal, d => adapter.Validate(d, selectedEntity!.Id)); pendingProposal = null; Changed(); });
+    void ApplyProposal(object sender, RoutedEventArgs e) => Try(() => { if (pendingProposal == null) throw new ArgumentException("Preview a proposal first."); document.Apply(pendingProposal, ValidateAuthoring); pendingProposal = null; Changed(); });
     void Shortcut(object sender, KeyEventArgs e)
     {
         if (HandleAuthoringShortcut(e)) return;
@@ -413,7 +419,7 @@ public partial class MainWindow : Window
     void Smoke() => Try(() =>
     {
         var shoot = document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root.Descendants().Single(n => n.Kind == "Shoot");
-        document.Apply(new(document.Revision, "Desktop smoke fan", [new(shoot.Id, "count", "7")]), d => adapter.Validate(d, selectedEntity!.Id));
+        document.Apply(new(document.Revision, "Desktop smoke fan", [new(shoot.Id, "count", "7")]), ValidateAuthoring);
         RefreshDocument(shoot.Id); StartSession();
         for (var i = 0; i < 35; i++) session!.Step(new()); UpdateSession();
         var output = Path.GetFullPath(".artifacts/desktop"); Directory.CreateDirectory(output);

@@ -62,7 +62,7 @@ public partial class MainWindow
     }
     void CommitMovementValue(Guid nodeId, long revision, string parameter, string expression)
     {
-        document.Apply(new(revision, "Adjust movement " + parameter, [new(nodeId, parameter, expression)]), candidate => adapter.Validate(candidate, selectedEntity!.Id));
+        document.Apply(new(revision, "Adjust movement " + parameter, [new(nodeId, parameter, expression)]), ValidateAuthoring);
         Changed(nodeId);
     }
 }

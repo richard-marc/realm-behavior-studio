@@ -110,8 +110,8 @@ public partial class MainWindow
         };
         createNativeButton.Click += (_, _) => Try(() =>
         {
-            if (replace) Changed(document.ReplaceChild(owner.Id, constructorPreview.Text, d => adapter.Validate(d, selectedEntity!.Id)));
-            else { document.AddChild(owner.Id, constructorPreview.Text, d => adapter.Validate(d, selectedEntity!.Id)); Changed(document.Find(owner.Id).Children.Last().Id); }
+            if (replace) Changed(document.ReplaceChild(owner.Id, constructorPreview.Text, ValidateAuthoring));
+            else { document.AddChild(owner.Id, constructorPreview.Text, ValidateAuthoring); Changed(document.Find(owner.Id).Children.Last().Id); }
         });
         constructorChoices.SelectedIndex = primitive.Name == "State" ? overloads.ToList().FindIndex(o => o.Parameters.Any(p => p.Name == "name")) : 0;
     }

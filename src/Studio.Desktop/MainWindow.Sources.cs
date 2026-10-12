@@ -21,10 +21,11 @@ public partial class MainWindow
     string displayedSource="";
     bool refreshingSourceFiles;
 
-    List<StudioSourceDocument> SourceDependencies()=>sourceDependencies.Values.Where(s=>!s.SourceFile.Equals(selectedEntity!.SourceFile,StringComparison.OrdinalIgnoreCase)).ToList();
+    List<StudioSourceDocument> SourceDependencies()=>sourceDependencies.Values.Where(s=>!s.SourceFile.Equals(selectedEntity!.SourceFile,StringComparison.OrdinalIgnoreCase))
+        .Select(s=>dependencyDocuments.TryGetValue(s.SourceFile,out var d)?s with{Source=d.Source,Identities=d.Identities,LockedNodes=d.LockedNodes.ToList(),CollapsedNodes=collapsedByDocument.GetValueOrDefault(d,[]).ToList()}:s).ToList();
     void LoadSourceDependencies(StudioProject project,RapleAdapter scoped)
     {
-        sourceDependencies.Clear();sourceUndo.Clear();sourceRedo.Clear();sourceDrafts.Clear();displayedSourceFile=null;
+        encounterDocument=null;dependencyDocuments.Clear();sourceDependencies.Clear();sourceUndo.Clear();sourceRedo.Clear();sourceDrafts.Clear();displayedSourceFile=null;
         foreach(var source in project.AdditionalSources)sourceDependencies.Add(source.SourceFile,source);
         adapter=scoped;
     }
@@ -32,7 +33,8 @@ public partial class MainWindow
     {
         if(sourceDependencies.Count==0&&!adapter.HasAdditionalSources)return;
         adapter=adapter.ForProject(Snapshot());
-        document.RebindSchema(adapter);
+        PrimaryDocument.RebindSchema(adapter);
+        if(encounterDocument!=null)document.RebindSchema(adapter);
     }
     void RememberSourceDraft()
     {
@@ -62,7 +64,7 @@ public partial class MainWindow
         if(SourceFiles.SelectedItem is not SourceFileChoice choice)return;
         displayedSourceFile=choice.Path;
         var primary=choice.Path.Equals(selectedEntity!.SourceFile,StringComparison.OrdinalIgnoreCase);
-        displayedSource=primary?document.Source:sourceDependencies[choice.Path].Source;
+        displayedSource=primary?PrimaryDocument.Source:SourceDependencies().Single(s=>s.SourceFile.Equals(choice.Path,StringComparison.OrdinalIgnoreCase)).Source;
         SourceEditor.Text=sourceDrafts.GetValueOrDefault(choice.Path,displayedSource);
         SourceFileNotice.Text=primary?"Encounter source · Apply checks all project files.":"Shared file · saved and played with this encounter. Edit shared phases here.";
     }
@@ -98,13 +100,13 @@ public partial class MainWindow
     {
         if(displayedSourceFile==null||displayedSourceFile.Equals(selectedEntity!.SourceFile,StringComparison.OrdinalIgnoreCase))
         {
-            document.ReplaceSource(SourceEditor.Text,d=>adapter.Validate(d,selectedEntity!.Id));
+            PrimaryDocument.ReplaceSource(SourceEditor.Text,d=>adapter.Validate(d,selectedEntity!.Id));
             sourceDrafts.Remove(selectedEntity!.SourceFile);displayedSource=SourceEditor.Text;Changed();return;
         }
-        var previous=sourceDependencies[displayedSourceFile];
+        var previous=SourceDependencies().Single(s=>s.SourceFile.Equals(displayedSourceFile,StringComparison.OrdinalIgnoreCase));
         if(previous.Source==SourceEditor.Text)return;
         // Cross-file caller ownership is not complete yet. Do not bypass existing caller locks.
-        if(document.LockedNodes.Count!=0)throw new InvalidOperationException("Unlock the encounter before changing a shared source file; cross-file lock ownership is still pending.");
+        if(PrimaryDocument.LockedNodes.Count!=0)throw new InvalidOperationException("Unlock the encounter before changing a shared source file; cross-file lock ownership is still pending.");
         var candidate=previous with{Source=SourceEditor.Text};var scoped=ValidateSourceWorkspace(WithDependency(candidate));
         var dependency=new BehaviorDocument(previous.Source,scoped,previous.Identities,previous.SourceFile);
         dependency.LockedNodes.UnionWith(previous.LockedNodes);
@@ -112,18 +114,27 @@ public partial class MainWindow
         candidate=candidate with{Identities=dependency.Identities};
         if(!sourceUndo.TryGetValue(previous.SourceFile,out var history))sourceUndo[previous.SourceFile]=history=new();
         history.Push(previous);sourceRedo.Remove(previous.SourceFile);
-        sourceDependencies[previous.SourceFile]=candidate;sourceDrafts.Remove(previous.SourceFile);displayedSource=candidate.Source;scenarioRevision++;Changed();
+        InstallDependencySource(candidate);sourceDrafts.Remove(previous.SourceFile);displayedSource=candidate.Source;scenarioRevision++;Changed();
     }
     bool UndoSourceBuffer(bool redo)
     {
-        if(displayedSourceFile==null||displayedSourceFile.Equals(selectedEntity!.SourceFile,StringComparison.OrdinalIgnoreCase))return false;
+        var file=SourceWorkspace.IsSelected?displayedSourceFile:encounterDocument!=null?document.SourceFile:displayedSourceFile;
+        if(file==null||file.Equals(selectedEntity!.SourceFile,StringComparison.OrdinalIgnoreCase))return false;
         var from=redo?sourceRedo:sourceUndo;var to=redo?sourceUndo:sourceRedo;
-        if(!from.TryGetValue(displayedSourceFile,out var history)||history.Count==0)return true;
+        if(!from.TryGetValue(file,out var history)||history.Count==0)return true;
         var candidate=history.Peek();ValidateSourceWorkspace(WithDependency(candidate));
-        if(document.LockedNodes.Count!=0||sourceDependencies[displayedSourceFile].LockedNodes.Count!=0)throw new InvalidOperationException("Unlock the encounter and shared source before restoring this edit.");
-        if(!to.TryGetValue(displayedSourceFile,out var other))to[displayedSourceFile]=other=new();
-        other.Push(sourceDependencies[displayedSourceFile]);history.Pop();sourceDependencies[displayedSourceFile]=candidate;
-        sourceDrafts.Remove(displayedSourceFile);displayedSource=candidate.Source;SourceEditor.Text=candidate.Source;scenarioRevision++;Changed();return true;
+        if(PrimaryDocument.LockedNodes.Count!=0||SourceDependencies().Single(s=>s.SourceFile.Equals(file,StringComparison.OrdinalIgnoreCase)).LockedNodes.Count!=0)throw new InvalidOperationException("Unlock the encounter and shared source before restoring this edit.");
+        if(!to.TryGetValue(file,out var other))to[file]=other=new();
+        other.Push(SourceDependencies().Single(s=>s.SourceFile.Equals(file,StringComparison.OrdinalIgnoreCase)));history.Pop();InstallDependencySource(candidate);
+        sourceDrafts.Remove(file);if(displayedSourceFile==file){displayedSource=candidate.Source;SourceEditor.Text=candidate.Source;}scenarioRevision++;Changed();return true;
+    }
+    void InstallDependencySource(StudioSourceDocument source)
+    {
+        sourceDependencies[source.SourceFile]=source;
+        if(!dependencyDocuments.Remove(source.SourceFile,out var previous))return;
+        var replacement=new BehaviorDocument(source.Source,adapter.ForProject(WithDependency(source)),source.Identities,source.SourceFile);
+        replacement.LockedNodes.UnionWith(source.LockedNodes);collapsedByDocument[replacement]=source.CollapsedNodes.ToHashSet();dependencyDocuments[source.SourceFile]=replacement;
+        if(ReferenceEquals(document,previous))document=replacement;
     }
     void ExportSourceWorkspace(string path,StudioProject project,NativeRuntimeStamp stamp)
     {

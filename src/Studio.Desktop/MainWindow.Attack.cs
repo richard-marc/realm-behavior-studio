@@ -46,7 +46,7 @@ public partial class MainWindow
     }
     void CommitAttackEdit(AttackSelection selection, string parameter, double value)
     {
-        document.Apply(new(selection.Revision, "Adjust attack " + parameter, [new(selection.NodeId, parameter, value.ToString("0.###", CultureInfo.InvariantCulture))]), d => adapter.Validate(d, selectedEntity!.Id));
+        document.Apply(new(selection.Revision, "Adjust attack " + parameter, [new(selection.NodeId, parameter, value.ToString("0.###", CultureInfo.InvariantCulture))]), ValidateAuthoring);
         Changed(selection.NodeId);
     }
 }

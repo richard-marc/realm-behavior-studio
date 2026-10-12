@@ -5,9 +5,10 @@ using Studio.Core;
 namespace Studio.Desktop;
 public partial class MainWindow
 {
-    BehaviorNode EncounterRoot => document.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root;
+    BehaviorNode EncounterRoot => PrimaryDocument.Entities.Single(e => e.EntityId == selectedEntity!.Id).Root;
     BehaviorNode AuthoringRoot=>document.Definitions.FirstOrDefault(d=>d.EntityId==definitionViewKey)?.Root??EncounterRoot;
-    IEnumerable<DocumentDiagnostic> ReviewDiagnostics() => adapter.Validate(document, selectedEntity!.Id)
+    IEnumerable<DocumentDiagnostic> ReviewDiagnostics() => adapter.Validate(PrimaryDocument, selectedEntity!.Id)
+        .Concat(encounterDocument==null?[]:adapter.Validate(document,selectedEntity!.Id))
         .Concat(BehaviorAnalysis.Analyze(AuthoringRoot).Diagnostics);
     void RefreshPhaseReview(IReadOnlyList<DocumentDiagnostic> diagnostics)
     {
