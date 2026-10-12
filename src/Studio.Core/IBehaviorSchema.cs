@@ -20,7 +20,11 @@ public record SourceExpression(string Kind, string Label, bool IsState, IReadOnl
 public record SourceDefinitionUse(int Start,int Length);
 public record SourceDefinitionReference(string SourceFile,string Label,int Start,int Length);
 public record SourceDefinition(string Key,string Label,int Start,int Length,ChildArgument? Collection,
-    IReadOnlyList<string> Encounters,IReadOnlyList<SourceDefinitionUse> Uses,bool CompletePhaseContents,string Boundary);
+    IReadOnlyList<string> Encounters,IReadOnlyList<SourceDefinitionUse> Uses,bool CompletePhaseContents,string Boundary)
+{
+    public bool StructurallyComplete {get;init;}
+    public IReadOnlyList<string> CallerFiles {get;init;}=[];
+}
 
 public interface IBehaviorSchema
 {

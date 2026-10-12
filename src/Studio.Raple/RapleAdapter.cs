@@ -24,6 +24,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     public string FragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(" + string.Join(",\n", expressions) + ")";
     public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(children: [" + string.Join(",\n", expressions) + "])";
     readonly SourceSchemaCache sourceSchemas;
+    internal CSharpCompilation SourceCompilation(StudioProject project)=>sourceSchemas.Bind(project.Source,project.SourceFile).Compilation;
+    internal bool PhasePrimitive(BehaviorDocument document,BehaviorNode node)=>Supported.Contains(node.Kind)&&NativeKind(document,node)==node.Kind;
     public bool HasAdditionalSources {get;}
     public RapleAdapter ForProject(StudioProject project)
     {

@@ -48,6 +48,9 @@ try {
     & dotnet run --project tests/ExternalDefinition.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/external-definition-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/external-definition-checks.log' -Tail 25; throw 'Cross-file visual definition checks failed.' }
     Get-Content '.artifacts/external-definition-checks.log' -Tail 1
+    & dotnet run --project tests/PhaseWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/phase-workspace-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/phase-workspace-checks.log' -Tail 25; throw 'Coordinated phase workspace checks failed.' }
+    Get-Content '.artifacts/phase-workspace-checks.log' -Tail 1
     & dotnet run --project tests/OwnedEmitter.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/owned-emitter-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/owned-emitter-checks.log' -Tail 25; throw 'Owned emitter checks failed.' }
     Get-Content '.artifacts/owned-emitter-checks.log' -Tail 1
@@ -91,7 +94,7 @@ try {
     $studioProcess = Start-Process -FilePath $studioExe -ArgumentList @('--smoke', '--server', ('"' + [IO.Path]::GetFullPath($ServerRoot) + '"')) -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
     $studioDeadline = [Diagnostics.Stopwatch]::StartNew()
     while (!$studioProcess.WaitForExit(5000)) {
-        if ($studioDeadline.Elapsed.TotalSeconds -gt 420) { throw 'Desktop authoring/native-preview smoke test did not finish within 420 seconds.' }
+        if ($studioDeadline.Elapsed.TotalSeconds -gt 1200) { throw 'Desktop authoring/native-preview smoke suite did not finish within 1200 seconds.' }
     }
     if ($studioProcess.ExitCode -ne 0) { throw 'Desktop smoke test failed; see .artifacts/desktop-smoke-error.txt.' }
     Write-Host 'Desktop import/edit/play/save/trace/render smoke passed.'

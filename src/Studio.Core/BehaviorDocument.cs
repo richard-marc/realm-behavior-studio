@@ -22,6 +22,7 @@ public record EntityBehavior(string EntityId, int Start, BehaviorNode Root)
     public SourceDefinition? Definition { get; init; }
 }
 public record EditOperation(Guid NodeId, string Parameter, string Expression);
+public record SourceLiteralEdit(int Start,int Length,string Expression);
 public record DocumentPatch(long ExpectedRevision, string Description, IReadOnlyList<EditOperation> Operations);
 public record DocumentDiagnostic(string Message, Guid? NodeId = null, bool IsError = true);
 public record NodeIdentity(Guid Id, string Path, string Kind, string? Signature = null);
@@ -281,6 +282,21 @@ public sealed partial class BehaviorDocument
         if (LockedNodes.Count > 0) throw new InvalidOperationException("Unlock regions before replacing the complete source.");
         Commit(source, Identities, validate);
     }
+    public void ApplyLiteralEdits(long expectedRevision,IReadOnlyList<SourceLiteralEdit> edits,IBehaviorSchema binding)
+    {
+        if(expectedRevision!=Revision)throw new InvalidOperationException("The source changed while the coordinated edit was prepared.");
+        var ordered=edits.Distinct().OrderByDescending(e=>e.Start).ToArray();var changed=Source;var previous=Source.Length;
+        foreach(var edit in ordered)
+        {
+            if(edit.Start<0||edit.Length<1||edit.Start+edit.Length>previous||SyntaxFactory.ParseExpression(Source.Substring(edit.Start,edit.Length)) is not LiteralExpressionSyntax {Token.Value:string}||SyntaxFactory.ParseExpression(edit.Expression) is not LiteralExpressionSyntax {Token.Value:string})throw new ArgumentException("A coordinated edit must replace non-overlapping string literals.");
+            var owner=AllNodes.Where(n=>n.Start<=edit.Start&&n.Start+n.Length>=edit.Start+edit.Length).OrderBy(n=>n.Length).FirstOrDefault();
+            if(owner!=null)Editable(owner);else if(LockedNodes.Count>0)throw new InvalidOperationException("Unprojected source cannot change while this document has locks.");
+            previous=edit.Start;changed=changed.Remove(edit.Start,edit.Length).Insert(edit.Start,edit.Expression);
+        }
+        var candidate=new BehaviorDocument(changed,binding,Identities,SourceFile);
+        var errors=candidate.SourceDiagnostics().Where(d=>d.IsError).ToArray();if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
+        baseSchema=binding;Commit(changed,Identities,null);
+    }
     void Commit(string source, List<NodeIdentity> ids, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
         var candidate = new BehaviorDocument(source, names, ids, baseSchema, SourceFile);
@@ -299,6 +315,16 @@ public sealed partial class BehaviorDocument
         RewriteChildren(new() { [parent.Id] = children }, new() { [node.Id] = SyntaxFactory.Argument(child) }, validate);
     }
     public bool Undo() => Restore(undo, redo);
+    public void DiscardRedoHistory()=>redo.Clear();
+    public bool CanRestoreSourceHistory(string expectedSource,bool redoDirection)
+    {
+        var history=redoDirection?redo:undo;
+        return history.TryPeek(out var previous)&&previous.Source==expectedSource;
+    }
+    public bool RestoreSourceHistory(string expectedSource,bool redoDirection)
+    {
+        return CanRestoreSourceHistory(expectedSource,redoDirection)&&(redoDirection?Redo():Undo());
+    }
     static bool VisualValue(ExpressionSyntax expression) => expression switch
     {
         LiteralExpressionSyntax => true,

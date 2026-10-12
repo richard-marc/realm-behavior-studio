@@ -86,7 +86,7 @@ public partial class MainWindow : Window
         Status.Text = $"Ready · cold runtime initialization {cold.StartMs:0} ms";
         autosaveTimer.Start();
         Status.Text = $"{catalog.Count} source entities · {adapter.Primitives.Count} runtime constructors · all editing works offline";
-        if (arguments.Contains("--smoke")) Dispatcher.BeginInvoke(new Action(()=>{if(arguments.Contains("--external-definition-smoke"))ExternalDefinitionSmoke();else if(arguments.Contains("--source-set-smoke"))SourceSetSmoke();else Smoke();}), DispatcherPriority.ApplicationIdle);
+        if (arguments.Contains("--smoke")) Dispatcher.BeginInvoke(new Action(()=>{if(arguments.Contains("--workspace-phase-smoke"))WorkspacePhaseSmoke();else if(arguments.Contains("--external-definition-smoke"))ExternalDefinitionSmoke();else if(arguments.Contains("--source-set-smoke"))SourceSetSmoke();else Smoke();}), DispatcherPriority.ApplicationIdle);
     }
     void Try(Action action)
     {
@@ -244,7 +244,7 @@ public partial class MainWindow : Window
             if (selectedNode.Parameters.Any(p => p.Name == "count")) Proposal.Text = JsonSerializer.Serialize(new DocumentPatch(document.Revision, "Increase shot count", [new(id, "count", "3")]), BehaviorDocument.JsonOptions);
         });
     }
-    void Changed(Guid? id = null) { CaptureVisualDependencyEdit();running = false; session = null; Viewport.Session = null; RebindSourceWorkspace(); UpdatePlayButton(); RefreshDocument(id); Status.Text += " · changes take effect on next Play"; }
+    void Changed(Guid? id = null) { CaptureVisualDependencyEdit();InvalidateWorkspacePhaseRedo();running = false; session = null; Viewport.Session = null; RebindSourceWorkspace(); UpdatePlayButton(); RefreshDocument(id); Status.Text += " · changes take effect on next Play"; }
     void AddPrimitive(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null || Primitives.SelectedItem is not Primitive p) return;
@@ -329,8 +329,8 @@ public partial class MainWindow : Window
     void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow { Event.NodeId: { } id }) SelectNode(id); }
     void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => { BranchTimeline(); session.SetBossHpFraction(e.NewValue / 100); UpdateSession(); }); }
     void ApplySource(object sender, RoutedEventArgs e) => Try(ApplySourceBuffer);
-    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if ((SourceWorkspace.IsSelected||encounterDocument!=null) && UndoSourceBuffer(false)) {} else if (document.Undo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
-    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if ((SourceWorkspace.IsSelected||encounterDocument!=null) && UndoSourceBuffer(true)) {} else if (document.Redo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
+    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if(RestoreWorkspacePhase(false)) {} else if ((SourceWorkspace.IsSelected||encounterDocument!=null) && UndoSourceBuffer(false)) {} else if (document.Undo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
+    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if(RestoreWorkspacePhase(true)) {} else if ((SourceWorkspace.IsSelected||encounterDocument!=null) && UndoSourceBuffer(true)) {} else if (document.Redo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
     void ImportSource(object sender, RoutedEventArgs e) => Try(() =>
     {
         var dialog = new OpenFileDialog { Filter = "C# behavior files|*.cs", InitialDirectory = Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db") };

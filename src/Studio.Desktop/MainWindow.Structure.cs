@@ -73,6 +73,7 @@ public partial class MainWindow
     void RenameSelectedPhase(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null || phaseNameInput == null) return;
+        if(adapter.HasAdditionalSources){RenameWorkspacePhase(selectedNode.Id,phaseNameInput.Text);return;}
         var id = selectedNode.Id; var before = document.Revision; document.RenameState(id, phaseNameInput.Text, ValidateAuthoring); if (document.Revision != before) Changed(id);
     });
     void DuplicateSelectedNode(object sender, RoutedEventArgs e) => Try(() =>

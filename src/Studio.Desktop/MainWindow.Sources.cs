@@ -25,7 +25,7 @@ public partial class MainWindow
         .Select(s=>dependencyDocuments.TryGetValue(s.SourceFile,out var d)?s with{Source=d.Source,Identities=d.Identities,LockedNodes=d.LockedNodes.ToList(),CollapsedNodes=collapsedByDocument.GetValueOrDefault(d,[]).ToList()}:s).ToList();
     void LoadSourceDependencies(StudioProject project,RapleAdapter scoped)
     {
-        encounterDocument=null;dependencyDocuments.Clear();sourceDependencies.Clear();sourceUndo.Clear();sourceRedo.Clear();sourceDrafts.Clear();displayedSourceFile=null;
+        workspacePhaseUndo.Clear();workspacePhaseRedo.Clear();encounterDocument=null;dependencyDocuments.Clear();sourceDependencies.Clear();sourceUndo.Clear();sourceRedo.Clear();sourceDrafts.Clear();displayedSourceFile=null;
         foreach(var source in project.AdditionalSources)sourceDependencies.Add(source.SourceFile,source);
         adapter=scoped;
     }
@@ -131,10 +131,14 @@ public partial class MainWindow
     void InstallDependencySource(StudioSourceDocument source)
     {
         sourceDependencies[source.SourceFile]=source;
-        if(!dependencyDocuments.Remove(source.SourceFile,out var previous))return;
-        var replacement=new BehaviorDocument(source.Source,adapter.ForProject(WithDependency(source)),source.Identities,source.SourceFile);
-        replacement.LockedNodes.UnionWith(source.LockedNodes);collapsedByDocument[replacement]=source.CollapsedNodes.ToHashSet();dependencyDocuments[source.SourceFile]=replacement;
-        if(ReferenceEquals(document,previous))document=replacement;
+        if(dependencyDocuments.TryGetValue(source.SourceFile,out var retained)&&
+            (retained.Source==source.Source||retained.RestoreSourceHistory(source.Source,false)||retained.RestoreSourceHistory(source.Source,true)))
+        {
+            retained.RebindSchema(adapter.ForProject(WithDependency(source)));retained.LockedNodes.Clear();retained.LockedNodes.UnionWith(source.LockedNodes);collapsedByDocument[retained]=source.CollapsedNodes.ToHashSet();return;
+        }
+        if(!dependencyDocuments.TryGetValue(source.SourceFile,out var previous))return;
+        previous.RebindSchema(adapter.ForProject(WithDependency(source)));previous.ReplaceSource(source.Source);
+        previous.LockedNodes.UnionWith(source.LockedNodes);collapsedByDocument[previous]=source.CollapsedNodes.ToHashSet();
     }
     void ExportSourceWorkspace(string path,StudioProject project,NativeRuntimeStamp stamp)
     {

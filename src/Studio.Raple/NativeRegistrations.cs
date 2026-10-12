@@ -9,6 +9,25 @@ namespace Studio.Raple;
 // is a shared source template; runtime registration/skip order remains native.
 internal static class NativeRegistrations
 {
+    public static IEnumerable<ExpressionSyntax> UnresolvedRoots(SemanticModel model,IReadOnlyList<EncounterSource> known)
+    {
+        // Chained Init invocations share SpanStart; the member name identifies each registration.
+        var starts=known.Select(r=>r.OrderStart).ToHashSet();
+        foreach(var call in model.SyntaxTree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            var start=call.Expression is MemberAccessExpressionSyntax member?member.Name.SpanStart:call.Expression.SpanStart;
+            if(starts.Contains(start)||model.GetSymbolInfo(call).Symbol is not IMethodSymbol method||method.ContainingType.ToDisplayString()!="TKR.WorldServer.logic.BehaviorDb.ctor"||method.Name is not ("Init" or "InitMany"))continue;
+            var positional=0;
+            foreach(var argument in call.ArgumentList.Arguments)
+            {
+                var name=argument.NameColon?.Name.Identifier.ValueText;
+                if(name==null){if(positional>=method.Parameters.Length)continue;name=method.Parameters[positional].Name;}
+                var index=Array.FindIndex(method.Parameters.ToArray(),p=>p.Name==name);if(index<0)continue;
+                if(name=="rootState")yield return argument.Expression;
+                positional=index+1;
+            }
+        }
+    }
     public static IReadOnlyList<EncounterSource> Discover(SemanticModel model)
     {
         var result=new List<EncounterSource>();
