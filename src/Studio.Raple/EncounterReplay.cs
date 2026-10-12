@@ -216,8 +216,12 @@ public sealed class ReplayCursor
         }
         cancellation.ThrowIfCancellationRequested();
         var completed=commandIndex==0?replay.Initial:replay.Commands[commandIndex-1].Result!;
-        if(!Session.Effects.Take(completed.Effects).SequenceEqual(replay.Effects.Take(completed.Effects)))
-            throw new InvalidOperationException("Native replay effect prefix diverged at "+Session.Ms+" ms.");
+        if(!Session.Events.Take(completed.Events).SequenceEqual(replay.Events.Take(completed.Events))||
+           !Session.Shots.Take(completed.Shots).SequenceEqual(replay.Shots.Take(completed.Shots))||
+           !Session.PlayerShots.Take(completed.PlayerShots).SequenceEqual(replay.PlayerShots.Take(completed.PlayerShots))||
+           !Session.Movements.Take(completed.Movements).SequenceEqual(replay.Movements.Take(completed.Movements))||
+           !Session.Effects.Take(completed.Effects).SequenceEqual(replay.Effects.Take(completed.Effects)))
+            throw new InvalidOperationException("Native replay completed event/emission prefix diverged at "+Session.Ms+" ms.");
         if(commandIndex<replay.Commands.Length && replay.Commands[commandIndex].Kind=="advance" && Session.Ms>replay.Commands[commandIndex].Ms)
         {
             var next=replay.Commands[commandIndex].Result!;

@@ -96,8 +96,8 @@ public partial class MainWindow
     void SelectTimelineEvent(EncounterEvent ev)
     {
         TimelineVisual.Selected=ev; TimelineVisual.InvalidateVisual();
-        TimelineEventInfo.Text=ev.Message+(ev.ActorId is {} actor ? $" · actor #{actor}" : "")+(ev.NodeId==null ? " · source origin unavailable" : ev.Kind=="movement" ? " · observed phase source" : " · source origin recorded");
-        if(ev.NodeId is {} id && document.Identities.Any(n=>n.Id==id)) SelectNode(id);
+        TimelineEventInfo.Text=ev.Message+(ev.ActorId is {} actor ? $" · actor #{actor}" : "")+(ev.PhaseOrigin!=null ? " · observed phase construction" : ev.NodeId==null ? " · source origin unavailable" : ev.Kind=="movement" ? " · observed phase source" : " · source origin recorded");
+        NavigateRuntimeSource(ev);
     }
     void TimelineEventSelected(object sender, SelectionChangedEventArgs e)
     { if(TimelineEvents.SelectedItem is EventRow row) SelectTimelineEvent(row.Event); RefreshTimelineControls(); }

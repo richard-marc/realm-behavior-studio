@@ -327,7 +327,7 @@ public partial class MainWindow : Window
         Events.ItemsSource = rows; EventCount.Text = rows.Length + " events";
         if (follow && rows.Length > 0) Events.ScrollIntoView(rows[^1]);
     }
-    void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow { Event.NodeId: { } id }) SelectNode(id); }
+    void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow row) NavigateRuntimeSource(row.Event); }
     void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => { BranchTimeline(); session.SetBossHpFraction(e.NewValue / 100); UpdateSession(); }); }
     void ApplySource(object sender, RoutedEventArgs e) => Try(ApplySourceBuffer);
     void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if(RestoreWorkspacePhase(false)) {} else if ((SourceWorkspace.IsSelected||encounterDocument!=null) && UndoSourceBuffer(false)) {} else if (document.Undo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
@@ -381,7 +381,7 @@ public partial class MainWindow : Window
     {
         var project = Snapshot(); var expected = document; var revision = document.Revision;var expectedScenario=scenarioRevision;
         Status.Text = "Checking export…";
-        await using var native = await CompiledRuntime.StartAsync(adapter.ServerRoot, project);
+        await using var native = await CompiledRuntime.StartAsync(adapter.ServerRoot, project,captureStateOrigins:false);
         if (document != expected || document.Revision != revision || scenarioRevision!=expectedScenario || selectedEntity?.Id != project.EntityId) throw new InvalidOperationException("The document or arena changed during export checking. Export the current revision again.");
         var dialog = new SaveFileDialog { Filter = project.AdditionalSources.Count==0 ? "C# behavior source|*.cs" : "Verified source bundle|*.zip", FileName = project.AdditionalSources.Count==0 ? Path.GetFileName(selectedEntity.SourceFile) : selectedEntity.Id+".zip" };
         if (dialog.ShowDialog() != true) return;

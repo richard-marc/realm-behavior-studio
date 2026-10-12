@@ -11,7 +11,7 @@ using Studio.Core;
 namespace Studio.Raple;
 
 public record ExportVerification(bool Accepted, string[] Errors, int SourceFiles);
-public record NativeSourceStamp(string SourceHash, string EditedSourceHash, string ReferenceHash, string EmbeddedResourceHash, int SourceFiles);
+public record NativeSourceStamp(string SourceHash, string EditedSourceHash, string ReferenceHash, string EmbeddedResourceHash, int SourceFiles,bool StateOriginInstrumentation=false);
 public record NativeCompilation(ExportVerification Verification, byte[] Assembly, byte[] Symbols, NativeSourceStamp Stamp)
 {
     internal CSharpCompilation? Compiler { get; init; }
@@ -55,7 +55,7 @@ public static class SourceVerification
         var sources=project.AdditionalSources.Select(s=>(s.SourceFile,s.Source)).Prepend((project.SourceFile,project.Source)).ToDictionary(s=>Path.GetFullPath(s.SourceFile),s=>s.Source,StringComparer.OrdinalIgnoreCase);
         if(sources.Keys.Any(p=>!paths.Contains(p)))throw new ArgumentException("Every project source document must identify an original file in this server's source tree.");return sources;
     }
-    public static NativeCompilation Compile(string serverRoot,StudioProject project,CancellationToken cancellation=default)
+    public static NativeCompilation Compile(string serverRoot,StudioProject project,CancellationToken cancellation=default,bool captureStateOrigins=false)
     {
         var dir = Path.Combine(serverRoot, "TKR.WorldServer");
         var paths = SourcePaths(serverRoot);
@@ -79,10 +79,12 @@ public static class SourceVerification
             referencePaths.Select(p => MetadataReference.CreateFromFile(p)),
             new CSharpCompilationOptions(OutputKind.ConsoleApplication, allowUnsafe: true, nullableContextOptions: NullableContextOptions.Disable, deterministic: true));
         using var output = new MemoryStream(); using var symbols = new MemoryStream();
-        var emitted = compilation.Emit(output, symbols, manifestResources: resources.Select(r => new ResourceDescription(r.Name, () => new MemoryStream(r.Data, false), true)),
+        var executable=captureStateOrigins&&!compilation.GetDiagnostics(cancellation).Any(d=>d.Severity==DiagnosticSeverity.Error)
+            ?NativeStateOrigins.Instrument(compilation,project):compilation;
+        var emitted = executable.Emit(output, symbols, manifestResources: resources.Select(r => new ResourceDescription(r.Name, () => new MemoryStream(r.Data, false), true)),
             options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb, pdbFilePath: "TKR.WorldServer.pdb"), cancellationToken: cancellation);
         var errors = emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToString()).ToArray();
-        return new(new(errors.Length == 0, errors, paths.Length), emitted.Success ? output.ToArray() : [], emitted.Success ? symbols.ToArray() : [], stamp) { Compiler = compilation };
+        return new(new(errors.Length == 0, errors, paths.Length), emitted.Success ? output.ToArray() : [], emitted.Success ? symbols.ToArray() : [], stamp with{StateOriginInstrumentation=captureStateOrigins}) { Compiler = compilation };
     }
     public static string Hash(IEnumerable<(string Name, byte[] Data)> entries)
     {

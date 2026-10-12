@@ -48,6 +48,9 @@ try {
     & dotnet run --project tests/ExternalDefinition.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/external-definition-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/external-definition-checks.log' -Tail 25; throw 'Cross-file visual definition checks failed.' }
     Get-Content '.artifacts/external-definition-checks.log' -Tail 1
+    & dotnet run --project tests/Origin.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/origin-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/origin-checks.log' -Tail 25; throw 'Native State provenance checks failed.' }
+    Get-Content '.artifacts/origin-checks.log' -Tail 1
     & dotnet run --project tests/PhaseWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/phase-workspace-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/phase-workspace-checks.log' -Tail 25; throw 'Coordinated phase workspace checks failed.' }
     Get-Content '.artifacts/phase-workspace-checks.log' -Tail 1

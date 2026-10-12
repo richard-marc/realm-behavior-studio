@@ -58,7 +58,7 @@ public sealed class EncounterTimeline : FrameworkElement
         var movement=Replay.Movements.OrderBy(m=>Math.Abs(X(m.Ms)-p.X)).FirstOrDefault();
         if(movement!=null && Math.Abs(p.Y-126)<14 && Math.Abs(X(movement.Ms)-p.X)<8)
         {
-            var ev=new EncounterEvent(movement.Ms,"movement",$"{movement.Entity}: ({movement.FromX:0.000}, {movement.FromY:0.000}) → ({movement.ToX:0.000}, {movement.ToY:0.000}) · native {movement.DurationMs} ms step"+(movement.Phase!=""?" · observed phase "+movement.Phase:""),movement.PhaseNodeId,movement.ActorId);
+            var ev=new EncounterEvent(movement.Ms,"movement",$"{movement.Entity}: ({movement.FromX:0.000}, {movement.FromY:0.000}) → ({movement.ToX:0.000}, {movement.ToY:0.000}) · native {movement.DurationMs} ms step"+(movement.Phase!=""?" · observed phase "+movement.Phase:""),movement.PhaseNodeId,movement.ActorId,PhaseOrigin:movement.PhaseOrigin);
             SeekRequested?.Invoke(EventSeekMs(ev,Replay.DurationMs),ev);
         }
         else if (closest != null && Math.Abs(X(closest.Ms)-p.X)<8 && Math.Abs(56+Lane(closest)*35-p.Y)<14) SeekRequested?.Invoke(EventSeekMs(closest,Replay.DurationMs),closest);

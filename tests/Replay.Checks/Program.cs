@@ -63,10 +63,12 @@ var mismatchedShots=tape.Shots.ToArray(); mismatchedShots[0]=mismatchedShots[0] 
 var prefixRejected=false;
 try{var bad=await ReplayCursor.RestoreAsync(adapter,tape with{Shots=mismatchedShots},75);bad.Session.Dispose();}catch(InvalidOperationException){prefixRejected=true;}
 Check(prefixRejected,"A divergent emission prefix rejects even when seeking before the next recorded state witness");
+await RejectReplay(tape with{Shots=mismatchedShots},"A divergent recorded emission rejects at a completed native replay boundary");
 var brokenMovement=tape.Movements.ToArray();brokenMovement[0]=brokenMovement[0] with{ToX=brokenMovement[0].ToX+1};
 var movementRejected=false;
 try{var bad=await ReplayCursor.RestoreAsync(adapter,tape with{Movements=brokenMovement},75);bad.Session.Dispose();}catch(InvalidOperationException){movementRejected=true;}
 Check(movementRejected,"A divergent native motion prefix rejects before the next recorded state witness");
+await RejectReplay(tape with{Movements=brokenMovement},"A divergent recorded movement rejects at a completed native replay boundary");
 var atGate=await ReplayCursor.RestoreAsync(adapter,tape,500);
 using(atGate.Session)Check(atGate.Session.BossHp<atGate.Session.BossMaxHp && atGate.Session.Events.Count(e=>e.Kind=="override")==2,"Seeking to a boundary applies same-time HP and minion overrides in their original order");
 var start=await ReplayCursor.RestoreAsync(adapter,tape,0);

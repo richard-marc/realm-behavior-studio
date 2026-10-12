@@ -63,12 +63,41 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
         check(document.LockedNodes.Contains(shot.Root.Id)&&CollapsedNodes.Contains(list.Root.Id)&&Snapshot().Source==source,"Reopened shared source retains its locks and collapse state alongside the caller");
         UpdateLayout();CaptureView(this,Path.Combine(output,"external-definition-editor.png"));
         check(await StartSessionAsync()&&session is CompiledRuntime,"Play from the external definition uses the complete native caller project");running=false;await session!.AdvanceAsync(new(),100);UpdateSession();
-        check(session.Shots.Select(s=>s.Count).SequenceEqual(new[]{7,5,3}),"Desktop native playback observes the edited external field and reordered collection");Stop(this,new());
+        check(session.Shots.Select(s=>s.Count).SequenceEqual(new[]{7,5,3}),"Desktop native playback observes the edited external field and reordered collection");
+        var phaseEvent=session.Events.Single(e=>e.Kind=="transition");var playing=session;
+        check(phaseEvent.PhaseOrigin?.SourceFile==other&&phaseEvent.PhaseOrigin.NodeId==root.Root.Id,"Compiled desktop events retain the actual foreign native State construction and saved identity");
+        ReturnToEncounter(this,new());SelectTimelineEvent(phaseEvent);
+        check(encounterDocument!=null&&AuthoringRoot.Id==root.Root.Id&&selectedNode!.Id==root.Root.Id&&ReferenceEquals(session,playing),"Timeline event navigation opens the actual shared body without discarding native playback");
+        ReturnToEncounter(this,new());Events.SelectedItem=Events.Items.Cast<EventRow>().Single(row=>row.Event==phaseEvent);
+        check(encounterDocument!=null&&selectedNode!.Id==root.Root.Id,"Console event selection follows foreign native State provenance to its real helper");
+        var target=Snapshot();SourceFiles.SelectedItem=((SourceFileChoice[])SourceFiles.ItemsSource).Single(s=>s.Path==other);SourceEditor.Text+="\n// retained runtime draft";var runtimeDraft=SourceEditor.Text;
+        check(!NavigateRuntimeSource(phaseEvent)&&SourceEditor.Text==runtimeDraft&&ReferenceEquals(session,playing),"Recorded source navigation preserves a pending draft and the active encounter");DiscardSourceDraft(this,new());
+        check(!NavigateRuntimeSource(phaseEvent with{PhaseOrigin=phaseEvent.PhaseOrigin! with{SourceHash=new('0',64)}})&&ReferenceEquals(session,playing),"Changed runtime source fingerprints reject navigation without resetting playback");
+        SelectTimelineEvent(phaseEvent);UpdateLayout();CaptureView(this,Path.Combine(output,"native-foreign-phase-origin.png"));Stop(this,new());
         SelectNode(caller);check(encounterDocument==null&&selectedNode!.Id==caller,"Runtime caller navigation safely returns from a foreign definition to its actual source document");
         EditButton("StudioDesktopExternalRoot").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         DefinitionBack.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(encounterDocument==null&&AuthoringRoot.Id==EncounterRoot.Id&&document.Source==source&&Snapshot().AdditionalSources.Single().Source.Contains("count:7"),"Return to encounter restores the caller view while retaining accepted shared edits");
         check(File.ReadAllText(primary)==supplied&&File.ReadAllText(other)==suppliedOther,"Cross-file visual authoring and native Play leave supplied game files unchanged");
+        const string generated="""
+
+namespace TKR.WorldServer.logic { public partial class BehaviorDb {
+    static State StudioDesktopExternalRoot()=>new State(System.Linq.Enumerable.ToArray(StudioDesktopGenerated()));
+    static System.Collections.Generic.IEnumerable<State> StudioDesktopGenerated() {
+        for(var i=0;i<1;i++)yield return new State("generated",new TKR.WorldServer.logic.behaviors.Shoot(20,count:4,fixedAngle:0,coolDown:100));
+    }
+} }
+""";
+        ApplyProject(previous with{SourceDrafts=[],SelectedSourceFile=null,Source=source,Identities=[],LockedNodes=[],CollapsedNodes=[],AdditionalSources=[new(other,suppliedOther+generated)],Layout=[],Player=previous.Player with{Invulnerable=true}},null);
+        check(await StartSessionAsync(),"Generated iterator encounter starts with native State provenance");running=false;await session!.AdvanceAsync(new(),100);UpdateSession();
+        var generatedEvent=session.Events.Single(e=>e.Kind=="transition");SelectTimelineEvent(generatedEvent);
+        check(generatedEvent.PhaseOrigin!=null&&generatedEvent.NodeId==null&&SourceWorkspace.IsSelected&&displayedSourceFile==other&&SourceEditor.SelectedText.StartsWith("new State(\"generated\"")&&session!=null,"Generated phase events select the exact executed constructor in Source without inventing a visual node");
+        var generatedLine=SourceEditor.Text[..SourceEditor.SelectionStart].Count(c=>c=='\n');
+        await Dispatcher.InvokeAsync(()=>{},System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        File.WriteAllText(Path.Combine(output,"generated-source-visibility.json"),System.Text.Json.JsonSerializer.Serialize(new{generatedLine,first=SourceEditor.GetFirstVisibleLineIndex(),last=SourceEditor.GetLastVisibleLineIndex(),lines=SourceEditor.LineCount,offset=SourceEditor.VerticalOffset,height=SourceEditor.ActualHeight,selection=SourceEditor.SelectionStart},BehaviorDocument.JsonOptions));
+        check(SourceEditor.GetFirstVisibleLineIndex()<=generatedLine&&SourceEditor.GetLastVisibleLineIndex()>=generatedLine,"Generated source navigation brings its selected construction site into view");
+        check(TimelineEventInfo.Text.Contains("observed phase construction")&&session!.Shots.Single().Count==4,"Generated event details distinguish phase construction from an emission callback");
+        UpdateLayout();CaptureView(this,Path.Combine(output,"native-generated-phase-origin.png"));Stop(this,new());
         ApplyProject(previous,null);WorkspaceTabs.SelectedIndex=0;
     }
 }

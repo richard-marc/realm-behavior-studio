@@ -14,7 +14,7 @@ using TKR.WorldServer.logic;
 namespace Studio.Raple;
 
 public record EncounterInput(double X = 0, double Y = 0, bool Attack = false, double AimX = 64.5, double AimY = 64.5);
-public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null, int? ActorId = null, int? ParentId = null);
+public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null, int? ActorId = null, int? ParentId = null,NativeStateOrigin? PhaseOrigin=null);
 public record DamageContribution(int PlayerId,int Damage);
 public record DamageCounterView(int RecordedDamage,int PresentPlayerDamage,int? ParentActorId,ImmutableArray<DamageContribution> Players);
 public record WorldObjectView(int Id,string Name,string Kind,float X,float Y,int Size,int AltTexture,int TextureIndex,string Phase);
@@ -23,7 +23,7 @@ public record BulletView(float X, float Y, int OwnerId, int ProjectileIndex, Gui
 public record ReplayInput(long Ms, EncounterInput Input, int DurationMs = 100);
 public record Emission(long Ms, int OwnerId, int Index, int Count, int BulletId, float X, float Y, float Angle, float AngleIncrement, int Damage);
 // Phase is observed after the native tick; it does not attribute motion to an action.
-public record MovementSample(long Ms, int DurationMs, int ActorId, string Entity, bool Player, float FromX, float FromY, float ToX, float ToY, string Phase = "", Guid? PhaseNodeId = null);
+public record MovementSample(long Ms, int DurationMs, int ActorId, string Entity, bool Player, float FromX, float FromY, float ToX, float ToY, string Phase = "", Guid? PhaseNodeId = null,NativeStateOrigin? PhaseOrigin=null);
 public record ReplayRecord(int Version, int Seed, string Entity, string Source, string ResourceHash, PlayerPreset Player, List<ReplayInput> Inputs);
 
 // Enemy execution, resource definitions and weapon formulas are reused. Client collision is sampled.
@@ -159,9 +159,9 @@ public sealed class EncounterSession : IEncounterSession
         if(NativeArena.Limitations(arena) is {} limitation){Coverage=limitation;Add("unsupported",limitation);}
         arenaObserver.Capture();
     }
-    void Add(string kind, string message, Guid? node = null, long? at = null, int? actor = null, int? parent = null)
+    void Add(string kind, string message, Guid? node = null, long? at = null, int? actor = null, int? parent = null,NativeStateOrigin? phaseOrigin=null)
     {
-        if (Events.Count < 30000) Events.Add(new(at ?? Ms, kind, message, node, actor, parent));
+        if (Events.Count < 30000) Events.Add(new(at ?? Ms, kind, message, node, actor, parent,phaseOrigin));
         if (BreakpointKind == kind) PauseRequested = true;
     }
     void CaptureEffects()
@@ -249,9 +249,11 @@ public sealed class EncounterSession : IEncounterSession
                     var from = beforeTick.GetValueOrDefault(e.Id, (e.X, e.Y));
                     motions[e.Id] = new(from.X, from.Y, e.X, e.Y, Ms, SimEngine.TickMs);
                     var current = e.CurrentState?.Name ?? "";
-                    if(from.X!=e.X || from.Y!=e.Y) Movements.Add(new(Ms,SimEngine.TickMs,e.Id,e.ObjectDesc.IdName,false,from.X,from.Y,e.X,e.Y,current,e.ObjectType==boss.ObjectType?FindState(current):null));
+                    var origin=NativeStateOrigins.Find(e.CurrentState);
+                    var phaseNode=compiledSource?origin?.NodeId:e.ObjectType==boss.ObjectType?FindState(current):null;
+                    if(from.X!=e.X || from.Y!=e.Y) Movements.Add(new(Ms,SimEngine.TickMs,e.Id,e.ObjectDesc.IdName,false,from.X,from.Y,e.X,e.Y,current,phaseNode,origin));
                     if (!lastStates.TryGetValue(e.Id, out var previous)) Add("spawn", e.ObjectDesc.IdName, actor: e.Id, parent: e.ParentEntity?.Id);
-                    if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}", e.ObjectType == boss.ObjectType ? FindState(current) : null, actor: e.Id, parent: e.ParentEntity?.Id);
+                    if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}",phaseNode,actor:e.Id,parent:e.ParentEntity?.Id,phaseOrigin:origin);
                     lastStates[e.Id] = current;
                 }
                 foreach (var shot in engine.DrainShots())
@@ -260,7 +262,7 @@ public sealed class EncounterSession : IEncounterSession
                     if (!SimEngine.Data.ObjectDescs[(ushort)shot.ObjectType].Projectiles.TryGetValue(shot.BulletType, out var desc)) continue;
                     var owner = engine.World.Enemies.Values.FirstOrDefault(e => e.Id == shot.OwnerId);
                     var node = !compiledSource && owner?.ObjectType == boss.ObjectType ? FindAttack(owner.CurrentState?.Name ?? "", shot.BulletType) : null;
-                    Add("attack", $"{owner?.ObjectDesc.IdName}: {shot.NumShots} × projectile #{shot.BulletType}", node, actor: shot.OwnerId, parent: owner?.ParentEntity?.Id);
+                    Add("attack", $"{owner?.ObjectDesc.IdName}: {shot.NumShots} × projectile #{shot.BulletType}", node, actor: shot.OwnerId, parent: owner?.ParentEntity?.Id,phaseOrigin:NativeStateOrigins.Find(owner?.CurrentState));
                     if (!Player.ValidatedProjectile.CanSampleBossLab(desc) || desc.Homing || desc.Orbit)
                     { Coverage = "Unsupported projectile motion present · run is not verified"; Add("unsupported", "Projectile omitted: client-history-dependent motion.", node); continue; }
                     for (var i = 0; i < shot.NumShots; i++) bullets.Add(new Bullet { Born = Ms, Id = shot.BulletId + i, Owner = shot.OwnerId,

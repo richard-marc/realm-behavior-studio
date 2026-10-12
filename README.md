@@ -89,6 +89,8 @@ Native `InitMany` ranges now appear in the entity library. Inline State lambdas 
 
 ## What Play currently means
 
+Compiled event selection now follows the actual phase source across project files. Console and Timeline open its shared body in Behavior, or select the exact constructor in Source for generated phases. Navigation preserves playback and refuses changed source or pending drafts. The recorded link identifies the observed phase; it does not identify the precise attack or movement callback. Export validation still compiles and loads uninstrumented native source.
+
 **Transform** replaces the actor through the game's entity resolver. **TransformOnDeath** runs on actual native death; its count/probability keep the supplied game's semantics. Choose an XML target with **Transform into**. Playback compiles all accepted source files so the replacement uses its own edited behavior. **Actors** lists live enemy and world-object replacements with actual sprites. The original actor's health override and timers become unavailable after removal; they do not automatically target its replacement. Portal creation is previewed, while portal travel and other world/player services still require their original game contexts.
 
 Add **SizeTransform** for native growth and shrinking, or **ChangeSize** for the game's size pulses. A **SizeTransformComplete** transition must reference the same transform instance running in the phase; use its shared definition to edit that object. Native bounds protect size-transform edits, including target-typed `new(...)` fields. Play restores the transform's entry size, glow and projectile settings on completion/exit; ChangeSize persists.
