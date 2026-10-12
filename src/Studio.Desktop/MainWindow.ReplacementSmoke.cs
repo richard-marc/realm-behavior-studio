@@ -22,7 +22,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     private _ StudioDesktopReplacement=()=>Behav().Init("Cave Pirate Brawler",new State(new State("original",new Transform("Cave Pirate Cabin Boy")))).Init("Pirate Lieutenant",new State(new State("replacement",new ChangeSize(30,130),new Shoot(20,count:7,fixedAngle:0,coolDown:100))));
 } }
 """;
-        ApplyProject(previous with{EntityId="Cave Pirate Brawler",SourceFile=primary,Source=source,Identities=[],AdditionalSources=[],Layout=[],LockedNodes=[],CollapsedNodes=[],Player=new(Invulnerable:true)},null);
+        ApplyProject(previous with{SourceDrafts=[],SelectedSourceFile=null,EntityId="Cave Pirate Brawler",SourceFile=primary,Source=source,Identities=[],AdditionalSources=[],Layout=[],LockedNodes=[],CollapsedNodes=[],Player=new(Invulnerable:true)},null);
         var transform=EncounterRoot.Descendants().Single(n=>n.Kind=="Transform");SelectNode(transform.Id);
         check(Inspector.Children.OfType<TextBlock>().Any(t=>t.Text.Contains("game's entity resolver")),"Replacement inspector describes actual entity resolution and original health lifetime");
         entityPicker!.IsExpanded=true;entitySearch!.Text="Pirate Lieutenant";entityChoices!.SelectedItem=entityChoices.Items.Cast<EntityChoice>().Single(e=>e.Id=="Pirate Lieutenant");useEntityButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

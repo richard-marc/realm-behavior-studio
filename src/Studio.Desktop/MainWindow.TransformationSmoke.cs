@@ -30,7 +30,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     private _ StudioDesktopTransformFixture=()=>Behav().Init("Cave Pirate Brawler",new State(new State("grow",StudioDesktopTransform,new SizeTransformComplete(StudioDesktopTransform,"done")),new State("done")));
 } }
 """;
-        ApplyProject(previous with{EntityId="Cave Pirate Brawler",SourceFile=primary,Source=source,AdditionalSources=[],Identities=[],Layout=[],LockedNodes=[],CollapsedNodes=[],Player=new(Invulnerable:true)},null);
+        ApplyProject(previous with{SourceDrafts=[],SelectedSourceFile=null,EntityId="Cave Pirate Brawler",SourceFile=primary,Source=source,AdditionalSources=[],Identities=[],Layout=[],LockedNodes=[],CollapsedNodes=[],Player=new(Invulnerable:true)},null);
         var definition=document.Definitions.Single(d=>d.Definition!.Label=="StudioDesktopTransform");EditDefinition(definition.EntityId);var transform=AuthoringRoot.Id;
         check(AuthoringRoot.Kind=="SizeTransform"&&Inspector.Children.OfType<TextBlock>().Any(t=>t.Text.Contains("native growth/shrink")),"Shared transform inspector describes original callbacks and restoration");
         Inspector.Children.OfType<TextBox>().Single(t=>t.Text=="2").Text="3";parameterApplyButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -56,7 +56,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     private _ StudioDesktopTextureFixture=()=>Behav().Init("Treasure Rat",new State(new SetAltTexture(0,3,cooldown:100,loop:false)));
 } }
 """;
-        ApplyProject(previous with{EntityId=rat.Id,SourceFile=rat.SourceFile,Source=textureSource,AdditionalSources=[],Identities=[],Layout=[],LockedNodes=[],CollapsedNodes=[],Player=new(Invulnerable:true)},null);
+        ApplyProject(previous with{SourceDrafts=[],SelectedSourceFile=null,EntityId=rat.Id,SourceFile=rat.SourceFile,Source=textureSource,AdditionalSources=[],Identities=[],Layout=[],LockedNodes=[],CollapsedNodes=[],Player=new(Invulnerable:true)},null);
         var action=EncounterRoot.Children.Single(n=>n.Kind=="SetAltTexture");SelectNode(action.Id);
         check(textureChoices!.Items.Cast<TextureChoice>().Select(t=>t.Index).SequenceEqual(new[]{0,1})&&textureChoices.Items.Cast<TextureChoice>().All(t=>t.Image!=null),"Texture picker loads only actual XML variants with their client sprites");
         check(SpriteDigest(sprites.Get(rat.Id))!=SpriteDigest(sprites.Get(rat.Id,altTexture:1))&&sprites.Character(rat.Id,SpriteAction.Walk,.8,0,1).Image!=null,"Alternate texture frames remain separate from the original animation cache");

@@ -14,6 +14,10 @@ var source=original.Remove(sourceRoot.Start,sourceRoot.Length).Insert(sourceRoot
 var document=new BehaviorDocument(source,adapter,sourceFile:entry.SourceFile);
 var project=new StudioProject{Source=source,SourceFile=entry.SourceFile,EntityId=entry.Id,Identities=document.Identities,Seed=7,Player=new(Defense:0)};
 var identity=EncounterReplay.Identify(adapter,project);
+var withDraft=project with{SourceDrafts=[new(project.SourceFile,"unfinished draft",StudioSourceDraft.Hash(project.Source))],SelectedSourceFile=project.SourceFile};
+Check(EncounterReplay.Identify(adapter,withDraft).SourceHash==identity.SourceHash,"Editor drafts and selected source files do not change replay execution identity");
+var legacyProject=System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(project))!.AsObject();legacyProject.Remove(nameof(StudioProject.SourceDrafts));legacyProject.Remove(nameof(StudioProject.SelectedSourceFile));
+Check(identity.SourceHash==Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(legacyProject.ToJsonString()))),"Replay project hashing retains the preceding project schema when additive editor fields are absent");
 var fingerprintRoot=Path.Combine(output,"fingerprint-fixture");var fingerprintDir=Path.Combine(fingerprintRoot,"TKR.WorldServer");Directory.CreateDirectory(fingerprintDir);
 File.WriteAllText(Path.Combine(fingerprintDir,"Fixture.cs"),"class Fixture {}");
 File.WriteAllText(Path.Combine(fingerprintDir,"TKR.WorldServer.csproj"),"<Project><ItemGroup><EmbeddedResource Include=\"fixture.js\" LogicalName=\"Fixture.Script\"/></ItemGroup></Project>");

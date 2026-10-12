@@ -37,7 +37,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     static Behavior[] StudioDesktopWorkspaceOrders()=>[new TKR.WorldServer.logic.behaviors.Order(10,"Cave Pirate Brawler","loop"),new TKR.WorldServer.logic.behaviors.OrderOnDeath(10,"Pirate Lieutenant","loop")];
 } }
 """;
-        ApplyProject(previous with{Source=source,Identities=[],LockedNodes=[],CollapsedNodes=[],Layout=[],AdditionalSources=[new(other,suppliedOther+helper),new(third,suppliedThird+orders)],Player=previous.Player with{Invulnerable=true}},null);
+        ApplyProject(previous with{SourceDrafts=[],SelectedSourceFile=null,Source=source,Identities=[],LockedNodes=[],CollapsedNodes=[],Layout=[],AdditionalSources=[new(other,suppliedOther+helper),new(third,suppliedThird+orders)],Player=previous.Player with{Invulnerable=true}},null);
         var callerRoot=document.Definitions.Single(d=>d.Definition!.Label=="StudioDesktopWorkspaceCaller");EditDefinition(callerRoot.EntityId);
         SelectNode(AuthoringRoot.Children.Single(n=>n.Kind=="Factory").Id);
         Inspector.Children.OfType<StackPanel>().SelectMany(p=>p.Children.OfType<Button>()).Single(b=>Equals(b.Content,"Edit StudioDesktopWorkspaceShared")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

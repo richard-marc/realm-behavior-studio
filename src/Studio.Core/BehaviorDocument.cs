@@ -35,12 +35,18 @@ public sealed record StudioSourceDocument(string SourceFile,string Source)
     public List<Guid> LockedNodes {get;init;}=[];
     public List<Guid> CollapsedNodes {get;init;}=[];
 }
+public sealed record StudioSourceDraft(string SourceFile,string Source,string BaseHash)
+{
+    public static string Hash(string source)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(source)));
+}
 public sealed record StudioProject
 {
     public int Version { get; init; } = 1;
     public string SourceFile { get; init; } = "";
     public string Source { get; init; } = "";
     public List<StudioSourceDocument> AdditionalSources {get;init;}=[];
+    public List<StudioSourceDraft> SourceDrafts {get;init;}=[];
+    public string? SelectedSourceFile {get;init;}
     public string EntityId { get; init; } = "Cave Pirate Brawler";
     public string Brief { get; init; } = "";
     public int Seed { get; init; } = 1;
@@ -55,10 +61,15 @@ public sealed record StudioProject
     {
         if(AdditionalSources==null||AdditionalSources.Count>128||Source==null||Source.Length>4_000_000||AdditionalSources.Any(s=>s==null||string.IsNullOrWhiteSpace(s.SourceFile)||s.SourceFile.Length>4096||s.Source==null||s.Source.Length>4_000_000||s.Identities==null||s.LockedNodes==null||s.CollapsedNodes==null)||AdditionalSources.Sum(s=>(long)s.Source.Length)+Source.Length>32_000_000)
             throw new ArgumentException("Project source documents exceed supported bounds.");
-        if(AdditionalSources.Count==0)return;
+        if(SourceDrafts==null||SourceDrafts.Count>129||SourceDrafts.Any(d=>d==null||string.IsNullOrWhiteSpace(d.SourceFile)||d.SourceFile.Length>4096||d.Source==null||d.Source.Length>4_000_000||d.BaseHash==null||d.BaseHash.Length!=64||!d.BaseHash.All(Uri.IsHexDigit))||SourceDrafts.Sum(d=>(long)d.Source.Length)+AdditionalSources.Sum(s=>(long)s.Source.Length)+Source.Length>32_000_000)
+            throw new ArgumentException("Project source drafts exceed supported bounds or have invalid base hashes.");
+        if(AdditionalSources.Count==0&&SourceDrafts.Count==0&&SelectedSourceFile==null)return;
         if(string.IsNullOrWhiteSpace(SourceFile)||SourceFile.Length>4096)throw new ArgumentException("A source workspace needs an original primary source file.");
         var paths=AdditionalSources.Select(s=>Path.GetFullPath(s.SourceFile)).Prepend(Path.GetFullPath(SourceFile)).ToArray();
         if(paths.Distinct(StringComparer.OrdinalIgnoreCase).Count()!=paths.Length)throw new ArgumentException("Each project source file must occur once.");
+        var draftPaths=SourceDrafts.Select(d=>Path.GetFullPath(d.SourceFile)).ToArray();
+        if(draftPaths.Distinct(StringComparer.OrdinalIgnoreCase).Count()!=draftPaths.Length||draftPaths.Any(p=>!paths.Contains(p,StringComparer.OrdinalIgnoreCase)))throw new ArgumentException("Each source draft must belong to one project source file.");
+        if(SelectedSourceFile!=null&&(SelectedSourceFile.Length>4096||string.IsNullOrWhiteSpace(SelectedSourceFile)||!paths.Contains(Path.GetFullPath(SelectedSourceFile),StringComparer.OrdinalIgnoreCase)))throw new ArgumentException("The selected source file must belong to this project.");
     }
 }
 

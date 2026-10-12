@@ -30,7 +30,7 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
     static Behavior[] StudioDesktopExternalList=[new TKR.WorldServer.logic.behaviors.Shoot(20,count:3,fixedAngle:0,coolDown:100),new TKR.WorldServer.logic.behaviors.Shoot(20,count:5,fixedAngle:0,coolDown:100)];
 } }
 """;
-        ApplyProject(previous with{Source=source,Identities=[],LockedNodes=[],CollapsedNodes=[],AdditionalSources=[new(other,suppliedOther+helper)],Layout=[],Player=previous.Player with{Invulnerable=true}},null);
+        ApplyProject(previous with{SourceDrafts=[],SelectedSourceFile=null,Source=source,Identities=[],LockedNodes=[],CollapsedNodes=[],AdditionalSources=[new(other,suppliedOther+helper)],Layout=[],Player=previous.Player with{Invulnerable=true}},null);
         Button EditButton(string name)=>Inspector.Children.OfType<StackPanel>().SelectMany(p=>p.Children.OfType<Button>()).Single(b=>Equals(b.Content,"Edit "+name));
         var primaryIds=document.Identities;var caller=EncounterRoot.Id;
         check(EditButton("StudioDesktopExternalRoot").ToolTip!.ToString()==Path.GetFileName(other),"Native caller inspector exposes its actual external helper with file provenance");

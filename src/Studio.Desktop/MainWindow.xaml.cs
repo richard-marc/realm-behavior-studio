@@ -96,7 +96,7 @@ public partial class MainWindow : Window
     StudioProject Snapshot() => new()
     {
         SourceFile = selectedEntity!.SourceFile, Source = PrimaryDocument.Source, Identities = PrimaryDocument.Identities,
-        AdditionalSources = SourceDependencies(),
+        AdditionalSources = SourceDependencies(), SourceDrafts=SourceDraftSnapshot(), SelectedSourceFile=displayedSourceFile,
         EntityId = selectedEntity.Id, Brief = Brief.Text, Player = ReadPreset(), Seed = int.Parse(Seed.Text), ArenaSize = int.Parse(ArenaSize.Text), Arena=arenaPreset,
         Layout = CaptureLayout(), LockedNodes = PrimaryDocument.LockedNodes.ToList(), CollapsedNodes = collapsedByDocument.GetValueOrDefault(PrimaryDocument,[]).ToList()
     };
@@ -359,7 +359,8 @@ public partial class MainWindow : Window
     }
     void ApplyProject(StudioProject p, string? path)
     {
-        p=p with{SourceFile=Path.GetFullPath(p.SourceFile),AdditionalSources=p.AdditionalSources.Select(s=>s with{SourceFile=Path.GetFullPath(s.SourceFile)}).ToList()};
+        p.ValidateSourceSet();
+        p=p with{SourceFile=Path.GetFullPath(p.SourceFile),AdditionalSources=p.AdditionalSources.Select(s=>s with{SourceFile=Path.GetFullPath(s.SourceFile)}).ToList(),SourceDrafts=p.SourceDrafts.Select(s=>s with{SourceFile=Path.GetFullPath(s.SourceFile)}).ToList(),SelectedSourceFile=p.SelectedSourceFile==null?null:Path.GetFullPath(p.SelectedSourceFile)};
         var scoped=adapter.ForProject(p);
         var d = new BehaviorDocument(p.Source, scoped, p.Identities, p.SourceFile);
         var known = catalog.FirstOrDefault(c => c.Id == p.EntityId) ?? throw new ArgumentException("Project entity is missing from this server's resources.");
@@ -374,6 +375,7 @@ public partial class MainWindow : Window
         if (Weapons.SelectedItem == null) WeaponInfo.Text = "Missing weapon XML: " + selectedWeaponId;
         CollapsedNodes.UnionWith(p.CollapsedNodes.Where(id => d.Identities.Any(n => n.Id == id)));
         Changed(); RestoreLayout(p.Layout);
+        if(p.SelectedSourceFile!=null)SourceFiles.SelectedItem=((SourceFileChoice[])SourceFiles.ItemsSource).Single(s=>s.Path.Equals(p.SelectedSourceFile,StringComparison.OrdinalIgnoreCase));
     }
     async void Export(object sender, RoutedEventArgs e) => await TryRuntime(async () =>
     {

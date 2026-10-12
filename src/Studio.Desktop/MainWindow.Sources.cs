@@ -17,6 +17,7 @@ public partial class MainWindow
     readonly Dictionary<string,StudioSourceDocument> sourceDependencies=new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string,Stack<StudioSourceDocument>> sourceUndo=new(StringComparer.OrdinalIgnoreCase),sourceRedo=new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string,string> sourceDrafts=new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string,string> sourceDraftBases=new(StringComparer.OrdinalIgnoreCase);
     string? displayedSourceFile;
     string displayedSource="";
     bool refreshingSourceFiles;
@@ -25,9 +26,17 @@ public partial class MainWindow
         .Select(s=>dependencyDocuments.TryGetValue(s.SourceFile,out var d)?s with{Source=d.Source,Identities=d.Identities,LockedNodes=d.LockedNodes.ToList(),CollapsedNodes=collapsedByDocument.GetValueOrDefault(d,[]).ToList()}:s).ToList();
     void LoadSourceDependencies(StudioProject project,RapleAdapter scoped)
     {
-        workspacePhaseUndo.Clear();workspacePhaseRedo.Clear();encounterDocument=null;dependencyDocuments.Clear();sourceDependencies.Clear();sourceUndo.Clear();sourceRedo.Clear();sourceDrafts.Clear();displayedSourceFile=null;
+        workspacePhaseUndo.Clear();workspacePhaseRedo.Clear();encounterDocument=null;dependencyDocuments.Clear();sourceDependencies.Clear();sourceUndo.Clear();sourceRedo.Clear();sourceDrafts.Clear();sourceDraftBases.Clear();displayedSourceFile=null;
         foreach(var source in project.AdditionalSources)sourceDependencies.Add(source.SourceFile,source);
+        foreach(var draft in project.SourceDrafts){sourceDrafts.Add(draft.SourceFile,draft.Source);sourceDraftBases.Add(draft.SourceFile,draft.BaseHash);}
         adapter=scoped;
+    }
+    List<StudioSourceDraft> SourceDraftSnapshot()
+    {
+        RememberSourceDraft();
+        var sources=SourceDependencies().Prepend(new(selectedEntity!.SourceFile,PrimaryDocument.Source)).ToDictionary(s=>s.SourceFile,s=>s.Source,StringComparer.OrdinalIgnoreCase);
+        return sourceDrafts.Where(p=>sources.TryGetValue(p.Key,out var accepted)&&p.Value!=accepted)
+            .Select(p=>new StudioSourceDraft(p.Key,p.Value,sourceDraftBases.GetValueOrDefault(p.Key,StudioSourceDraft.Hash(sources[p.Key])))).ToList();
     }
     void RebindSourceWorkspace()
     {
@@ -38,7 +47,10 @@ public partial class MainWindow
     }
     void RememberSourceDraft()
     {
-        if(displayedSourceFile!=null&&SourceEditor.Text!=displayedSource)sourceDrafts[displayedSourceFile]=SourceEditor.Text;
+        if(displayedSourceFile==null)return;
+        if(SourceEditor.Text==displayedSource){sourceDrafts.Remove(displayedSourceFile);sourceDraftBases.Remove(displayedSourceFile);return;}
+        if(!sourceDrafts.ContainsKey(displayedSourceFile))sourceDraftBases[displayedSourceFile]=StudioSourceDraft.Hash(displayedSource);
+        sourceDrafts[displayedSourceFile]=SourceEditor.Text;
     }
     void RefreshSourceFiles()
     {
@@ -66,7 +78,22 @@ public partial class MainWindow
         var primary=choice.Path.Equals(selectedEntity!.SourceFile,StringComparison.OrdinalIgnoreCase);
         displayedSource=primary?PrimaryDocument.Source:SourceDependencies().Single(s=>s.SourceFile.Equals(choice.Path,StringComparison.OrdinalIgnoreCase)).Source;
         SourceEditor.Text=sourceDrafts.GetValueOrDefault(choice.Path,displayedSource);
-        SourceFileNotice.Text=primary?"Encounter source · Apply checks all project files.":"Shared file · saved and played with this encounter. Edit shared phases here.";
+        UpdateSourceDraftNotice();
+    }
+    void SourceDraftChanged(object sender,TextChangedEventArgs e)=>UpdateSourceDraftNotice();
+    void UpdateSourceDraftNotice()
+    {
+        if(SourceFileNotice==null||DiscardSourceDraftButton==null||displayedSourceFile==null)return;
+        var dirty=SourceEditor.Text!=displayedSource;
+        DiscardSourceDraftButton.Visibility=dirty?Visibility.Visible:Visibility.Collapsed;
+        var stale=dirty&&sourceDraftBases.TryGetValue(displayedSourceFile,out var hash)&&hash!=StudioSourceDraft.Hash(displayedSource);
+        SourceFileNotice.Text=dirty?(stale?"Draft · accepted source changed since this draft began. Review before Apply.":"Draft · saved with your project and recovery. Apply to use in Play or export."):
+            "Accepted source · Play and export use this version. Apply checks all project files.";
+    }
+    void DiscardSourceDraft(object sender,RoutedEventArgs e)
+    {
+        if(displayedSourceFile==null)return;
+        sourceDrafts.Remove(displayedSourceFile);sourceDraftBases.Remove(displayedSourceFile);SourceEditor.Text=displayedSource;UpdateSourceDraftNotice();
     }
     void AddSourceFile(object sender,RoutedEventArgs e)=>Try(()=>
     {
@@ -104,7 +131,7 @@ public partial class MainWindow
             sourceDrafts.Remove(selectedEntity!.SourceFile);displayedSource=SourceEditor.Text;Changed();return;
         }
         var previous=SourceDependencies().Single(s=>s.SourceFile.Equals(displayedSourceFile,StringComparison.OrdinalIgnoreCase));
-        if(previous.Source==SourceEditor.Text)return;
+        if(previous.Source==SourceEditor.Text){sourceDrafts.Remove(previous.SourceFile);sourceDraftBases.Remove(previous.SourceFile);UpdateSourceDraftNotice();return;}
         // Cross-file caller ownership is not complete yet. Do not bypass existing caller locks.
         if(PrimaryDocument.LockedNodes.Count!=0)throw new InvalidOperationException("Unlock the encounter before changing a shared source file; cross-file lock ownership is still pending.");
         var candidate=previous with{Source=SourceEditor.Text};var scoped=ValidateSourceWorkspace(WithDependency(candidate));
@@ -122,6 +149,7 @@ public partial class MainWindow
         if(file==null||file.Equals(selectedEntity!.SourceFile,StringComparison.OrdinalIgnoreCase))return false;
         var from=redo?sourceRedo:sourceUndo;var to=redo?sourceUndo:sourceRedo;
         if(!from.TryGetValue(file,out var history)||history.Count==0)return true;
+        RememberSourceDraft();if(sourceDrafts.ContainsKey(file))throw new InvalidOperationException("Apply or discard this source draft before restoring an accepted source edit.");
         var candidate=history.Peek();ValidateSourceWorkspace(WithDependency(candidate));
         if(PrimaryDocument.LockedNodes.Count!=0||SourceDependencies().Single(s=>s.SourceFile.Equals(file,StringComparison.OrdinalIgnoreCase)).LockedNodes.Count!=0)throw new InvalidOperationException("Unlock the encounter and shared source before restoring this edit.");
         if(!to.TryGetValue(file,out var other))to[file]=other=new();

@@ -53,12 +53,25 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
     ReplayPoint Initial, ReplayCommand[] Commands, EncounterEvent[] Events, Emission[] Shots, Emission[] PlayerShots,MovementSample[] Movements,NativeEffect[] Effects)
 {
     public long DurationMs => Commands.LastOrDefault()?.Result?.Ms ?? 0;
+    static string ProjectHash(StudioProject project)
+    {
+        // Editor drafts never enter execution identity. Omitting the additive fields also retains legacy replay hashes.
+        using var bytes=new MemoryStream();
+        using(var writer=new Utf8JsonWriter(bytes))
+        {
+            writer.WriteStartObject();
+            foreach(var property in JsonSerializer.SerializeToElement(project).EnumerateObject())
+                if(property.Name is not (nameof(StudioProject.SourceDrafts) or nameof(StudioProject.SelectedSourceFile)))property.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+        return ReplayJournal.Hash(Encoding.UTF8.GetString(bytes.ToArray()));
+    }
     public static ReplayIdentity Identify(RapleAdapter adapter, StudioProject project, string compiledBuildId = "")
     {
         var assemblies = new[] { typeof(EncounterSession).Assembly, typeof(BossPatternSim.SimEngine).Assembly,
             typeof(TKR.WorldServer.logic.State).Assembly, typeof(TKR.Shared.resources.Resources).Assembly };
         var runtime = string.Join("\n", assemblies.Distinct().OrderBy(a => a.GetName().Name).Select(a => a.GetName().Name + ":" + Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(a.Location)))));
-        return new(ReplayJournal.Hash(JsonSerializer.Serialize(project)), NativeInputFingerprint(adapter.ServerRoot),
+        return new(ProjectHash(project), NativeInputFingerprint(adapter.ServerRoot),
             SourceVerification.Fingerprint(Path.Combine(adapter.ServerRoot, "TKR.Shared/resources"), "*"),
             ReplayJournal.Hash(runtime + "\n" + Environment.Version), compiledBuildId);
     }
@@ -74,7 +87,7 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
     {
         var recording = session.Recording ?? throw new InvalidOperationException("This encounter was not recorded.");
         var commands = recording.Commands; var point = commands.LastOrDefault()?.Result ?? recording.Initial;
-        var replay = new EncounterReplay(2, project, phase, identity, recording.Initial, commands, session.Events.Take(point.Events).ToArray(),session.Shots.Take(point.Shots).ToArray(),session.PlayerShots.Take(point.PlayerShots).ToArray(),session.Movements.Take(point.Movements).ToArray(),session.Effects.Take(point.Effects).ToArray());
+        var replay = new EncounterReplay(2, project with{SourceDrafts=[],SelectedSourceFile=null}, phase, identity, recording.Initial, commands, session.Events.Take(point.Events).ToArray(),session.Shots.Take(point.Shots).ToArray(),session.PlayerShots.Take(point.PlayerShots).ToArray(),session.Movements.Take(point.Movements).ToArray(),session.Effects.Take(point.Effects).ToArray());
         replay.Validate(); return replay;
     }
     public void Validate()
@@ -85,7 +98,7 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
             string.IsNullOrEmpty(Project.SourceFile) || string.IsNullOrEmpty(Project.EntityId) || Project.Source == null || Project.Source.Length > 4_000_000 ||
             Commands.Length > 100_000 || Events.Length > 30_000 || Shots.Length > 200_000 || PlayerShots.Length > 200_000 ||
             !Hash(Identity.SourceHash) || !Hash(Identity.NativeSourcesHash) || !Hash(Identity.ResourceHash) || !Hash(Identity.RuntimeHash) ||
-            Identity.CompiledBuildId != "" && !Hash(Identity.CompiledBuildId) || Identity.SourceHash != ReplayJournal.Hash(JsonSerializer.Serialize(Project)))
+            Identity.CompiledBuildId != "" && !Hash(Identity.CompiledBuildId) || Identity.SourceHash != ProjectHash(Project))
             throw new ArgumentException("Unsupported, modified or oversized encounter recording.");
         Project.ValidateSourceSet();Project.Arena.Validate();long ms = 0; var previous = Initial;
         if (Initial.Ms != 0 || !Hash(Initial.Signature) || Initial.Events < 0 || Initial.Shots < 0 || Initial.PlayerShots < 0 || Initial.Movements<0 || Initial.Effects<0) throw new ArgumentException("Invalid initial replay witness.");

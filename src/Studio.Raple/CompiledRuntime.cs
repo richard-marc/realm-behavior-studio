@@ -81,6 +81,8 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     public static async Task<PreparedRuntime> PrepareAsync(string serverRoot, StudioProject project,
         string? hostDirectory = null, string? artifactRoot = null, RuntimeLimits? limits = null, CancellationToken cancellation = default)
     {
+        project.ValidateSourceSet();
+        project=project with{SourceDrafts=[],SelectedSourceFile=null};
         limits ??= new();
         if (limits.StartupSeconds is < 1 or > 120 || limits.CommandSeconds is < 1 or > 30 || limits.MemoryBytes < 64 * 1024 * 1024) throw new ArgumentException("Invalid runtime limits.");
         hostDirectory ??= Path.Combine(AppContext.BaseDirectory, "runtime-host");
