@@ -60,6 +60,9 @@ try {
     & dotnet run --project tests/GroupWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/workspace-group-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/workspace-group-checks.log' -Tail 25; throw 'Coordinated workspace grouping checks failed.' }
     Get-Content '.artifacts/workspace-group-checks.log' -Tail 1
+    & dotnet run --project tests/CopyWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/workspace-copy-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/workspace-copy-checks.log' -Tail 25; throw 'Coordinated workspace copy checks failed.' }
+    Get-Content '.artifacts/workspace-copy-checks.log' -Tail 1
     & dotnet run --project tests/Transformation.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/transformation-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/transformation-checks.log' -Tail 25; throw 'Native transformation checks failed.' }
     Get-Content '.artifacts/transformation-checks.log' -Tail 1

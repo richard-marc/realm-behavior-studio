@@ -9,7 +9,10 @@ public sealed record SourcePhaseChange(string SourceFile,string Before,string Af
 {
     public List<NodeIdentity>? AfterIdentities {get;init;}
 }
-public sealed record SourcePhaseEdit(StudioProject Before,StudioProject After,IReadOnlyList<SourcePhaseChange> Changes);
+public sealed record SourcePhaseEdit(StudioProject Before,StudioProject After,IReadOnlyList<SourcePhaseChange> Changes)
+{
+    public IReadOnlyList<Guid> Selection {get;init;}=[];
+}
 
 public static partial class SourcePhaseRefactor
 {

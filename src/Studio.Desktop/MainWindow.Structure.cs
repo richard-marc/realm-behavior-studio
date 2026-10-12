@@ -78,7 +78,13 @@ public partial class MainWindow
     });
     void DuplicateSelectedNode(object sender, RoutedEventArgs e) => Try(() =>
     {
-        if (selectedNode == null) return; var copy = document.DuplicateNode(selectedNode.Id, ValidateAuthoring); Changed(copy);
+        if (selectedNode == null) return;
+        if(adapter.HasAdditionalSources||definitionViewKey!=null)
+        {
+            var parent=document.Parent(selectedNode.Id)??throw new ArgumentException("Select a child node to duplicate.");
+            PasteWorkspaceNodes(parent.Id,parent.Children.ToList().FindIndex(n=>n.Id==selectedNode.Id)+1,document.CopyNodes([selectedNode.Id]));return;
+        }
+        var copy = document.DuplicateNode(selectedNode.Id, ValidateAuthoring); Changed(copy);
     });
     void MoveSelectedNodeUp(object sender, RoutedEventArgs e) => MoveSelectedNode(-1);
     void MoveSelectedNodeDown(object sender, RoutedEventArgs e) => MoveSelectedNode(1);

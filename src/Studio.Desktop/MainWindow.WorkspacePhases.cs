@@ -35,6 +35,12 @@ public partial class MainWindow
         var group=grouped.Find(parent.Id).Children.Single(n=>n.Kind=="State"&&!oldIds.Contains(n.Id));
         ApplyWorkspacePhaseEdit(plan,group.Id,"Grouped");
     }
+    void PasteWorkspaceNodes(Guid parent,int index,BehaviorClipboard clipboard)
+    {
+        var plan=SourcePhaseRefactor.Paste(adapter,Snapshot(),document.SourceFile!,parent,index,clipboard);
+        ApplyWorkspacePhaseEdit(plan,plan.Selection[0],"Pasted");
+        nodeSelection.Clear();nodeSelection.UnionWith(plan.Selection);selectionAnchor=plan.Selection[0];RefreshSelectionVisuals();
+    }
     void DeleteWorkspacePhases(IEnumerable<Guid> ids)
     {
         var nodes=document.NormalizeSelection(ids);var removed=nodes.SelectMany(n=>n.Descendants()).Select(n=>n.Id).ToHashSet();

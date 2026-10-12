@@ -37,7 +37,7 @@ public partial class MainWindow
     static BehaviorClipboard? ReadNodeClipboard()
     {
         if (!Clipboard.ContainsData(ClipboardFormat)) return null;
-        return Clipboard.GetData(ClipboardFormat) is string value ? JsonSerializer.Deserialize<BehaviorClipboard>(value, BehaviorDocument.JsonOptions) : null;
+        return Clipboard.GetData(ClipboardFormat) is string {Length:<=8_000_000} value ? JsonSerializer.Deserialize<BehaviorClipboard>(value, BehaviorDocument.JsonOptions) : null;
     }
     static void WriteNodeClipboard(BehaviorClipboard nodes)
     {
@@ -120,6 +120,7 @@ public partial class MainWindow
     void ApplyNodeDrop(NodeDrag drag, Guid destination, int index, bool copy)
     {
         if (drag.Revision != document.Revision || drag.EntityId != selectedEntity?.Id) throw new ArgumentException("The dragged selection belongs to an older revision or another encounter.");
+        if(copy&&(adapter.HasAdditionalSources||definitionViewKey!=null)){PasteWorkspaceNodes(destination,index,document.CopyNodes(drag.Ids));return;}
         var ids = copy ? document.PasteNodes(destination, index, document.CopyNodes(drag.Ids), ValidateAuthoring) : drag.Ids;
         if (!copy) document.MoveNodes(ids, destination, index, ValidateAuthoring);
         ChangedSelection(ids);
@@ -158,6 +159,7 @@ public partial class MainWindow
         var clipboard = readNodeClipboard() ?? throw new ArgumentException("Copy phases or actions from Studio first.");
         var target = selectedNode != null && document.CanEditChildren(selectedNode.Id) ? document.ChildContainer(selectedNode.Id) : selectedNode == null ? null : document.Parent(selectedNode.Id);
         if (target == null) return;
+        if(adapter.HasAdditionalSources||definitionViewKey!=null){PasteWorkspaceNodes(target.Id,target.Children.Count,clipboard);return;}
         ChangedSelection(document.PasteNodes(target.Id, target.Children.Count, clipboard, ValidateAuthoring));
     });
     void DeleteSelectedNodes() => Try(() => {

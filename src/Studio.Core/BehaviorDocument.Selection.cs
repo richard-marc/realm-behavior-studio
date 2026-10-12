@@ -4,7 +4,10 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Studio.Core;
 
-public record BehaviorClipboard(int Version, IReadOnlyList<string> Expressions);
+public record BehaviorClipboard(int Version, IReadOnlyList<string> Expressions)
+{
+    public IReadOnlyList<ClipboardSymbol> Symbols {get;init;}=[];
+}
 
 public sealed partial class BehaviorDocument
 {
@@ -24,9 +27,11 @@ public sealed partial class BehaviorDocument
     {
         var nodes = NormalizeSelection(ids);
         foreach (var node in nodes) { StructuralParent(node); Editable(node); }
-        return new(1, nodes.Select(Expression).ToArray());
+        return new(1, nodes.Select(Expression).ToArray())
+        {Symbols=nodes.SelectMany((node,index)=>(SchemaAt(node)?.ClipboardSymbols(Expression(node))??[]).Select(s=>s with{ExpressionIndex=index})).ToArray()};
     }
-    public IReadOnlyList<Guid> PasteNodes(Guid parentId, int index, BehaviorClipboard clipboard, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
+    public IReadOnlyList<Guid> PasteNodes(Guid parentId, int index, BehaviorClipboard clipboard, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null,
+        IReadOnlyCollection<string>? reservedPhaseNames=null)
     {
         var parent = ChildContainer(parentId); parentId = parent.Id; EditableContainer(parent);
         if (index < 0 || index > parent.Children.Count) throw new ArgumentOutOfRangeException(nameof(index));
@@ -34,18 +39,27 @@ public sealed partial class BehaviorDocument
             throw new ArgumentException("Unsupported or oversized behavior clipboard.");
         foreach (var expression in clipboard.Expressions)
             ValidateChildExpression(expression);
+        if(clipboard.Symbols==null||clipboard.Symbols.Count>10_000||clipboard.Symbols.Any(s=>s==null||s.ExpressionIndex<0||s.ExpressionIndex>=clipboard.Expressions.Count||s.Start<0||s.Length<=0||s.Start>clipboard.Expressions[s.ExpressionIndex].Length-s.Length||string.IsNullOrEmpty(s.Signature)||s.Signature.Length>4096)||clipboard.Symbols.Sum(s=>(long)s.Signature.Length)>2_000_000)
+            throw new ArgumentException("Invalid or oversized clipboard source bindings.");
         var (temporary, fragmentRoot) = ChildFragment(parent, clipboard.Expressions);
+        if(clipboard.Symbols.Count>0)
+        {
+            var bindings=fragmentRoot.Children.SelectMany((node,index)=>(temporary.SchemaAt(node)?.ClipboardSymbols(temporary.Expression(node))??[]).Select(s=>s with{ExpressionIndex=index})).ToArray();
+            if(!bindings.SequenceEqual(clipboard.Symbols))throw new ArgumentException("Copied source references bind differently in this destination. Keep their original scope or qualify the references in Source.");
+        }
         var fragmentEntityId = temporary.AllRoots.Single(e => e.Root.Id == fragmentRoot.Id).EntityId;
         var phases = fragmentRoot.Children.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").ToArray();
         var originals = phases.Select(n => temporary.StateName(n.Id) ?? throw new ArgumentException("Name phases before copying them.")).ToArray();
         if (originals.Distinct(StringComparer.Ordinal).Count() != originals.Length) throw new ArgumentException("Copied phases must have unique names.");
-        var taken = OwningEntity(parentId).Root.Descendants().Where(n => n.Kind == "State").Select(n => StateName(n.Id)).Concat(originals).ToHashSet(StringComparer.Ordinal);
+        var taken = OwningEntity(parentId).Root.Descendants().Where(n => n.Kind == "State").Select(n => StateName(n.Id)).Concat(originals).Concat(reservedPhaseNames??[]).ToHashSet(StringComparer.Ordinal);
+        var renames=new Dictionary<string,string>(StringComparer.Ordinal);
         for (var i = 0; i < phases.Length; i++)
         {
             var candidate = originals[i] + "-copy"; var suffix = 2;
             while (taken.Contains(candidate)) candidate = originals[i] + "-copy-" + suffix++;
-            taken.Add(candidate); temporary.RenameState(phases[i].Id, candidate);
+            taken.Add(candidate);renames.Add(originals[i],candidate);
         }
+        temporary.RenameCopiedPhases(fragmentRoot,renames);
         var additions = FragmentChildren(temporary.AllRoots.Single(e => e.EntityId == fragmentEntityId).Root).ToArray();
         var arguments = additions.ToDictionary(n => n.Id, n => SyntaxFactory.Argument(SyntaxFactory.ParseExpression(temporary.Expression(n))));
         var children = parent.Children.ToList(); children.InsertRange(index, additions);
