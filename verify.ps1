@@ -48,6 +48,9 @@ try {
     & dotnet run --project tests/Effects.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/effect-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/effect-checks.log' -Tail 25; throw 'Native effect checks failed.' }
     Get-Content '.artifacts/effect-checks.log' -Tail 1
+    & dotnet run --project tests/Choice.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/choice-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/choice-checks.log' -Tail 25; throw 'Native phase choice checks failed.' }
+    Get-Content '.artifacts/choice-checks.log' -Tail 1
     & dotnet run --project tests/Registration.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/registration-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/registration-checks.log' -Tail 25; throw 'Native registration checks failed.' }
     Get-Content '.artifacts/registration-checks.log' -Tail 1

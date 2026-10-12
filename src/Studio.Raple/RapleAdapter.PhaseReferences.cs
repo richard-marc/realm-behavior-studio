@@ -18,6 +18,7 @@ public sealed partial class RapleAdapter
     public bool? TargetsPhaseOf(string expression, string parameter, string ownerEntity, string targetEntity)
     {
         var binding = Binding(expression); var type = binding.Constructor?.DeclaringType;
+        if(type?.FullName==NativeTypeName("TimedRandomTransition")&&parameter.Split('[')[0]=="states")return SameEntity(ownerEntity,targetEntity);
         if (!NativeOrderType(type?.FullName)) return parameter.StartsWith("targetState", StringComparison.Ordinal) && SameEntity(ownerEntity, targetEntity);
         if (parameter != (type!.Name == "OrderOnDeath" ? "state" : "targetState")) return false;
         var slot = Array.IndexOf(binding.SlotNames, type.Name == "OrderOnDeath" ? "target" : "children");

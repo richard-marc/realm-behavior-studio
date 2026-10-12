@@ -40,8 +40,9 @@ public sealed partial class BehaviorDocument
         {
             var scope = ReferencesEntityPhase(node, parameter, owner);
             if (scope == false) continue;
-            var target = LiteralString(parameter.Expression);
-            references.Add(new(scope == null || target == null ? "unresolved-phase" : phases.Contains(target) ? "phase-internal" : "phase-external", target ?? parameter.Expression, Value(node, parameter)));
+            var targets = PhaseLiterals(parameter.Expression);
+            if(scope==null||targets==null)references.Add(new("unresolved-phase",parameter.Expression,Value(node,parameter)));
+            else foreach(var target in targets)references.Add(new(phases.Contains(target.Name)?"phase-internal":"phase-external",target.Name,Value(node,parameter) with {Start=Value(node,parameter).Start+target.Start,Length=target.Length,DefaultExpression=parameter.Expression.Substring(target.Start,target.Length)}));
             if (scope == true && SchemaAt(node)?.PhaseEntityParameter(Expression(node), parameter.Name) is { } field && node.Parameters.FirstOrDefault(p => p.Name == field) is { } entityParameter)
             {
                 var value = Value(node, entityParameter);

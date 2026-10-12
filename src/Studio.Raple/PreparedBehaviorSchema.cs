@@ -16,6 +16,7 @@ public sealed class PreparedBehaviorSchema : IBehaviorSchema
     PreparedBehaviorSchema(RapleAdapter adapter, IReadOnlyDictionary<(int Start, string Expression), SourceExpression> bindings, int position,IReadOnlyList<EncounterSource> registrations,IReadOnlyList<SourceDefinition> definitions)
     { this.adapter = adapter; this.bindings = bindings; this.position = position;this.registrations=registrations;this.definitions=definitions; }
     public IReadOnlyList<SourceDefinition> SourceDefinitions()=>definitions;
+    public bool? TargetsPhaseOf(string expression,string parameter,string ownerEntity,string targetEntity)=>DescribeExpression(expression)?.Kind=="TimedRandomTransition"&&parameter.Split('[')[0]=="states"?RapleAdapter.SameEntity(ownerEntity,targetEntity):parameter.StartsWith("targetState",StringComparison.Ordinal)&&ownerEntity==targetEntity;
     public IReadOnlyList<EncounterSource> AdditionalEncounters()=>registrations;
     public IBehaviorSchema At(int start) => new PreparedBehaviorSchema(adapter, bindings, start,registrations,definitions);
     public SourceExpression? DescribeExpression(string expression) => bindings.GetValueOrDefault((position, expression));

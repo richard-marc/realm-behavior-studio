@@ -5,7 +5,12 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Studio.Core;
 
-public record PhaseTransition(BehaviorNode Node, Guid OwnerId, int Priority, string Condition, string? TargetName, Guid? TargetId);
+public record PhaseDestination(string Name,Guid? Id,int Slots);
+public record PhaseTransition(BehaviorNode Node, Guid OwnerId, int Priority, string Condition, string? TargetName, Guid? TargetId)
+{
+    public IReadOnlyList<PhaseDestination> Destinations {get;init;}=[];
+    public bool TargetsKnown {get;init;}
+}
 public record PhaseAnalysis(IReadOnlyList<PhaseTransition> Transitions, IReadOnlyList<DocumentDiagnostic> Diagnostics);
 
 // Conservative authoring analysis, not a prediction of HP, timers or world conditions.
@@ -13,7 +18,7 @@ public static class BehaviorAnalysis
 {
     static readonly HashSet<string> Known = ["State", "ArgumentGroup", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
         "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
-        "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior"];
+        "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior", "TimedRandomTransition"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
     static double? Number(BehaviorNode node, string parameter)
     {
@@ -30,6 +35,7 @@ public static class BehaviorAnalysis
     public static string Condition(BehaviorNode node) => node.Kind switch
     {
         "TimedTransition" => $"After {Value(node, "time")} ms" + (Value(node, "randomized", "false") == "true" ? " · random start" : ""),
+        "TimedRandomTransition"=>$"After {Value(node,"time")} ms · choose"+(Value(node,"randomizedTime","false")=="true"?" · random start":""),
         "HpLessTransition" => Number(node, "threshold") is { } hp ? $"HP < {hp * 100:0.##}%" : $"HP < {Value(node, "threshold")}",
         "PlayerWithinTransition" => $"Player within {Value(node, "dist")} tiles" + (Value(node, "seeInvis", "false") == "true" ? " · sees invisible" : ""),
         "EntityExistsTransition" => $"{Resource(node)} within {Value(node, "dist")} tiles",
@@ -40,11 +46,17 @@ public static class BehaviorAnalysis
     {
         // Timers are stateful and later timers are not ticked after an earlier match. Do not compare their durations.
         if (earlier.Kind == "TimedTransition" && Number(earlier, "time") == 0 && Value(earlier, "randomized", "false") == "false") return true;
+        if(earlier.Kind=="TimedRandomTransition"&&Number(earlier,"time")==0&&ChoiceTargets(earlier) is {Count:>0})return true;
         if (earlier.Kind != later.Kind) return false;
         if (earlier.Kind == "HpLessTransition") return Number(earlier, "threshold") is { } a && Number(later, "threshold") is { } b && a >= b;
         if (earlier.Kind == "PlayerWithinTransition") return Number(earlier, "dist") is { } a && Number(later, "dist") is { } b && a >= b &&
             Value(earlier, "seeInvis", "false") == Value(later, "seeInvis", "false");
         return false;
+    }
+    static IReadOnlyList<string>? ChoiceTargets(BehaviorNode node)
+    {
+        var values=node.Parameters.Where(p=>p.Name.Split('[')[0]=="states").Select(p=>BehaviorDocument.PhaseLiterals(p.Expression)).ToArray();
+        return values.Any(v=>v==null)?null:values.SelectMany(v=>v!).Select(v=>v.Name).ToArray();
     }
     public static PhaseAnalysis Analyze(BehaviorNode root)
     {
@@ -59,15 +71,17 @@ public static class BehaviorAnalysis
             for (var i = 0; i < transitions.Length; i++)
             {
                 var node = transitions[i]; var expression = Expression(node, "targetState");
-                var targetName = expression == null ? null : BehaviorDocument.LiteralString(expression);
-                var target = targetName != null && names.TryGetValue(targetName, out var targets) && targets.Length == 1 ? targets[0] : null;
-                edges.Add(new(node, state.Id, i + 1, Condition(node), targetName, target?.Id));
+                var values=node.Kind=="TimedRandomTransition"?ChoiceTargets(node):expression==null?null:BehaviorDocument.PhaseLiterals(expression)?.Select(v=>v.Name).ToArray();
+                var destinations=values?.GroupBy(v=>v).Select(g=>new PhaseDestination(g.Key,names.TryGetValue(g.Key,out var matches)&&matches.Length==1?matches[0].Id:null,g.Count())).ToArray()??[];
+                var targetName=destinations.Length==0?null:string.Join(" · ",destinations.Select(d=>d.Name+(d.Slots>1?" ×"+d.Slots:"")));
+                var targetId=destinations.Length==1?destinations[0].Id:null;
+                edges.Add(new(node, state.Id, i + 1, Condition(node), targetName, targetId){Destinations=destinations,TargetsKnown=values!=null});
                 var shadow = transitions.Take(i).FirstOrDefault(earlier => Covers(earlier, node));
                 if (shadow != null) diagnostics.Add(new($"Priority conflict: transition {i + 1} in {state.Label} is shadowed by transition {Array.IndexOf(transitions, shadow) + 1}. The first matching transition wins.", node.Id, false));
-                if (target?.Id == state.Id) diagnostics.Add(new($"Self transition in {state.Label}: stays in this branch or enters its first nested phase. Common-ancestor entry callbacks are not rerun.", node.Id, false));
+                if (destinations.Any(d=>d.Id == state.Id)) diagnostics.Add(new($"Self transition in {state.Label}: stays in this branch or enters its first nested phase. Common-ancestor entry callbacks are not rerun.", node.Id, false));
             }
         }
-        var incomplete = nodes.Any(n => !Known.Contains(n.Kind)) || states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) || names.Any(g => g.Value.Length != 1) || edges.Any(e => e.TargetName == null);
+        var incomplete = nodes.Any(n => !Known.Contains(n.Kind)) || states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) || names.Any(g => g.Value.Length != 1) || edges.Any(e => !e.TargetsKnown||e.Destinations.Count==0);
         if (incomplete) diagnostics.Add(new("Reachability analysis is incomplete: opaque/custom nodes, dynamic targets or duplicate names may change phase entry. Unreachable-phase notices are suppressed.", root.Id, false));
         else
         {
@@ -87,7 +101,7 @@ public static class BehaviorAnalysis
                 for (BehaviorNode? state = leaf; state != null; state = parent.GetValueOrDefault(state.Id))
                 {
                     reachable.Add(state.Id);
-                    foreach (var edge in edges.Where(e => e.OwnerId == state.Id && e.TargetId != null)) Enter(states.Single(s => s.Id == edge.TargetId));
+                    foreach (var target in edges.Where(e => e.OwnerId == state.Id).SelectMany(e=>e.Destinations).Where(d=>d.Id!=null)) Enter(states.Single(s => s.Id == target.Id));
                 }
             }
             foreach (var state in states.Where(s => !reachable.Contains(s.Id))) diagnostics.Add(new($"Unreachable phase: {state.Label}. No literal transition or first-child entry reaches this phase.", state.Id, false));

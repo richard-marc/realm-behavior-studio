@@ -192,10 +192,11 @@ public partial class MainWindow : Window
             AddProjectileControls(selectedNode);
             AddEntityControls(selectedNode);
             AddOwnedEmitterControls(selectedNode);
+            AddPhaseChoiceControls(selectedNode);
             AddTransitionSummary(id);
             AddLifecycleControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();
-            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State" && (p.Name != "orbitClockwise" || movementDirection == null) && (p.Name!="axes"||ownedLaneAxes==null||adapter.ReadLaneAxis(document,selectedNode)==null)))
+            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State" && (p.Name != "orbitClockwise" || movementDirection == null) && (p.Name!="axes"||ownedLaneAxes==null||adapter.ReadLaneAxis(document,selectedNode)==null) && (p.Name.Split('[')[0]!="states"||phaseChoiceRows==null)))
             {
                 var meta = adapter.ParameterFor(document, selectedNode, parameter);
                 Inspector.Children.Add(new TextBlock { Text = parameter.Name + (string.IsNullOrEmpty(meta?.Unit) ? "" : " · " + meta.Unit), Margin = new(0, 10, 0, 0) });

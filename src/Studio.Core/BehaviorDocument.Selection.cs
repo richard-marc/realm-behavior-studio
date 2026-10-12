@@ -138,7 +138,7 @@ public sealed partial class BehaviorDocument
         var parent = StructuralParent(group); Editable(group); EditableContainer(parent);
         if (!PhaseContainer(parent)) throw new ArgumentException("Ungroup a phase only within another phase's child list.");
         var entity = OwningEntity(id); var name = StateName(id) ?? ""; LiteralReferences(entity, [name]);
-        if (AllNodes.Any(n => n.Parameters.Any(p => ReferencesEntityPhase(n, p, entity) == true && LiteralString(p.Expression) == name)))
+        if (AllNodes.Any(n => n.Parameters.Any(p => ReferencesEntityPhase(n, p, entity) == true && PhaseLiterals(p.Expression)?.Any(v=>v.Name==name)==true)))
             throw new ArgumentException("Reroute transitions targeting this phase before ungrouping it.");
         var siblings = parent.Children.ToList(); var index = siblings.FindIndex(n => n.Id == id); siblings.RemoveAt(index); siblings.InsertRange(index, group.Children);
         RewriteChildren(new() { [parent.Id] = siblings }, [], validate); return parent.Id;
@@ -153,7 +153,7 @@ public sealed partial class BehaviorDocument
         {
             var phaseNames = entityGroup.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").Select(n => StateName(n.Id)).OfType<string>().ToHashSet(StringComparer.Ordinal);
             if (phaseNames.Count > 0) LiteralReferences(entityGroup.Key, phaseNames);
-            foreach (var reference in AllNodes.Where(n => !removed.Contains(n.Id) && n.Parameters.Any(p => ReferencesEntityPhase(n, p, entityGroup.Key) == true && phaseNames.Contains(LiteralString(p.Expression) ?? ""))))
+            foreach (var reference in AllNodes.Where(n => !removed.Contains(n.Id) && n.Parameters.Any(p => ReferencesEntityPhase(n, p, entityGroup.Key) == true && PhaseLiterals(p.Expression)?.Any(v=>phaseNames.Contains(v.Name))==true)))
             {
                 if (!reference.Kind.EndsWith("Transition", StringComparison.Ordinal)) throw new ArgumentException("Update actions referencing deleted phases first.");
                 StructuralParent(reference); Editable(reference); deletions.Add(reference);

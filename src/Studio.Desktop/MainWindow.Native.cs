@@ -119,6 +119,7 @@ public partial class MainWindow
     {
         if (kind is "Order" or "OrderOnce" or "OrderOnDeath" && parameter.Name is "targetState" or "state") return "";
         if (kind == "State" && parameter.Name == "name") return PhaseLiteral(NextPhaseName());
+        if(kind=="TimedRandomTransition"&&parameter.Name=="states")return (document.StateName(owner.Id)??AuthoringRoot.Descendants().Where(n=>n.Kind=="State").Select(n=>document.StateName(n.Id)).OfType<string>().FirstOrDefault()) is {} phase?"new[] { "+PhaseLiteral(phase)+" }":"";
         if (kind == "Taunt" && parameter.Name == "text") return "new[] { \"Ready.\" }";
         if (kind == "Prioritize" && parameter.Name == "children") return "new CycleBehavior[] { new Wander(.3) }";
         if (kind == "OnDeathBehavior" && parameter.Name == "behavior") return "new ConditionEffectBehavior(ConditionEffectIndex.Invulnerable)";

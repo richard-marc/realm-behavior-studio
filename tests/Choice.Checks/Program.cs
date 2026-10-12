@@ -1,0 +1,58 @@
+using Studio.Core;
+using Studio.Raple;
+using System.Text.Json;
+
+var adapter=new RapleAdapter(Path.GetFullPath(args.FirstOrDefault()??"../raple-realms-7-server"));var checks=0;
+void Check(bool value,string label){if(!value)throw new Exception(label);checks++;Console.WriteLine("PASS "+label);}
+void Reject(Action action,string label){try{action();}catch(Exception error)when(error is ArgumentException or InvalidOperationException){Check(true,label);return;}throw new Exception("Expected rejection: "+label);}
+const string entity="Cave Pirate Brawler";
+BehaviorDocument Doc(string choice)=>new("class Fixture { void Build() { db.Init(\"Cave Pirate Brawler\", new State(new State(\"pick\", "+choice+"), new State(\"a\",new TimedTransition(0,\"pick\")),new State(\"b\",new TimedTransition(0,\"pick\")),new State(\"unused\"))); } }",adapter);
+BehaviorNode Choice(BehaviorDocument doc)=>doc.AllNodes.Single(n=>n.Kind=="TimedRandomTransition");
+Check(adapter.Primitives.Single(p=>p.Name=="TimedRandomTransition").Simulatable,"Actual random transition has native constructor-backed literal playback");
+foreach(var syntax in new[]{"new TimedRandomTransition(0, false, \"a\", \"b\", \"b\")","new TimedRandomTransition(time:0, states:new[] { \"a\", /* retained choice */ \"b\", \"b\" })","new TimedRandomTransition(states:new string[] { \"a\", \"b\", \"b\" }, time:0)","new TimedRandomTransition(0, states:[\"a\", /* list comment */ \"b\", \"b\"] )"})
+{
+    var doc=Doc(syntax);var node=Choice(doc);var original=doc.Source;var ids=doc.Identities;var root=doc.Entities.Single().Root;
+    Check(doc.PhaseChoices(node.Id)!.SequenceEqual(new[]{"a","b","b"}),"Expanded/array/collection choices retain every native destination slot");
+    var edge=BehaviorAnalysis.Analyze(root).Transitions.Single(t=>t.Node.Id==node.Id);
+    Check(edge.Destinations is [{Name:"a",Slots:1,Id:not null},{Name:"b",Slots:2,Id:not null}]&&edge.TargetsKnown,"One graph transition retains multiple destinations and duplicate-slot weights");
+    Check(BehaviorAnalysis.Analyze(root).Diagnostics.Any(d=>d.Message.Contains("Unreachable phase: unused"))&&!BehaviorAnalysis.Analyze(root).Diagnostics.Any(d=>d.Message.StartsWith("Reachability analysis is incomplete")),"Reachability visits all native choices while identifying an actually unreferenced phase");
+    var b=doc.AllNodes.Single(n=>n.Kind=="State"&&n.Label=="b");doc.RenameState(b.Id,"renamed",d=>adapter.Validate(d,entity));
+    Check(doc.PhaseChoices(node.Id)!.SequenceEqual(new[]{"a","renamed","renamed"})&&ids.All(i=>doc.Identities.Any(n=>n.Id==i.Id)),"Phase rename updates every repeated destination without changing identities");
+    Check(doc.Undo()&&doc.Source==original,"Random target rename is one exact-source undo");
+    doc.EditPhaseChoice(node.Id,doc.Revision,PhaseChoiceEdit.Up,1,validate:d=>adapter.Validate(d,entity));
+    Check(doc.PhaseChoices(node.Id)!.SequenceEqual(new[]{"b","a","b"})&&(!original.Contains("retained choice")||doc.Source.Contains("retained choice"))&&(!original.Contains("list comment")||doc.Source.Contains("list comment")),"Choice reordering retains repeated entries and source comments");
+    doc.EditPhaseChoice(node.Id,doc.Revision,PhaseChoiceEdit.Replace,0,"a",d=>adapter.Validate(d,entity));doc.EditPhaseChoice(node.Id,doc.Revision,PhaseChoiceEdit.Add,-1,"b",d=>adapter.Validate(d,entity));
+    Check(doc.PhaseChoices(node.Id)!.SequenceEqual(new[]{"a","a","b","b"})&&ids.All(i=>doc.Identities.Any(n=>n.Id==i.Id)),"Typed replace/add preserve native binding, slot weights and hierarchy identities");
+    doc.EditPhaseChoice(node.Id,doc.Revision,PhaseChoiceEdit.Remove,0,validate:d=>adapter.Validate(d,entity));
+    Check(doc.PhaseChoices(node.Id)!.SequenceEqual(new[]{"a","b","b"}),"Removing one choice preserves remaining repeated native slots");
+    doc.LockedNodes.Add(node.Id);Reject(()=>doc.EditPhaseChoice(node.Id,doc.Revision,PhaseChoiceEdit.Add,-1,"a"),"Choice mutations respect action locks");Reject(()=>doc.RenameState(b.Id,"blocked"),"Locked incoming choice prevents a phase rename atomically");doc.LockedNodes.Clear();
+    Reject(()=>doc.EditPhaseChoice(node.Id,doc.Revision-1,PhaseChoiceEdit.Add,-1,"a"),"Stale choice mutations reject before editing source");
+    var snapshot=doc.Source;Reject(()=>doc.EditPhaseChoice(node.Id,doc.Revision,PhaseChoiceEdit.Add,-1,"missing",d=>adapter.Validate(d,entity)),"A missing destination rejects atomically through native validation");Check(doc.Source==snapshot,"Failed native choice validation preserves the complete source");
+    var path=Path.GetFullPath(".artifacts/choices/choice.rbs");System.IO.Directory.CreateDirectory(Path.GetDirectoryName(path)!);BehaviorDocument.Save(path,new(){Source=doc.Source,EntityId=entity,Identities=doc.Identities});var saved=BehaviorDocument.Load(path);var reopened=new BehaviorDocument(saved.Source,adapter,saved.Identities);
+    Check(reopened.PhaseChoices(node.Id)!.SequenceEqual(doc.PhaseChoices(node.Id)!)&&ids.All(i=>reopened.Identities.Any(n=>n.Id==i.Id)),"Projects retain every choice and identity on reopen");
+}
+var single=Doc("new TimedRandomTransition(0,states:[\"a\"])");var one=Choice(single);Reject(()=>single.EditPhaseChoice(one.Id,single.Revision,PhaseChoiceEdit.Remove,0),"The final native destination cannot be removed");
+Check(adapter.Validate(Doc("new TimedRandomTransition(0)"),entity).Any(d=>d.IsError)&&adapter.Validate(Doc("new TimedRandomTransition(-1,true,\"a\")"),entity).Any(d=>d.IsError),"Native empty-choice and negative randomized-time failures have authoring errors");
+Check(adapter.Validate(Doc("new TimedRandomTransition(0,states:null)"),entity).Any(d=>d.IsError),"An explicit null choice array rejects before the native state resolver dereferences it");
+var deletion=Doc("new TimedRandomTransition(0,false,\"a\",\"b\")");deletion.DeleteNode(deletion.AllNodes.Single(n=>n.Kind=="State"&&n.Label=="b").Id,d=>adapter.Validate(d,entity));Check(!deletion.AllNodes.Any(n=>n.Kind=="TimedRandomTransition"),"Deleting a referenced phase removes the complete incoming random transition rather than changing its chances");
+var grouped=Doc("new TimedRandomTransition(0,states:[\"a\",\"b\"])");Reject(()=>grouped.UngroupState(grouped.AllNodes.Single(n=>n.Kind=="State"&&n.Label=="b").Id),"Ungroup guards recognize array-held incoming phase references");
+var copy=Doc("new TimedRandomTransition(0,states:[\"a\",\"b\",\"b\"])");var selection=copy.AllNodes.Where(n=>n.Kind=="State"&&n.Label is "pick" or "a" or "b").Select(n=>n.Id).ToArray();copy.PasteNodes(copy.Entities.Single().Root.Id,4,copy.CopyNodes(selection),d=>adapter.Validate(d,entity));
+Check(copy.AllNodes.Where(n=>n.Kind=="TimedRandomTransition").Any(n=>copy.PhaseChoices(n.Id)!.SequenceEqual(new[]{"a-copy","b-copy","b-copy"})),"Phase clipboard copies remap all internal choice slots and retain duplicate weights");
+var fragments=Doc("new TimedRandomTransition(0,states:[\"a\",\"b\",\"b\"])");var fragment=fragments.CaptureFragment([fragments.AllNodes.Single(n=>n.Kind=="State"&&n.Label=="pick").Id],"Native choices");
+Check(fragment.References.Count(r=>r.Kind=="phase-external"&&r.Target=="b")==2,"Portable fragments classify each array-held external phase token independently");
+fragments.ImportFragment(fragments.Revision,fragments.Entities.Single().Root.Id,4,fragment,phaseTargets:new Dictionary<string,string>{{"a","b"},{"b","a"}},validate:d=>adapter.Validate(d,entity));
+Check(fragments.AllNodes.Where(n=>n.Kind=="TimedRandomTransition").Any(n=>fragments.PhaseChoices(n.Id)!.SequenceEqual(new[]{"b","a","a"})),"Fragment external mappings rewrite individual choices without collapsing repeated slots");
+var nativeDoc=Doc("new TimedRandomTransition(0,false,\"a\",\"b\",\"b\")");var random=new Random(7+7919);var expected=Enumerable.Range(0,16).Select(_=>new[]{"a","b","b"}[random.Next(3)]).ToArray();var phases=new List<string>();
+using(var native=new EncounterSession(adapter,nativeDoc,entity,7,new(Invulnerable:true))){for(var tick=0;tick<32;tick++){native.Step(new());if(tick%2==0)phases.Add(native.Entities.Single().Phase);}}
+Check(phases.SequenceEqual(expected),"Actual native choice execution matches its independently seeded per-entry RNG stream including duplicate weights");
+using(var timed=new EncounterSession(adapter,Doc("new TimedRandomTransition(200,false,\"a\",\"b\")"),entity,7,new(Invulnerable:true))){timed.Advance(new(),200);var waited=timed.Entities.Single().Phase=="pick";timed.Step(new());Check(waited&&timed.Entities.Single().Phase is "a" or "b","Native random countdown checks before decrement and selects at the genuine 200 ms tick boundary");}
+var startupRandom=new Random(7+7919);var warm=startupRandom.Next(250);var selected=new[]{"a","b","b"}[startupRandom.Next(3)];var due=(int)Math.Ceiling(warm/100d)*100;
+using(var randomized=new EncounterSession(adapter,Doc("new TimedRandomTransition(250,true,\"a\",\"b\",\"b\")"),entity,7,new(Invulnerable:true))){randomized.Advance(new(),due+100);Check(randomized.Entities.Single().Phase==selected&&randomized.Events.Any(e=>e.Kind=="transition"&&e.Ms==due&&e.Message.EndsWith("→ "+selected)),"Randomized startup consumes the real timer RNG draw before its independently verified destination draw");}
+var file=adapter.Catalog().Single(e=>e.Id==entity).SourceFile;var supplied=File.ReadAllText(file);var rootNode=new BehaviorDocument(supplied,adapter,sourceFile:file).Entities.Single(e=>e.EntityId==entity).Root;
+var source=supplied.Remove(rootNode.Start,rootNode.Length).Insert(rootNode.Start,nativeDoc.Expression(nativeDoc.Entities.Single().Root));var contextual=new BehaviorDocument(source,adapter,sourceFile:file);var sourceChoice=Choice(contextual);
+contextual.EditPhaseChoice(sourceChoice.Id,contextual.Revision,PhaseChoiceEdit.Up,1,validate:d=>adapter.Validate(d,entity));Check(contextual.PhaseChoices(sourceChoice.Id)!.SequenceEqual(new[]{"b","a","b"}),"Original-source semantic binding retains genuine choice authoring");
+await using(var compiled=await CompiledRuntime.StartAsync(adapter.ServerRoot,new(){SourceFile=file,Source=source,EntityId=entity,Identities=new BehaviorDocument(source,adapter,sourceFile:file).Identities,Seed=7,Player=new(Invulnerable:true)},artifactRoot:Path.GetFullPath(".artifacts/choices/compiled"))){var actual=new List<string>();for(var tick=0;tick<32;tick++){await compiled.AdvanceAsync(new(),100);if(tick%2==0)actual.Add(compiled.Entities.Single().Phase);}Check(actual.SequenceEqual(phases),"Complete original-source compilation reproduces the native choice sequence independently of literal binding");}
+var unknown=source.Replace("new TimedRandomTransition(0,false,\"a\",\"b\",\"b\")","new TimedRandomTransition(0, states: StudioTargets)")+"\nnamespace TKR.WorldServer.logic { public partial class BehaviorDb { static string[] StudioTargets => throw new System.Exception(\"Do not execute during authoring\"); } }";
+var unknownDoc=new BehaviorDocument(unknown,adapter,sourceFile:file);var unknownChoice=Choice(unknownDoc);Check(unknownDoc.PhaseChoices(unknownChoice.Id)==null,"Source-produced target collections retain an unevaluated boundary");Reject(()=>unknownDoc.RenameState(unknownDoc.AllNodes.First(n=>n.Kind=="State"&&n.Label=="a").Id,"unsafe"),"Unknown target collections prevent unsafe phase-reference rewriting");
+Check(BehaviorAnalysis.Analyze(unknownDoc.Entities.Single(e=>e.EntityId==entity).Root).Diagnostics.Any(d=>d.Message.StartsWith("Reachability analysis is incomplete")),"Unknown choice collections suppress definitive reachability conclusions");
+Check(File.ReadAllText(file)==supplied,"Choice authoring and compiled native playback leave supplied game source unchanged");Console.WriteLine($"{checks} native choice checks passed");

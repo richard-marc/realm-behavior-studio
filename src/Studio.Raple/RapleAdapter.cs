@@ -42,7 +42,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
-        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters"];
+        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root)
     {
@@ -68,14 +68,14 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                 t.Name.Contains("Spawn") ? "Spawning" :
                 t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name=="OwnedLaneEmitters" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
-                    p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!))).ToArray(), Supported.Contains(t.Name))).ToArray();
+                    p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
     public static ConstructorInfo Constructor(Type type) => type.GetConstructors().OrderByDescending(c => c.GetParameters().Length).First();
     static string FormatDefault(ParameterInfo p) => p.DefaultValue == null ? (p.ParameterType.IsValueType ? "default" : "null") : Convert.ToString(p.DefaultValue, CultureInfo.InvariantCulture) ?? "default";
     public string[] ParameterNames(string kind) => kind == "State" ? ["name"] : EngineAssembly.GetTypes().Where(t => t.Name == kind && typeof(IStateChildren).IsAssignableFrom(t))
         .SelectMany(t => t.GetConstructors()).SelectMany(c => c.GetParameters()).Select(p => p.Name!).Distinct().ToArray();
     static string Unit(string name, string? kind = null) => kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
-    static string Explain(string name) => name switch
+    static string Explain(string name,string? kind=null) => name switch
     {
         "coolDown" => "Runtime countdown, quantized to 100 ms ticks. Shoot generally adds a tick between volleys; 0 normalizes to its runtime default.",
         "threshold" => "HpLessTransition uses strict less-than, not less-than-or-equal.",
@@ -85,6 +85,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "speed" => "Passed unchanged to the runtime; this is not tiles per second.",
         "period" => "Timed subtracts the native tick duration once for EACH child, in source order. Completion/reset can happen within that loop; this is not a single wall-clock duration shared by all children.",
         "targetState" => "Exact state name; duplicate state names are ambiguous in the runtime's global name map.",
+        "states" when kind=="TimedRandomTransition"=>"The native random transition chooses uniformly among these list entries. Repeating a phase name increases its chance; order and duplicates are retained.",
+        "randomizedTime" when kind=="TimedRandomTransition"=>"The initial native countdown is Random.Next(time), then runs on 100 ms ticks. A zero time chooses immediately.",
         _ => "Constructor parameter from the supplied runtime. Expressions beyond literal values may require advanced source editing."
     };
     public IReadOnlyList<CatalogEntry> Catalog()
@@ -140,6 +142,12 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                 if (n.Kind == "Opaque") yield return new("Visual structure is incomplete; the original expression is retained.", n.Id, false);
                 else if (!Supported.Contains(n.Kind)) yield return new($"{n.Kind} requires compiled source preview. Its game-context fidelity is not yet certified.", n.Id, false);
                 var binding = Binding(document.Expression(n));
+                if(n.Kind=="TimedRandomTransition")
+                {
+                    if(document.PhaseChoices(n.Id) is {Count:0})yield return new("A native random transition needs at least one phase choice.",n.Id);
+                    if(n.Parameters.Any(p=>p.Name.Split('[')[0]=="states"&&SyntaxFactory.ParseExpression(p.Expression).IsKind(SyntaxKind.NullLiteralExpression)))yield return new("Native phase choices cannot be null.",n.Id);
+                    if(ReadNumericParameter(document,n,"time",null,out var randomTime)&&randomTime<0&&n.Parameters.Any(p=>p.Name=="randomizedTime"&&p.Expression=="true"))yield return new("Randomized transition time cannot be negative.",n.Id);
+                }
                 if (n.Kind == "Prioritize" && n.Children.Sum(c => c.Kind == "ArgumentGroup" ? c.Children.Count : 1) == 0 && n.Parameters.All(p => p.Name != "children"))
                     yield return new("Prioritize requires at least one cycle behavior for native execution.", n.Id);
                 if (sourceBinding == null && binding.RequiresContext && n.Kind != "Opaque") yield return new($"{n.Kind} requires source context for complete constructor binding.", n.Id, false);
@@ -158,8 +166,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                             try { Evaluate(parsed, parameterType); } catch (Exception e) { typeError = e.GetBaseException().Message; }
                     }
                     if (typeError != null) yield return new($"{n.Kind}.{p.Name}: {typeError}", n.Id);
-                    if (p.Name is "targetState" or "state" && (document.SchemaAt(n)?.TargetsPhaseOf(document.Expression(n), p.Name, entity.EntityId, entity.EntityId) ?? TargetsPhaseOf(document.Expression(n), p.Name, entity.EntityId, entity.EntityId)) == true && !nodes.Any(n => n.Kind is "Opaque" or "Factory" or "Reference" or "Spread") && !states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) && BehaviorDocument.LiteralString(p.Expression) is { } stateTarget && !states.Any(s => (document.StateName(s.Id) ?? "") == stateTarget))
-                        yield return new("Missing transition target: " + p.Expression, n.Id);
+                    if ((document.SchemaAt(n)?.TargetsPhaseOf(document.Expression(n), p.Name, entity.EntityId, entity.EntityId) ?? TargetsPhaseOf(document.Expression(n), p.Name, entity.EntityId, entity.EntityId)) == true && !nodes.Any(n => n.Kind is "Opaque" or "Factory" or "Reference" or "Spread") && !states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) && BehaviorDocument.PhaseLiterals(p.Expression) is {} phaseTargets)
+                        foreach(var stateTarget in phaseTargets.Where(t=>!states.Any(s=>(document.StateName(s.Id)??"")==t.Name)).DistinctBy(t=>t.Name))yield return new("Missing transition target: " + SyntaxFactory.Literal(stateTarget.Name).Text, n.Id);
                     if (p.Name is "children" or "target" or "childName" && BehaviorDocument.LiteralString(p.Expression) is { } resourceTarget && !SimEngine.Data.IdToObjectType.ContainsKey(resourceTarget))
                         yield return new("Missing entity resource: " + p.Expression, n.Id);
                     if (double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))

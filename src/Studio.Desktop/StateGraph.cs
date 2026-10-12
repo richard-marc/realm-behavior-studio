@@ -85,7 +85,8 @@ public sealed class StateGraph : FrameworkElement
         }
         // Only the selected transition is routed; all destinations remain readable in their rows.
         var selected = analysis.Transitions.FirstOrDefault(t => t.Node.Id == highlight);
-        if (selected?.TargetId is { } targetId && locations.TryGetValue(targetId, out var targetRect) && transitionRows.TryGetValue(selected.Node.Id, out var selectedRow))
+        foreach(var targetId in selected?.Destinations.Where(d=>d.Id!=null).Select(d=>d.Id!.Value).Distinct()??[])
+        if (locations.TryGetValue(targetId, out var targetRect) && transitionRows.TryGetValue(selected!.Node.Id, out var selectedRow))
         {
             var row = selectedRow; var from = locations[selected.OwnerId];
             var start = new Point(from.Right, row.Top + 15); var end = new Point(targetRect.Right, targetRect.Top + 40); var route = locations.Values.Max(r => r.Right) + 24;
@@ -114,7 +115,7 @@ public sealed class StateGraph : FrameworkElement
                 dc.DrawRoundedRectangle(EncounterViewport.Brush(selection.Contains(edge.Node.Id) ? "#304738" : edge.Node.Id == highlight ? "#303F44" : "#272A2F"), null, row, 5, 5);
                 Text(dc, edge.Priority.ToString(), new(row.Left + 7, row.Top + 7), 10, "#858B95", 22);
                 Text(dc, edge.Condition, new(row.Left + 30, row.Top + 6), 11, "#CFD3DB", 156);
-                Text(dc, "→ " + (edge.TargetName ?? "dynamic"), new(row.Left + 194, row.Top + 6), 11, edge.TargetId == null ? "#DAAE84" : "#91A69D", 102);
+                Text(dc, "→ " + (edge.TargetName ?? "dynamic"), new(row.Left + 194, row.Top + 6), 11, edge.Destinations.Count==0||edge.Destinations.Any(d=>d.Id==null) ? "#DAAE84" : "#91A69D", 102);
             }
             if (activeState) dc.DrawEllipse(EncounterViewport.Brush("#98E8CB"), null, new(rect.Right - 10, rect.Top + 42), 3, 3);
         }

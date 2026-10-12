@@ -175,6 +175,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     public bool? TargetsPhaseOf(string text, string parameter, string ownerEntity, string targetEntity)
     {
         var expression = Expression(text);
+        if(expression!=null&&Model.GetSymbolInfo(expression).Symbol is IMethodSymbol choice&&choice.ContainingType.ToDisplayString()==RapleAdapter.NativeTypeName("TimedRandomTransition")&&parameter.Split('[')[0]=="states")return RapleAdapter.SameEntity(ownerEntity,targetEntity);
         if (expression == null || Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || !RapleAdapter.NativeOrderType(method.ContainingType.ToDisplayString()))
             return parameter.StartsWith("targetState", StringComparison.Ordinal) && RapleAdapter.SameEntity(ownerEntity, targetEntity);
         var death = method.ContainingType.Name == "OrderOnDeath";

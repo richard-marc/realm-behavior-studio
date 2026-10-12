@@ -77,6 +77,6 @@ public sealed partial class RapleAdapter
     public IReadOnlyList<NativeOverload> Overloads(string name) => EngineAssembly.GetTypes().Where(t => t.Name == name && typeof(IStateChildren).IsAssignableFrom(t))
         .SelectMany(t => t.GetConstructors()).OrderBy(c => c.GetParameters().Length).Select(c => new NativeOverload(name,
             name + "(" + string.Join(", ", c.GetParameters().Select(p => (p.GetCustomAttribute<ParamArrayAttribute>() != null ? "params " : "") + FriendlyType(p.ParameterType) + " " + p.Name + (p.HasDefaultValue ? " = " + FormatDefault(p) : ""))) + ")",
-            c.GetParameters().Select(p => new PrimitiveParameter(p.Name!, FriendlyType(p.ParameterType), p.HasDefaultValue ? FormatDefault(p) : p.GetCustomAttribute<ParamArrayAttribute>() != null && name != "Prioritize" ? "empty array" : "required", Unit(p.Name!, name), Explain(p.Name!))).ToArray())).ToArray();
+            c.GetParameters().Select(p => new PrimitiveParameter(p.Name!, FriendlyType(p.ParameterType), p.HasDefaultValue ? FormatDefault(p) : p.GetCustomAttribute<ParamArrayAttribute>() != null && name != "Prioritize" ? "empty array" : "required", Unit(p.Name!, name), Explain(p.Name!,name))).ToArray())).ToArray();
     static string FriendlyType(Type type) => type.IsArray ? FriendlyType(type.GetElementType()!) + "[]" : Nullable.GetUnderlyingType(type) is { } inner ? FriendlyType(inner) + "?" : type.Name switch { "Int32" => "int", "Double" => "double", "Single" => "float", "Boolean" => "bool", "String" => "string", _ => type.Name };
 }
