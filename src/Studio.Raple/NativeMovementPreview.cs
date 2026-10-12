@@ -13,6 +13,7 @@ public static class NativeMovementPreview
     {
         if (durationMs is < 100 or > 10000) throw new ArgumentOutOfRangeException(nameof(durationMs), "Movement previews run for 100–10000 ms.");
         cancellation.ThrowIfCancellationRequested();
+        adapter=adapter.ForProject(project);
         var document = new BehaviorDocument(project.Source, adapter, project.Identities, project.SourceFile);
         IEncounterSession native = adapter.NeedsCompiledRuntime(document, project.EntityId)
             ? await CompiledRuntime.StartAsync(adapter.ServerRoot, project, phase, cancellation: cancellation)
@@ -32,7 +33,7 @@ public static class NativeMovementPreview
                 if (native.Dead) { reason = native.PlayerHp <= 0 ? "Player died" : "Host died"; break; }
                 await Task.Yield();
             }
-            return new(project.EntityId, actor.Id, phase, project.Seed, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(project.Source))), native is CompiledRuntime ? "Compiled source" : "Native constructors", points.ToImmutable(), reason);
+            return new(project.EntityId, actor.Id, phase, project.Seed, SourceVerification.EditedSourceHash(project), native is CompiledRuntime ? "Compiled source" : "Native constructors", points.ToImmutable(), reason);
         }
         finally { if (native is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync(); else native.Dispose(); }
     }

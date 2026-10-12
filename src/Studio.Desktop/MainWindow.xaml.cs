@@ -69,7 +69,7 @@ public partial class MainWindow : Window
     }
     void Initialize()
     {
-        adapter = new RapleAdapter(ServerPath()); catalog = adapter.Catalog();
+        adapter = new RapleAdapter(ServerPath()); catalog = adapter.Catalog().Select(e=>e with{SourceFile=Path.GetFullPath(e.SourceFile)}).ToArray();
         var clientOption = Array.IndexOf(arguments, "--client");
         sprites = new ClientSprites(adapter.ServerRoot, clientOption >= 0 && clientOption + 1 < arguments.Length ? arguments[clientOption + 1] : null);
         Viewport.Sprites = sprites; LibraryCount.Text = catalog.Count + " entities"; LoadWorkspaceLayout();
@@ -86,7 +86,7 @@ public partial class MainWindow : Window
         Status.Text = $"Ready · cold runtime initialization {cold.StartMs:0} ms";
         autosaveTimer.Start();
         Status.Text = $"{catalog.Count} source entities · {adapter.Primitives.Count} runtime constructors · all editing works offline";
-        if (arguments.Contains("--smoke")) Dispatcher.BeginInvoke(new Action(Smoke), DispatcherPriority.ApplicationIdle);
+        if (arguments.Contains("--smoke")) Dispatcher.BeginInvoke(new Action(()=>{if(arguments.Contains("--source-set-smoke"))SourceSetSmoke();else Smoke();}), DispatcherPriority.ApplicationIdle);
     }
     void Try(Action action)
     {
@@ -96,6 +96,7 @@ public partial class MainWindow : Window
     StudioProject Snapshot() => new()
     {
         SourceFile = selectedEntity!.SourceFile, Source = document.Source, Identities = document.Identities,
+        AdditionalSources = SourceDependencies(),
         EntityId = selectedEntity.Id, Brief = Brief.Text, Player = ReadPreset(), Seed = int.Parse(Seed.Text), ArenaSize = int.Parse(ArenaSize.Text), Arena=arenaPreset,
         Layout = CaptureLayout(), LockedNodes = document.LockedNodes.ToList(), CollapsedNodes = CollapsedNodes.ToList()
     };
@@ -109,9 +110,16 @@ public partial class MainWindow : Window
         Try(() =>
         {
             if (selectedEntity != null && document != null && !arguments.Contains("--smoke")) BehaviorDocument.Save(RecoveryPath(), Snapshot());
+            RememberSourceDraft();displayedSourceFile=null;
+            if(selectedEntity!=null&&sourceDependencies.Count!=0)
+                sourceDependencies[selectedEntity.SourceFile]=new(selectedEntity.SourceFile,document.Source){Identities=document.Identities,LockedNodes=document.LockedNodes.ToList(),CollapsedNodes=CollapsedNodes.ToList()};
             selectedEntity = entry; session = null; running = false; Viewport.Session = null;
-            if (!documents.TryGetValue(entry.SourceFile, out document!))
+            if(sourceDependencies.TryGetValue(entry.SourceFile,out var dependency))
+                documents[entry.SourceFile]=document=new BehaviorDocument(dependency.Source,adapter,dependency.Identities,entry.SourceFile);
+            else if (!documents.TryGetValue(entry.SourceFile, out document!))
                 documents[entry.SourceFile] = document = new BehaviorDocument(File.ReadAllText(entry.SourceFile), adapter, sourceFile: entry.SourceFile);
+            if(sourceDependencies.Remove(entry.SourceFile,out var activeSource))document.LockedNodes.UnionWith(activeSource.LockedNodes);
+            RebindSourceWorkspace();
             projectPath = null; clearedEvents = 0; UpdatePlayButton(); Events.ItemsSource = null; EventCount.Text = "0 events"; Viewport.ResetCamera(); RefreshDocument();
         });
     }
@@ -121,7 +129,7 @@ public partial class MainWindow : Window
         ClearCombatPreview();
         RefreshRuntimeActors();
         if (selectedEntity == null) return;
-        EntityTitle.Text = selectedEntity.Id; SourceEditor.Text = document.Source;
+        EntityTitle.Text = selectedEntity.Id; RefreshSourceFiles();
         EntitySprite.Source = sprites.Get(selectedEntity.Id); Viewport.PreviewEntity = selectedEntity.Id; Viewport.InvalidateVisual();
         EntitySubtitle.Text = $"{Path.GetFileNameWithoutExtension(selectedEntity.SourceFile)}  /  revision {document.Revision}";
         var entity = document.Entities.FirstOrDefault(e => e.EntityId == selectedEntity.Id);
@@ -177,7 +185,7 @@ public partial class MainWindow : Window
             {
                 var sourceRegion = selectedNode;
                 var openRegion = new Button { Content = "Open Source", Style = (Style)FindResource("QuietButton"), Margin = new(0, 8, 0, 0) };
-                openRegion.Click += (_, _) => { WorkspaceTabs.SelectedIndex = 2; SourceEditor.Select(sourceRegion.Start, sourceRegion.Length); SourceEditor.Focus(); }; Inspector.Children.Add(openRegion);
+                openRegion.Click += (_, _) => { ShowEncounterSource(); SourceEditor.Select(sourceRegion.Start, sourceRegion.Length); SourceEditor.Focus(); }; Inspector.Children.Add(openRegion);
             }
             AddDefinitionControls(selectedNode);
             var primitive = adapter.Primitives.FirstOrDefault(p => p.Name == selectedNode.Kind);
@@ -230,7 +238,7 @@ public partial class MainWindow : Window
             if (selectedNode.Parameters.Any(p => p.Name == "count")) Proposal.Text = JsonSerializer.Serialize(new DocumentPatch(document.Revision, "Increase shot count", [new(id, "count", "3")]), BehaviorDocument.JsonOptions);
         });
     }
-    void Changed(Guid? id = null) { running = false; session = null; Viewport.Session = null; UpdatePlayButton(); RefreshDocument(id); Status.Text += " · changes take effect on next Play"; }
+    void Changed(Guid? id = null) { running = false; session = null; Viewport.Session = null; RebindSourceWorkspace(); UpdatePlayButton(); RefreshDocument(id); Status.Text += " · changes take effect on next Play"; }
     void AddPrimitive(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null || Primitives.SelectedItem is not Primitive p) return;
@@ -314,9 +322,9 @@ public partial class MainWindow : Window
     }
     void EventSelected(object sender, SelectionChangedEventArgs e) { if (Events.SelectedItem is EventRow { Event.NodeId: { } id }) SelectNode(id); }
     void BossHpChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (session != null) Try(() => { BranchTimeline(); session.SetBossHpFraction(e.NewValue / 100); UpdateSession(); }); }
-    void ApplySource(object sender, RoutedEventArgs e) => Try(() => { document.ReplaceSource(SourceEditor.Text, d => adapter.Validate(d, selectedEntity!.Id)); Changed(); });
-    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if (document.Undo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
-    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if (document.Redo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
+    void ApplySource(object sender, RoutedEventArgs e) => Try(ApplySourceBuffer);
+    void Undo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)UndoMap();else if(Viewport.ArenaEditing) UndoArena(); else if (SourceWorkspace.IsSelected && UndoSourceBuffer(false)) {} else if (document.Undo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
+    void Redo(object sender, RoutedEventArgs e) => Try(() => { if(MapWorkspace.IsSelected)RedoMap();else if(Viewport.ArenaEditing) RedoArena(); else if (SourceWorkspace.IsSelected && UndoSourceBuffer(true)) {} else if (document.Redo()) {ClearViewportEditors();Changed(selectedNode?.Id);} });
     void ImportSource(object sender, RoutedEventArgs e) => Try(() =>
     {
         var dialog = new OpenFileDialog { Filter = "C# behavior files|*.cs", InitialDirectory = Path.Combine(adapter.ServerRoot, "TKR.WorldServer/logic/db") };
@@ -344,10 +352,13 @@ public partial class MainWindow : Window
     }
     void ApplyProject(StudioProject p, string? path)
     {
-        var d = new BehaviorDocument(p.Source, adapter, p.Identities, p.SourceFile);
+        p=p with{SourceFile=Path.GetFullPath(p.SourceFile),AdditionalSources=p.AdditionalSources.Select(s=>s with{SourceFile=Path.GetFullPath(s.SourceFile)}).ToList()};
+        var scoped=adapter.ForProject(p);
+        var d = new BehaviorDocument(p.Source, scoped, p.Identities, p.SourceFile);
         var known = catalog.FirstOrDefault(c => c.Id == p.EntityId) ?? throw new ArgumentException("Project entity is missing from this server's resources.");
         NativeArena.Validate(p.Arena); arenaPreset=p.Arena; arenaUndo.Clear();arenaRedo.Clear();scenarioRevision++;ClearArenaEditor();
         selectedEntity = known with { SourceFile = p.SourceFile }; document = d; documents[p.SourceFile] = d; projectPath = path;
+        LoadSourceDependencies(p,scoped);
         foreach (var id in p.LockedNodes) d.LockedNodes.Add(id);
         Brief.Text = p.Brief; Seed.Text = p.Seed.ToString(); ArenaSize.Text = p.ArenaSize.ToString(); PlayerHp.Text = p.Player.Hp.ToString(); PlayerSpeed.Text = p.Player.Speed.ToString(); PlayerDefense.Text = p.Player.Defense.ToString(); Invulnerable.IsChecked = p.Player.Invulnerable; Spectator.IsChecked = p.Player.Spectator;
         PlayerAttack.Text = p.Player.Attack.ToString(); PlayerDexterity.Text = p.Player.Dexterity.ToString();
@@ -363,11 +374,10 @@ public partial class MainWindow : Window
         Status.Text = "Checking export…";
         await using var native = await CompiledRuntime.StartAsync(adapter.ServerRoot, project);
         if (document != expected || document.Revision != revision || scenarioRevision!=expectedScenario || selectedEntity?.Id != project.EntityId) throw new InvalidOperationException("The document or arena changed during export checking. Export the current revision again.");
-        var dialog = new SaveFileDialog { Filter = "C# behavior source|*.cs", FileName = Path.GetFileName(selectedEntity.SourceFile) };
+        var dialog = new SaveFileDialog { Filter = project.AdditionalSources.Count==0 ? "C# behavior source|*.cs" : "Verified source bundle|*.zip", FileName = project.AdditionalSources.Count==0 ? Path.GetFileName(selectedEntity.SourceFile) : selectedEntity.Id+".zip" };
         if (dialog.ShowDialog() != true) return;
         if (Path.GetFullPath(dialog.FileName).StartsWith(adapter.ServerRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Export to a separate folder, then review before installing in the private server.");
-        File.WriteAllText(dialog.FileName, project.Source);
-        File.WriteAllText(dialog.FileName + ".verification.json", JsonSerializer.Serialize(native.Stamp, BehaviorDocument.JsonOptions));
+        ExportSourceWorkspace(dialog.FileName,project,native.Stamp);
         Status.Text = $"Exported C# · original compiler and native loader accepted {native.Stamp.Source.SourceFiles} source files";
     });
     void SaveTrace(object sender, RoutedEventArgs e) => Try(() => { if (session == null) return; var dialog = new SaveFileDialog { Filter = "Encounter trace|*.json", FileName = "encounter-trace.json" }; if (dialog.ShowDialog() == true) session.ExportTrace(dialog.FileName); });

@@ -87,7 +87,7 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
             !Hash(Identity.SourceHash) || !Hash(Identity.NativeSourcesHash) || !Hash(Identity.ResourceHash) || !Hash(Identity.RuntimeHash) ||
             Identity.CompiledBuildId != "" && !Hash(Identity.CompiledBuildId) || Identity.SourceHash != ReplayJournal.Hash(JsonSerializer.Serialize(Project)))
             throw new ArgumentException("Unsupported, modified or oversized encounter recording.");
-        Project.Arena.Validate();long ms = 0; var previous = Initial;
+        Project.ValidateSourceSet();Project.Arena.Validate();long ms = 0; var previous = Initial;
         if (Initial.Ms != 0 || !Hash(Initial.Signature) || Initial.Events < 0 || Initial.Shots < 0 || Initial.PlayerShots < 0 || Initial.Movements<0 || Initial.Effects<0) throw new ArgumentException("Invalid initial replay witness.");
         foreach (var command in Commands)
         {
@@ -137,6 +137,7 @@ public sealed class ReplayCursor
         CompiledRuntime.PreparedRuntime? prepared = null, IProgress<long>? progress = null, CancellationToken cancellation = default)
     {
         replay.Validate(); ValidateTime(replay, targetMs); cancellation.ThrowIfCancellationRequested();
+        adapter=adapter.ForProject(replay.Project);
         var identity = await Task.Run(() => EncounterReplay.Identify(adapter, replay.Project, replay.Identity.CompiledBuildId), cancellation);
         cancellation.ThrowIfCancellationRequested();
         if (identity != replay.Identity) throw new InvalidOperationException("Recording source, resources or runtime changed. Record a fresh run.");

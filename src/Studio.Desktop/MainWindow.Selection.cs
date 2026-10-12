@@ -190,7 +190,7 @@ public partial class MainWindow
         if (selectedNode != null)
         {
             var focused = selectedNode.Id;
-            yield return new("Go to focused source", "Open the original C# expression", () => { WorkspaceTabs.SelectedIndex = 2; SourceEditor.Focus(); SourceEditor.Select(document.Find(focused).Start, document.Find(focused).Length); SourceEditor.ScrollToLine(document.Source[..document.Find(focused).Start].Count(c => c == '\n')); });
+            yield return new("Go to focused source", "Open the original C# expression", () => { ShowEncounterSource(); SourceEditor.Focus(); SourceEditor.Select(document.Find(focused).Start, document.Find(focused).Length); SourceEditor.ScrollToLine(document.Source[..document.Find(focused).Start].Count(c => c == '\n')); });
             if (selectedNode.Kind == "State") yield return new("Toggle focused phase details", "Double-click a phase card", () => TogglePhaseCollapse(focused));
             if (selectedNode.Kind == "State") yield return new("Ungroup focused phase", "Promote its contents · reroute incoming transitions first", UngroupSelectedPhase, document.Parent(focused)?.Kind == "State" && RegionEditable(selectedNode));
         }

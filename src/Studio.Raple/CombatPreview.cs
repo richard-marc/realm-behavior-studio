@@ -61,6 +61,7 @@ public static class CombatPreview
     public static async Task<CombatPreviewReport> RunAsync(RapleAdapter adapter, StudioProject project, string? phase = null, CombatPreviewOptions? options = null, IProgress<CombatPreviewProgress>? progress = null, CancellationToken cancellation = default)
     {
         options ??= new(); options.Validate(); cancellation.ThrowIfCancellationRequested();
+        adapter=adapter.ForProject(project);
         var document = new BehaviorDocument(project.Source, adapter, project.Identities, project.SourceFile);
         var compiled = adapter.NeedsCompiledRuntime(document, project.EntityId);
         var prepared = compiled ? await CompiledRuntime.PrepareAsync(adapter.ServerRoot, project, limits: new(CommandSeconds: 30), cancellation: cancellation).ConfigureAwait(false) : null;
@@ -94,6 +95,6 @@ public static class CombatPreview
             points.Add(point); progress?.Report(new(points.Count + 1, total, point));
         }
         if (await Task.Run(() => SourceVerification.Fingerprint(resourceRoot, "*"), cancellation).ConfigureAwait(false) != resourceHash) throw new InvalidOperationException("Game resources changed during the preview. Run it again with the current resources.");
-        return new(project.EntityId, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(project.Source))), resourceHash, prepared?.Stamp.BuildId, project.Seed, project.ArenaSize, project.Player, phase, compiled ? "Compiled source" : "Native constructors", options, reference, points.ToImmutable());
+        return new(project.EntityId, SourceVerification.EditedSourceHash(project), resourceHash, prepared?.Stamp.BuildId, project.Seed, project.ArenaSize, project.Player, phase, compiled ? "Compiled source" : "Native constructors", options, reference, points.ToImmutable());
     }
 }

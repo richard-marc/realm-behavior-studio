@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using Studio.Core;
 
 namespace Studio.Raple;
 
@@ -35,20 +36,34 @@ public static class SourceVerification
             .GroupBy(Path.GetFileNameWithoutExtension, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).OrderBy(p => p, StringComparer.Ordinal).ToArray();
     }
     // C# is this server's actual behavior parser. Compile the complete original WorldServer sources,
-    // replacing just the imported file, against .NET 8 reference assemblies and the server's
+    // replacing the project's source documents, against .NET 8 reference assemblies and the server's
     // restored compile assets. Studio's own dependencies can select newer framework variants.
     public static ExportVerification Check(string serverRoot, string originalFile, string exportedSource)
         => Compile(serverRoot, originalFile, exportedSource).Verification;
+    public static string EditedSourceHash(StudioProject project)
+    {
+        project.ValidateSourceSet();
+        if(project.AdditionalSources.Count==0)return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(project.Source)));
+        return Hash(project.AdditionalSources.Select(s=>(s.SourceFile,s.Source)).Prepend((project.SourceFile,project.Source))
+            .OrderBy(s=>Path.GetFullPath(s.SourceFile),StringComparer.OrdinalIgnoreCase).Select(s=>(Path.GetFullPath(s.SourceFile),Encoding.UTF8.GetBytes(s.Source))));
+    }
     public static NativeCompilation Compile(string serverRoot, string originalFile, string exportedSource, CancellationToken cancellation = default)
+        =>Compile(serverRoot,new StudioProject{SourceFile=originalFile,Source=exportedSource},cancellation);
+    public static IReadOnlyDictionary<string,string> SourceSet(string serverRoot,StudioProject project)
+    {
+        project.ValidateSourceSet();var paths=SourcePaths(serverRoot).Select(Path.GetFullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var sources=project.AdditionalSources.Select(s=>(s.SourceFile,s.Source)).Prepend((project.SourceFile,project.Source)).ToDictionary(s=>Path.GetFullPath(s.SourceFile),s=>s.Source,StringComparer.OrdinalIgnoreCase);
+        if(sources.Keys.Any(p=>!paths.Contains(p)))throw new ArgumentException("Every project source document must identify an original file in this server's source tree.");return sources;
+    }
+    public static NativeCompilation Compile(string serverRoot,StudioProject project,CancellationToken cancellation=default)
     {
         var dir = Path.Combine(serverRoot, "TKR.WorldServer");
         var paths = SourcePaths(serverRoot);
-        var original = Path.GetFullPath(originalFile);
-        if (!paths.Any(p => Path.GetFullPath(p).Equals(original, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("The imported file is not in this server's behavior source tree.");
+        var edits=SourceSet(serverRoot,project);
         // The SDK normally generates this attribute under obj. Preserve the actual
         // referenced engine identity so the host can bind to the emitted replacement.
         var identity = $"[assembly: global::System.Reflection.AssemblyVersion(\"{typeof(TKR.WorldServer.logic.State).Assembly.GetName().Version}\")]";
-        var sources = paths.Select(p => (Path: p, Text: Path.GetFullPath(p).Equals(original, StringComparison.OrdinalIgnoreCase) ? exportedSource : File.ReadAllText(p)))
+        var sources = paths.Select(p => (Path: p, Text: edits.TryGetValue(Path.GetFullPath(p),out var edited)?edited:File.ReadAllText(p)))
             .Append((Path: Path.Combine(dir, "_Studio.NativeAssemblyIdentity.g.cs"), Text: identity)).ToArray();
         var trees = sources.Select(p => CSharpSyntaxTree.ParseText(SourceText.From(p.Text, Encoding.UTF8), new CSharpParseOptions(LanguageVersion.CSharp12), path: p.Path));
         var referencePaths = ReferencePaths(dir);
@@ -58,7 +73,7 @@ public static class SourceVerification
             .Where(e => e.Attribute("Include") != null).Select(e => (Name: (string?)e.Attribute("LogicalName") ?? throw new InvalidOperationException("An embedded resource needs its original logical name."),
                 Data: File.ReadAllBytes(Path.Combine(dir, (string)e.Attribute("Include")!)))).OrderBy(e => e.Name, StringComparer.Ordinal).ToArray();
         var stamp = new NativeSourceStamp(Hash(sources.Select(p => (Path.GetRelativePath(dir, p.Path), Encoding.UTF8.GetBytes(p.Text)))),
-            Hash([(Path.GetRelativePath(dir, original), Encoding.UTF8.GetBytes(exportedSource))]),
+            Hash(edits.OrderBy(e=>e.Key,StringComparer.OrdinalIgnoreCase).Select(e=>(Path.GetRelativePath(dir,e.Key),Encoding.UTF8.GetBytes(e.Value)))),
             Hash(referencePaths.Select(p => (Path.GetFileName(p), File.ReadAllBytes(p)))), Hash(resources.Select(r => (r.Name, r.Data))), paths.Length);
         var compilation = CSharpCompilation.Create("TKR.WorldServer", trees,
             referencePaths.Select(p => MetadataReference.CreateFromFile(p)),

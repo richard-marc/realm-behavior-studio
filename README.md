@@ -43,6 +43,8 @@ The launcher builds into a directory identified by the application/server source
 
 ## First encounter
 
+The **Source** tab has a project file picker. **Add file** includes an existing C# file from the original server compilation; edit a shared helper, then **Apply** checks the complete project. Switching files preserves unapplied drafts. Applied dependency edits have their own Undo/Redo, persist in save/recovery and recordings, and force native compiled playback even for a literal encounter. A multi-file **Export** produces a ZIP with every edited file at its original server-relative path and the native verification stamp. It never installs changes into the game checkout. Cross-file visual body editing and phase-reference reconciliation remain pending; encounter locks conservatively block shared-source edits. Unapplied drafts are local to the open window and are not part of a saved project.
+
 1. Search for **Cave Pirate Brawler** in the entity library. Its real behavior contains Follow, Wander and Shoot.
 2. Open Behavior and select Shoot in the tree. Change `count` or `coolDown`, then Apply changes. Expand More supported parameters to add spacing, fixed angle or per-volley rotation.
    Choose **Edit aim & spacing** to open the viewport editor. Drag aim, spacing or search radius; release commits one source edit, and Escape cancels a drag. Search radius uses native tile units. The preview shows the first volley's directions; Play runs actual prediction, rotation and effects. Compiler-known constants support visual editing; unknown expressions stay editable in Parameters or Source without executing getters.

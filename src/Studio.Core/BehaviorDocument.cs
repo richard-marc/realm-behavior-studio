@@ -27,11 +27,18 @@ public record DocumentDiagnostic(string Message, Guid? NodeId = null, bool IsErr
 public record NodeIdentity(Guid Id, string Path, string Kind, string? Signature = null);
 public record PlayerPreset(int Hp = 1000, int Speed = 50, int Defense = 25, bool Invulnerable = false, bool Spectator = false,
     string WeaponId = "Staff of Diabolic Secrets", int Attack = 50, int Dexterity = 50, double StartX = 70.5, double StartY = 64.5);
+public sealed record StudioSourceDocument(string SourceFile,string Source)
+{
+    public List<NodeIdentity> Identities {get;init;}=[];
+    public List<Guid> LockedNodes {get;init;}=[];
+    public List<Guid> CollapsedNodes {get;init;}=[];
+}
 public sealed record StudioProject
 {
     public int Version { get; init; } = 1;
     public string SourceFile { get; init; } = "";
     public string Source { get; init; } = "";
+    public List<StudioSourceDocument> AdditionalSources {get;init;}=[];
     public string EntityId { get; init; } = "Cave Pirate Brawler";
     public string Brief { get; init; } = "";
     public int Seed { get; init; } = 1;
@@ -42,6 +49,15 @@ public sealed record StudioProject
     public Dictionary<string, double[]> Layout { get; init; } = new();
     public List<Guid> LockedNodes { get; init; } = new();
     public List<Guid> CollapsedNodes { get; init; } = new();
+    public void ValidateSourceSet()
+    {
+        if(AdditionalSources==null||AdditionalSources.Count>128||Source==null||Source.Length>4_000_000||AdditionalSources.Any(s=>s==null||string.IsNullOrWhiteSpace(s.SourceFile)||s.SourceFile.Length>4096||s.Source==null||s.Source.Length>4_000_000||s.Identities==null||s.LockedNodes==null||s.CollapsedNodes==null)||AdditionalSources.Sum(s=>(long)s.Source.Length)+Source.Length>32_000_000)
+            throw new ArgumentException("Project source documents exceed supported bounds.");
+        if(AdditionalSources.Count==0)return;
+        if(string.IsNullOrWhiteSpace(SourceFile)||SourceFile.Length>4096)throw new ArgumentException("A source workspace needs an original primary source file.");
+        var paths=AdditionalSources.Select(s=>Path.GetFullPath(s.SourceFile)).Prepend(Path.GetFullPath(SourceFile)).ToArray();
+        if(paths.Distinct(StringComparer.OrdinalIgnoreCase).Count()!=paths.Length)throw new ArgumentException("Each project source file must occur once.");
+    }
 }
 
 // The lossless C# syntax tree is the shared model. Unknown expressions and trivia are never regenerated.
@@ -59,10 +75,16 @@ public sealed partial class BehaviorDocument
     public HashSet<Guid> LockedNodes { get; } = [];
     readonly Stack<(string Source, List<NodeIdentity> Ids)> undo = new(), redo = new();
     readonly Func<string, string[]> names;
-    readonly IBehaviorSchema? baseSchema;
+    IBehaviorSchema? baseSchema;
     IBehaviorSchema? schema;
     public IBehaviorSchema? SchemaAt(BehaviorNode node) => schema?.At(node.Start);
     public IEnumerable<DocumentDiagnostic> SourceDiagnostics() => schema?.SourceDiagnostics() ?? [];
+    public void RebindSchema(IBehaviorSchema binding)
+    {
+        var ids=Identities;
+        baseSchema=binding;
+        Parse(ids);
+    }
     public IReadOnlyList<EncounterSource> EncounterSources => schema?.AdditionalEncounters() ?? [];
     public BehaviorDocument(string source, IBehaviorSchema schema, IEnumerable<NodeIdentity>? identities = null, string? sourceFile = null) : this(source, schema.ParameterNames, identities, schema, sourceFile) { }
     public BehaviorDocument(string source, Func<string, string[]>? parameterNames = null, IEnumerable<NodeIdentity>? identities = null, IBehaviorSchema? schema = null, string? sourceFile = null)
@@ -300,6 +322,7 @@ public sealed partial class BehaviorDocument
     public static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     public static void Save(string path, StudioProject project)
     {
+        project.ValidateSourceSet();
         var full = Path.GetFullPath(path); Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         var temporary = full + ".tmp." + Guid.NewGuid().ToString("N");
         File.WriteAllText(temporary, JsonSerializer.Serialize(project, JsonOptions)); File.Move(temporary, full, true);
@@ -308,6 +331,7 @@ public sealed partial class BehaviorDocument
     {
         var p = JsonSerializer.Deserialize<StudioProject>(File.ReadAllText(path), JsonOptions) ?? throw new ArgumentException("Empty project.");
         if (p.Version != 1) throw new ArgumentException($"Project version {p.Version} is not supported.");
+        p.ValidateSourceSet();
         return p;
     }
 }

@@ -24,7 +24,7 @@ public partial class MainWindow
         if (node.ArgumentRequiresSource)
         {
             var source = new Button { Content = "Open Source", Style = (Style)FindResource("QuietButton") };
-            source.Click += (_, _) => { WorkspaceTabs.SelectedIndex = 2; SourceEditor.Select(node.Start, node.Length); SourceEditor.Focus(); }; Inspector.Children.Add(source); return;
+            source.Click += (_, _) => { ShowEncounterSource(); SourceEditor.Select(node.Start, node.Length); SourceEditor.Focus(); }; Inspector.Children.Add(source); return;
         }
         chooseChildSlotButton = new Button { Content = slot.IsCollection ? "+ Add child" : node.Children.Count > 0 ? "Replace child" : "Choose child", Style = (Style)FindResource("QuietButton"), IsEnabled = RegionEditable(node) };
         chooseChildSlotButton.Click += (_, _) => { LibraryTabs.SelectedIndex = 1; PrimitiveSearch.Text = ""; PrimitiveSearch.Focus(); }; Inspector.Children.Add(chooseChildSlotButton);

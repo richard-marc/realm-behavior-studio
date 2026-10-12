@@ -24,6 +24,12 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     public string FragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(" + string.Join(",\n", expressions) + ")";
     public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => "new global::TKR.WorldServer.logic.State(children: [" + string.Join(",\n", expressions) + "])";
     readonly SourceSchemaCache sourceSchemas;
+    public bool HasAdditionalSources {get;}
+    public RapleAdapter ForProject(StudioProject project)
+    {
+        project.ValidateSourceSet();
+        return project.AdditionalSources.Count==0 ? HasAdditionalSources ? new(ServerRoot,null,false,sourceSchemas) : this : new(ServerRoot,SourceVerification.SourceSet(ServerRoot,project),true,sourceSchemas);
+    }
     public IBehaviorSchema ForSource(string source, string? sourceFile)
     {
         if (string.IsNullOrEmpty(sourceFile)) return this;
@@ -45,10 +51,11 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
         "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense"];
     public IReadOnlyList<Primitive> Primitives { get; }
-    public RapleAdapter(string root)
+    public RapleAdapter(string root):this(root,null,false){}
+    RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
     {
         ServerRoot = Path.GetFullPath(root);
-        sourceSchemas = new(ServerRoot);
+        sourceSchemas = new(ServerRoot,sources,shared);HasAdditionalSources=additional;
         if (!Directory.Exists(Path.Combine(ServerRoot, "TKR.Shared/resources/xml"))) throw new DirectoryNotFoundException("Choose the Raple Realms server source folder, containing TKR.Shared/resources/xml.");
         SimEngine.Root = ServerRoot;
         lock (resourceGate)
@@ -203,7 +210,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         typeof(State).GetMethod("ResolveChildren", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(root, [states]);
         return root;
     }
-    public bool NeedsCompiledRuntime(BehaviorDocument document, string entityId) => document.Entities.Single(e => e.EntityId == entityId).Registration?.Shared==true || document.Entities.Single(e => e.EntityId == entityId)
+    public bool NeedsCompiledRuntime(BehaviorDocument document, string entityId) => HasAdditionalSources || document.Entities.Single(e => e.EntityId == entityId).Registration?.Shared==true || document.Entities.Single(e => e.EntityId == entityId)
         .Root.Descendants().Any(n => n.Kind != "ArgumentGroup" && (document.SchemaAt(n)?.DescribeExpression(document.Expression(n))?.RequiresCompiled == true || !Supported.Contains(n.Kind) || Binding(document.Expression(n)).RequiresContext));
     public static object? Evaluate(ExpressionSyntax expr, Type expected)
     {

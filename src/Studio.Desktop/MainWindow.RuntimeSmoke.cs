@@ -48,6 +48,7 @@ public partial class MainWindow
         await RunOwnedEmitterUiSmoke(output,check);
         await RunPhaseChoiceUiSmoke(output,check);
         await RunHealthUiSmoke(output,check);
+        await RunSourceSetUiSmoke(output,check);
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);
         Changed(); var factory = document.Entities.Single(e => e.EntityId == selectedEntity.Id).Root;
         check(factory.Kind == "Factory" && factory.Parameters.Single().Name == "count", "Desktop discovers the imported source helper as the encounter root");

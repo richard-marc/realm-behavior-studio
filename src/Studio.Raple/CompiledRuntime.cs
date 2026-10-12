@@ -85,7 +85,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
         hostDirectory ??= Path.Combine(AppContext.BaseDirectory, "runtime-host");
         if (!File.Exists(Path.Combine(hostDirectory, "Studio.RuntimeHost.dll"))) throw new FileNotFoundException("The compiled runtime host is missing. Rebuild Studio with its runtime host.");
         artifactRoot ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RealmBehaviorStudio", "Runtime");
-        var compilation = await Task.Run(() => SourceVerification.Compile(serverRoot, project.SourceFile, project.Source, cancellation), cancellation).ConfigureAwait(false);
+        var compilation = await Task.Run(() => SourceVerification.Compile(serverRoot, project, cancellation), cancellation).ConfigureAwait(false);
         if (!compilation.Verification.Accepted) throw new ArgumentException("Original compiler rejected the runtime:\n" + string.Join("\n", compilation.Verification.Errors.Take(8)));
         var prepared = await Task.Run(() =>
         {

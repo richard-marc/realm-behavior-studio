@@ -7,30 +7,40 @@ using Studio.Core;
 
 namespace Studio.Raple;
 
-// A semantic view of the original server, with exactly one document substituted.
+// A semantic view of the original server, with the project source documents substituted.
 // No helper or property getter is executed while describing the authoring model.
-internal sealed class SourceSchemaCache(string serverRoot)
+internal sealed class SourceSchemaCache(string serverRoot,IReadOnlyDictionary<string,string>? overlays=null,SourceSchemaCache? shared=null)
 {
-    readonly object gate = new();
-    CSharpCompilation? baseline;
-    string? stamp;
+    sealed class OriginalSources
+    {
+        public readonly object Gate=new();
+        public CSharpCompilation? Baseline;
+        public string? Stamp;
+    }
+    readonly OriginalSources originalSources=shared?.originalSources??new();
     public (CSharpCompilation Compilation, SyntaxTree Tree) Bind(string source, string file)
     {
-        lock (gate)
+        lock (originalSources.Gate)
         {
             var paths = SourceVerification.SourcePaths(serverRoot);
             var references = SourceVerification.ReferencePaths(Path.Combine(serverRoot, "TKR.WorldServer"));
             var inputs = paths.Concat(references).Append(Path.Combine(serverRoot, "TKR.WorldServer/obj/project.assets.json"));
             var current = string.Join("\n", inputs.Select(p => { var info = new FileInfo(p); return p + ":" + info.Length + ":" + info.LastWriteTimeUtc.Ticks; }));
-            if (baseline == null || current != stamp)
+            if (originalSources.Baseline == null || current != originalSources.Stamp)
             {
-                baseline = SourceVerification.SemanticCompilation(serverRoot, paths, references);
-                stamp = current;
+                originalSources.Baseline = SourceVerification.SemanticCompilation(serverRoot, paths, references);
+                originalSources.Stamp = current;
             }
-            var original = baseline.SyntaxTrees.SingleOrDefault(t => Path.GetFullPath(t.FilePath).Equals(Path.GetFullPath(file), StringComparison.OrdinalIgnoreCase))
+            var compilation=originalSources.Baseline;
+            foreach(var replacement in overlays??new Dictionary<string,string>())
+            {
+                var existing=compilation.SyntaxTrees.Single(t=>Path.GetFullPath(t.FilePath).Equals(replacement.Key,StringComparison.OrdinalIgnoreCase));
+                compilation=compilation.ReplaceSyntaxTree(existing,CSharpSyntaxTree.ParseText(SourceText.From(replacement.Value,System.Text.Encoding.UTF8),(CSharpParseOptions)existing.Options,existing.FilePath));
+            }
+            var original = compilation.SyntaxTrees.SingleOrDefault(t => Path.GetFullPath(t.FilePath).Equals(Path.GetFullPath(file), StringComparison.OrdinalIgnoreCase))
                 ?? throw new ArgumentException("The source context must identify an original server file.");
             var edited = CSharpSyntaxTree.ParseText(SourceText.From(source, System.Text.Encoding.UTF8), (CSharpParseOptions)original.Options, original.FilePath);
-            return (baseline.ReplaceSyntaxTree(original, edited), edited);
+            return (compilation.ReplaceSyntaxTree(original, edited), edited);
         }
     }
 }
@@ -168,8 +178,8 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
         { RequiresCompiled = expression is InvocationExpressionSyntax or ObjectCreationExpressionSyntax { Initializer: not null } || standalone.RequiresContext || standalone.Constructor is not { } constructor || constructor.DeclaringType?.FullName?.Replace('+', '.') != actualType ||
             constructor.GetParameters().Length != method.Parameters.Length || !method.Parameters.Zip(constructor.GetParameters()).All(p => SameType(p.First.Type, p.Second.ParameterType)) };
     }
-    public IEnumerable<DocumentDiagnostic> SourceDiagnostics() => Model.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error)
-        .Select(d => new DocumentDiagnostic($"Line {d.Location.GetLineSpan().StartLinePosition.Line + 1}: {d.GetMessage()}"));
+    public IEnumerable<DocumentDiagnostic> SourceDiagnostics() => (adapter.HasAdditionalSources ? context.Binding.Value.Compilation.GetDiagnostics() : Model.GetDiagnostics()).Where(d => d.Severity == DiagnosticSeverity.Error)
+        .Select(d => new DocumentDiagnostic($"{(adapter.HasAdditionalSources?Path.GetFileName(d.Location.GetLineSpan().Path)+": ":"")}Line {d.Location.GetLineSpan().StartLinePosition.Line + 1}: {d.GetMessage()}"));
     public string[] ParameterNames(string kind) => adapter.ParameterNames(kind);
     public string[] ConstructorParameterNames(string expression) => DescribeExpression(expression)?.ArgumentNames ?? adapter.ConstructorParameterNames(expression);
     public bool? TargetsPhaseOf(string text, string parameter, string ownerEntity, string targetEntity)
