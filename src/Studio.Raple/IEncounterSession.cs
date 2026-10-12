@@ -15,6 +15,7 @@ public interface IEncounterSession : IDisposable
     IReadOnlyList<EncounterEvent> Events { get; }
     IReadOnlyList<Emission> Shots { get; }
     IReadOnlyList<Emission> PlayerShots { get; }
+    IReadOnlyList<NativeEffect> Effects { get; }
     IReadOnlyList<ReplayInput> Inputs { get; }
     ReplayJournal? Recording { get; set; }
     IReadOnlyList<MovementSample> Movements { get; }

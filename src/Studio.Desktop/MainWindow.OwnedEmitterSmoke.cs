@@ -31,7 +31,10 @@ public partial class MainWindow
         check(await StartSessionAsync(),"Desktop Play starts the actual native owned-emitter encounter");running=false;
         for(var tick=0;tick<12;tick++)((EncounterSession)session!).Step(new());UpdateSession();
         check(session!.Entities.Count==3&&session.Shots.Count>0&&session.Shots.All(s=>session.Entities.Any(e=>e.Id==s.OwnerId&&e.Name=="Gordo Procession Emitter"&&e.ParentId!=null)),"Desktop native playback exposes genuine helper actors and their own projectile emissions");
-        WorkspaceTabs.SelectedIndex=0;UpdateLayout();CaptureView(this,Path.Combine(output,"owned-emitter-runtime.png"));Stop(this,new());
+        WorkspaceTabs.SelectedIndex=0;UpdateLayout();CaptureView(this,Path.Combine(output,"owned-emitter-runtime.png"));
+        check(session.Effects.Count>0&&Viewport.NativeTelegraphCount>0&&Viewport.NativeTelegraphCount==TelegraphGeometry.Sample(session.Effects,session.Ms+Viewport.FrameRemainderMs).Length,"Actual WPF render draws the native helper's live ground warnings from received packets");
+        session.RemoveMinionsForTest();session.Advance(new(),500);UpdateSession();CaptureView(this,Path.Combine(output,"owned-emitter-expired.png"));
+        check(Viewport.NativeTelegraphCount==0&&session.Effects.Count>0,"Native warning expiry removes rendered markers while retaining raw packet history");Stop(this,new());
         check(File.ReadAllText(selectedEntity.SourceFile)==supplied,"Desktop emitter authoring and playback leave supplied game source untouched");ApplyProject(previous,null);
     }
 }

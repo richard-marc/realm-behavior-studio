@@ -67,7 +67,7 @@ var atGate=await ReplayCursor.RestoreAsync(adapter,tape,500);
 using(atGate.Session)Check(atGate.Session.BossHp<atGate.Session.BossMaxHp && atGate.Session.Events.Count(e=>e.Kind=="override")==2,"Seeking to a boundary applies same-time HP and minion overrides in their original order");
 var start=await ReplayCursor.RestoreAsync(adapter,tape,0);
 using(start.Session)Check(start.Session.Ms==0 && start.Session.Events.SequenceEqual(tape.Events.Take(tape.Initial.Events)),"Seeking to zero restores actual initialization without running future inputs");
-Reject(()=> (tape with{Version=2}).Validate(),"Unknown replay versions reject");
+Reject(()=> (tape with{Version=99}).Validate(),"Unknown replay versions reject");
 Reject(()=> (tape with{Project=tape.Project with{Version=2}}).Validate(),"Unknown embedded project versions reject");
 Reject(()=> (tape with{Commands=[tape.Commands[0] with{Ms=5}]}).Validate(),"Gapped input histories reject before native initialization");
 Reject(()=> (tape with{Commands=[tape.Commands[0] with{DurationMs=3}]}).Validate(),"Non-sample input durations reject");

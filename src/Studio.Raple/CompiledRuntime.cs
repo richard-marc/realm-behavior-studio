@@ -30,6 +30,8 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     public IReadOnlyList<EncounterEvent> Events => events;
     public IReadOnlyList<Emission> Shots => shots;
     public IReadOnlyList<Emission> PlayerShots => playerShots;
+    volatile ImmutableList<NativeEffect> effects=ImmutableList<NativeEffect>.Empty;
+    public IReadOnlyList<NativeEffect> Effects=>effects;
     public IReadOnlyList<ReplayInput> Inputs => inputs;
     public ReplayJournal? Recording { get; set; }
     public PreparedRuntime? Prepared { get; private set; }
@@ -215,6 +217,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             if(frame.ArenaDelta is {} map)arena=map;
             else if(arena==null)throw new InvalidOperationException("Runtime omitted its initial native arena snapshot.");
             movements=movements.AddRange(frame.MovementDelta ?? throw new InvalidOperationException("Runtime omitted native movement samples."));
+            effects=effects.AddRange(frame.EffectDelta ?? throw new InvalidOperationException("Runtime omitted native effect packets."));
             events = events.AddRange(frame.Events); shots = shots.AddRange(frame.Shots); playerShots = playerShots.AddRange(frame.PlayerShots); currentFrame = frame;
             if (request.Command is "advance" or "boss-hp" or "remove-minions") Recording?.Record(this, new(previousMs, request.Command, request.Command == "advance" ? request.DurationMs : 0, request.Input, request.Fraction));
             else if (request.Command == "sample-combat" && Recording != null) Recording = null;
@@ -252,5 +255,5 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     }
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
     public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { runtime = Stamp, seed = Frame.Seed,
-        entity = Project.EntityId, player = Project.Player, tickMs = 100, sampleMs = EncounterSession.SampleMs, durationMs = Frame.Ms, coverage = Frame.Coverage, actors = Entities, events = Events, shots = Shots, playerShots = PlayerShots, inputs = Inputs }, BehaviorDocument.JsonOptions));
+        entity = Project.EntityId, player = Project.Player, tickMs = 100, sampleMs = EncounterSession.SampleMs, durationMs = Frame.Ms, coverage = Frame.Coverage, actors = Entities, events = Events, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
 }

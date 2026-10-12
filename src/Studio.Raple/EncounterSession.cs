@@ -26,6 +26,7 @@ public record ReplayRecord(int Version, int Seed, string Entity, string Source, 
 public sealed class EncounterSession : IEncounterSession
 {
     readonly SimEngine engine;
+    readonly NativePacketCapture packetCapture;
     readonly Enemy boss;
     readonly BehaviorDocument document;
     readonly List<Bullet> bullets = [];
@@ -58,6 +59,8 @@ public sealed class EncounterSession : IEncounterSession
     public List<MovementSample> Movements { get; } = [];
     IReadOnlyList<MovementSample> IEncounterSession.Movements => Movements;
     public List<Emission> Shots { get; } = [];
+    public List<NativeEffect> Effects { get; } = [];
+    IReadOnlyList<NativeEffect> IEncounterSession.Effects=>Effects;
     public bool PauseRequested { get; private set; }
     public string? BreakpointKind { get; set; }
     public string PlayerClass => weapon.Entry.ClassId;
@@ -120,12 +123,19 @@ public sealed class EncounterSession : IEncounterSession
         boss = NativeMapFile.SpawnConfigured(engine,new(entity,arena.BossX,arena.BossY,arena.BossConfig));
         foreach(var actor in arena.Actors)NativeMapFile.SpawnConfigured(engine,actor);
         engine.FlushAdds();
+        packetCapture=new(engine.Actor.Client);
         PlayerHp = weapon.Stats[0]; engine.Actor.HP = PlayerHp;
         if (phase != null)
         {
+            try
+            {
             engine.Tick(0); engine.DrainShots();
+            CaptureEffects();
             if (!BossLabRuntime.TryForceState(engine.Actor, boss, phase, SimEngine.Time(0), out var error)) throw new ArgumentException(error);
+            CaptureEffects();
             Add("forced-phase", $"Forced phase {phase}; previous setup bypassed.");
+            }
+            catch {packetCapture.Dispose();throw;}
         }
         watch.Stop(); StartMs = watch.Elapsed.TotalMilliseconds;
         Add("start", $"Seed {seed}; 100 ms enemy ticks / {SampleMs} ms client collision samples. Weapon: {weapon.Entry.Name}. Abilities, armor/ring loadouts, regeneration and full player lifecycle remain pending.");
@@ -137,6 +147,15 @@ public sealed class EncounterSession : IEncounterSession
     {
         if (Events.Count < 30000) Events.Add(new(at ?? Ms, kind, message, node, actor, parent));
         if (BreakpointKind == kind) PauseRequested = true;
+    }
+    void CaptureEffects()
+    {
+        foreach(var effect in packetCapture.Drain(Ms))
+        {
+            if(Effects.Count>=30000)throw new InvalidOperationException("Encounter exceeded the 30,000 native effect limit.");
+            Effects.Add(effect);
+            Add("effect",((TKR.WorldServer.networking.packets.outgoing.EffectType)effect.Kind)+" · "+effect.DurationMs+" ms",actor:effect.TargetObjectId);
+        }
     }
     public IReadOnlyList<EncounterEvent> NewEvents()
     {
@@ -151,6 +170,7 @@ public sealed class EncounterSession : IEncounterSession
     public void RemoveMinionsForTest()
     {
         foreach (var e in engine.World.Enemies.Values.Where(e => e != boss).ToArray()) e.Expunge();
+        CaptureEffects();
         Add("override", "Minions removed for transition test; death callbacks bypassed.");
         Recording?.Record(this, new(Ms, "remove-minions"));
     }
@@ -204,6 +224,7 @@ public sealed class EncounterSession : IEncounterSession
                 var beforeTick = engine.World.Enemies.Values.ToDictionary(e => e.Id, e => (e.X, e.Y));
                 var dying = engine.World.Enemies.Values.Where(e => e.HP == 0 && !e.Dead).ToArray();
                 engine.Actor.HP = Math.Max(1, PlayerHp); engine.Tick(Ms);
+                CaptureEffects();
                 motions.Clear();
                 foreach (var dead in dying.Where(e => e.Dead)) Add("death", dead.ObjectDesc.IdName + " killed by weapon; native death callbacks executed.", actor: dead.Id, parent: dead.ParentEntity?.Id);
                 foreach (var e in engine.World.Enemies.Values.Where(e => !e.Dead))
@@ -259,7 +280,7 @@ public sealed class EncounterSession : IEncounterSession
                     if (Dead) Add("death", "Test player died. Restart to respawn.");
                 }
             }
-            ObserveActorRemovals(); Ms += SampleMs;
+            CaptureEffects(); ObserveActorRemovals(); Ms += SampleMs;
         }
         foreach (var removed in bullets.Where(b => b.Friendly && b.Removed)) weapon.Forget(removed.Id);
         bullets.RemoveAll(b => b.Removed);
@@ -287,7 +308,7 @@ public sealed class EncounterSession : IEncounterSession
         var matches = phase.StateChildren.Where(n => n.Kind == "Shoot" && (n.Parameters.FirstOrDefault(p => p.Name == "projectileIndex")?.Expression ?? "0") == index.ToString()).ToArray();
         return matches.Length == 1 ? matches[0].Id : null; // Ambiguous emission provenance is not guessed.
     }
-    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities, events = Events, shots = Shots, playerShots = PlayerShots, inputs = Inputs }, BehaviorDocument.JsonOptions));
+    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities, events = Events, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
     public string InspectTimers() => string.Join("\n", boss.StateStorage.Select(p => p.Key.GetType().Name + ": " + (p.Value is int n ? n + " ms / scalar" : p.Value?.GetType().Name ?? "null")));
-    public void Dispose() { } // The current linked bootstrap owns no OS process/resources.
+    public void Dispose() => packetCapture.Dispose();
 }

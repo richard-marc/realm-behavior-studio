@@ -1,4 +1,4 @@
-param([string]$ServerRoot = (Join-Path $PSScriptRoot '../raple-realms-7-server'), [switch]$OriginalRuntime)
+param([string]$ServerRoot = (Join-Path $PSScriptRoot '../raple-realms-7-server'), [switch]$OriginalRuntime, [switch]$ChecksOnly)
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
@@ -45,6 +45,9 @@ try {
     & dotnet run --project tests/OwnedEmitter.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/owned-emitter-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/owned-emitter-checks.log' -Tail 25; throw 'Owned emitter checks failed.' }
     Get-Content '.artifacts/owned-emitter-checks.log' -Tail 1
+    & dotnet run --project tests/Effects.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/effect-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/effect-checks.log' -Tail 25; throw 'Native effect checks failed.' }
+    Get-Content '.artifacts/effect-checks.log' -Tail 1
     & dotnet run --project tests/Registration.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/registration-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/registration-checks.log' -Tail 25; throw 'Native registration checks failed.' }
     Get-Content '.artifacts/registration-checks.log' -Tail 1
@@ -69,6 +72,7 @@ try {
     & dotnet run --project tests/AI.Checks *> '.artifacts/ai-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/ai-checks.log' -Tail 25; throw 'AI contract checks failed.' }
     Get-Content '.artifacts/ai-checks.log' -Tail 1
+    if($ChecksOnly){return}
     & dotnet build src/Studio.Desktop "-p:ServerRoot=$ServerRoot" -v quiet *> '.artifacts/desktop-build.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/desktop-build.log' -Tail 25; throw 'Desktop build failed.' }
     $studioExe = Join-Path $PSScriptRoot 'src/Studio.Desktop/bin/Debug/net10.0-windows/Studio.Desktop.exe'

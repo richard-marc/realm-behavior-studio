@@ -12,23 +12,24 @@ public record RuntimeFrame(long Ms, int PlayerHp, float PlayerX, float PlayerY, 
     string PlayerClass, WeaponEntry Weapon, double PlayerFacing, double PlayerAttackAngle, double PlayerMoveSpeed,
     long PlayerAttackStart, double PlayerAttackPeriod, int[] PlayerStats, string Coverage, bool PauseRequested,
     EntityView[] Entities, BulletView[] Projectiles, EncounterEvent[] Events, Emission[] Shots, Emission[] PlayerShots, string Timers,
-    string LoadedAssemblyHash, string[] EmbeddedResources, string RuntimeVersion, MovementSample[] MovementDelta,ArenaSceneView? ArenaDelta);
+    string LoadedAssemblyHash, string[] EmbeddedResources, string RuntimeVersion, MovementSample[] MovementDelta,ArenaSceneView? ArenaDelta,NativeEffect[] EffectDelta);
 public record NativeRuntimeStamp(int Version, string BuildId, NativeSourceStamp Source, string HostHash, string ResourceHash,
     string AssemblyHash, string SymbolsHash, string RuntimeVersion, string SourceFramework = "net8.0", string HostFramework = "net10.0");
 
 public static class RuntimeProtocol
 {
-    public const int Version = 7;
+    public const int Version = 8;
     public const int MaxLineLength = 8 * 1024 * 1024;
-    public static RuntimeFrame Capture(EncounterSession session, ref int events, ref int shots, ref int playerShots, ref int movements,ref long arenaRevision)
+    public static RuntimeFrame Capture(EncounterSession session, ref int events, ref int shots, ref int playerShots, ref int movements,ref long arenaRevision,ref int effects)
     {
         var frame = new RuntimeFrame(session.Ms, session.PlayerHp, session.PlayerX, session.PlayerY, session.BossHp, session.BossMaxHp,
             session.Seed, session.StartMs, session.PlayerClass, session.Weapon, session.PlayerFacing, session.PlayerAttackAngle,
             session.PlayerMoveSpeed, session.PlayerAttackStart, session.PlayerAttackPeriod, session.PlayerStats.ToArray(), session.Coverage,
             session.PauseRequested, session.Entities.ToArray(), session.Projectiles.ToArray(), session.Events.Skip(events).ToArray(),
-            session.Shots.Skip(shots).ToArray(), session.PlayerShots.Skip(playerShots).ToArray(), session.InspectTimers(), LoadedAssemblyHash, EmbeddedResources, Environment.Version.ToString(),session.Movements.Skip(movements).ToArray(),session.Arena.Revision==arenaRevision?null:session.Arena);
+            session.Shots.Skip(shots).ToArray(), session.PlayerShots.Skip(playerShots).ToArray(), session.InspectTimers(), LoadedAssemblyHash, EmbeddedResources, Environment.Version.ToString(),session.Movements.Skip(movements).ToArray(),session.Arena.Revision==arenaRevision?null:session.Arena,session.Effects.Skip(effects).ToArray());
         events = session.Events.Count; shots = session.Shots.Count; playerShots = session.PlayerShots.Count;
         movements=session.Movements.Count;
+        effects=session.Effects.Count;
         arenaRevision=session.Arena.Revision;
         return frame;
     }

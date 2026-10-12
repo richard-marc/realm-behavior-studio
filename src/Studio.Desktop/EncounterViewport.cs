@@ -12,7 +12,7 @@ public sealed partial class EncounterViewport : FrameworkElement
     public IEncounterSession? Session
     {
         get => session;
-        set { if (ReferenceEquals(session, value)) return; session = value; facings.Clear(); FrameRemainderMs = 0; InvalidateVisual(); }
+        set { if (ReferenceEquals(session, value)) return; session = value; facings.Clear(); effectSession=null;effectMarks=[];effectCount=-1; FrameRemainderMs = 0; InvalidateVisual(); }
     }
     public double FrameRemainderMs { get; set; }
     public ClientSprites? Sprites { get; set; }
@@ -98,6 +98,7 @@ public sealed partial class EncounterViewport : FrameworkElement
             Text(dc, "Press Play  ·  WASD to move  ·  mouse to aim", new(18, ActualHeight - 32), 12, Brush("#686F7B")); return;
         }
         var renderMs = session.Ms + FrameRemainderMs;
+        DrawNativeEffects(dc,session,renderMs);
         var entities = session.Entities;
         foreach (var stale in facings.Keys.Where(id => !entities.Any(e => e.Id == id)).ToArray()) facings.Remove(stale);
         foreach (var e in entities.OrderBy(e => EntityPosition(e, renderMs).Y))

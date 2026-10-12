@@ -15,7 +15,7 @@ try
 }
 catch (ArgumentException) { return 0; }
 EncounterSession? session = null;
-int events = 0, shots = 0, playerShots = 0, movements = 0;
+int events = 0, shots = 0, playerShots = 0, movements = 0, effects=0;
 long arenaRevision=-1;
 long lastSequence = 0;
 while (Console.ReadLine() is { } line)
@@ -55,7 +55,7 @@ while (Console.ReadLine() is { } line)
                 default: throw new ArgumentException("Unknown runtime command.");
             }
         }
-        var response = new RuntimeResponse(RuntimeProtocol.Version, request.Sequence, RuntimeProtocol.Capture(session!, ref events, ref shots, ref playerShots,ref movements,ref arenaRevision), Preview: preview);
+        var response = new RuntimeResponse(RuntimeProtocol.Version, request.Sequence, RuntimeProtocol.Capture(session!, ref events, ref shots, ref playerShots,ref movements,ref arenaRevision,ref effects), Preview: preview);
         var json = JsonSerializer.Serialize(response);
         if (json.Length > RuntimeProtocol.MaxLineLength) throw new InvalidOperationException("Runtime response exceeds the protocol limit.");
         protocolOutput.WriteLine(json); protocolOutput.Flush();
