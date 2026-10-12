@@ -4,7 +4,7 @@ using Studio.Raple;
 namespace Studio.Desktop;
 public partial class MainWindow
 {
-    sealed record WorkspacePhaseEdit(SourcePhaseRename Plan,IReadOnlyList<BehaviorDocument> Documents);
+    sealed record WorkspacePhaseEdit(SourcePhaseEdit Plan,IReadOnlyList<BehaviorDocument> Documents);
     readonly Stack<WorkspacePhaseEdit> workspacePhaseUndo=[],workspacePhaseRedo=[];
     void DiscardWorkspacePhaseRedo()
     {
@@ -21,9 +21,24 @@ public partial class MainWindow
     void RenameWorkspacePhase(Guid id,string name)
     {
         var before=Snapshot();var plan=SourcePhaseRefactor.Rename(adapter,before,document.SourceFile!,id,name);
+        ApplyWorkspacePhaseEdit(plan,id,"Renamed");
+    }
+    void DeleteWorkspacePhase(Guid id)
+        =>DeleteWorkspacePhases([id]);
+    void DeleteWorkspacePhases(IEnumerable<Guid> ids)
+    {
+        var nodes=document.NormalizeSelection(ids);var removed=nodes.SelectMany(n=>n.Descendants()).Select(n=>n.Id).ToHashSet();
+        var parent=document.Parent(nodes[0].Id);while(parent!=null&&removed.Contains(parent.Id))parent=document.Parent(parent.Id);
+        var fallback=parent?.Id??throw new ArgumentException("Select child phases.");
+        var plan=SourcePhaseRefactor.Delete(adapter,Snapshot(),document.SourceFile!,nodes.Select(n=>n.Id));
+        ApplyWorkspacePhaseEdit(plan,fallback,"Deleted");
+    }
+    void ApplyWorkspacePhaseEdit(SourcePhaseEdit plan,Guid selection,string action)
+    {
+        var before=plan.Before;
         if(plan.Changes.Count==0)return;
         RememberSourceDraft();
-        if(plan.Changes.Any(c=>sourceDrafts.TryGetValue(c.SourceFile,out var draft)&&draft!=c.Before))throw new InvalidOperationException("Apply or discard drafts in the affected source files before renaming this phase.");
+        if(plan.Changes.Any(c=>sourceDrafts.TryGetValue(c.SourceFile,out var draft)&&draft!=c.Before))throw new InvalidOperationException("Apply or discard drafts in the affected source files before changing this phase.");
         var binding=adapter.ForProject(plan.After);var affected=new List<BehaviorDocument>();
         foreach(var change in plan.Changes)
         {
@@ -44,7 +59,10 @@ public partial class MainWindow
         {
             for(var index=0;index<affected.Count;index++)
             {
-                var editing=affected[index];editing.ApplyLiteralEdits(editing.Revision,plan.Changes[index].Edits,binding);committed.Add(editing);
+                var editing=affected[index];var change=plan.Changes[index];
+                if(change.AfterIdentities is {} ids)editing.ApplySourceRevision(editing.Revision,change.Before,change.After,ids,binding);
+                else editing.ApplyLiteralEdits(editing.Revision,change.Edits,binding);
+                committed.Add(editing);
             }
         }
         catch
@@ -54,8 +72,8 @@ public partial class MainWindow
         }
         InstallPhaseWorkspace(plan.After,plan.Changes);
         DiscardWorkspacePhaseRedo();foreach(var change in plan.Changes)sourceRedo.Remove(change.SourceFile);
-        workspacePhaseUndo.Push(new(plan,affected));scenarioRevision++;Changed(id);
-        Status.Text="Renamed phase across "+plan.Changes.Count+" source files · Undo restores the complete edit";
+        workspacePhaseUndo.Push(new(plan,affected));scenarioRevision++;Changed(selection);
+        Status.Text=action+" phase across "+plan.Changes.Count+" source files · Undo restores the complete edit";
     }
     void InstallPhaseWorkspace(StudioProject project,IReadOnlyList<SourcePhaseChange> changes)
     {
@@ -63,6 +81,13 @@ public partial class MainWindow
         sourceDependencies.Clear();foreach(var source in project.AdditionalSources)sourceDependencies[source.SourceFile]=source;
         PrimaryDocument.RebindSchema(adapter);
         foreach(var editing in dependencyDocuments.Values)editing.RebindSchema(adapter);
+        foreach(var change in changes)
+        {
+            var editing=change.SourceFile.Equals(project.SourceFile,StringComparison.OrdinalIgnoreCase)?PrimaryDocument:dependencyDocuments[change.SourceFile];
+            var record=change.SourceFile.Equals(project.SourceFile,StringComparison.OrdinalIgnoreCase)?new StudioSourceDocument(project.SourceFile,project.Source){LockedNodes=project.LockedNodes,CollapsedNodes=project.CollapsedNodes}:project.AdditionalSources.Single(s=>s.SourceFile.Equals(change.SourceFile,StringComparison.OrdinalIgnoreCase));
+            editing.LockedNodes.Clear();editing.LockedNodes.UnionWith(record.LockedNodes);
+            collapsedByDocument[editing]=record.CollapsedNodes.Where(id=>editing.AllNodes.Any(n=>n.Id==id)).ToHashSet();
+        }
         foreach(var change in changes)sourceDrafts.Remove(change.SourceFile);
         if(displayedSourceFile!=null){displayedSource=displayedSourceFile.Equals(project.SourceFile,StringComparison.OrdinalIgnoreCase)?project.Source:project.AdditionalSources.FirstOrDefault(s=>s.SourceFile.Equals(displayedSourceFile,StringComparison.OrdinalIgnoreCase))?.Source??"";SourceEditor.Text=sourceDrafts.GetValueOrDefault(displayedSourceFile,displayedSource);}
     }

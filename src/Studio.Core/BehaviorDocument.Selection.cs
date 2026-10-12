@@ -143,7 +143,8 @@ public sealed partial class BehaviorDocument
         var siblings = parent.Children.ToList(); var index = siblings.FindIndex(n => n.Id == id); siblings.RemoveAt(index); siblings.InsertRange(index, group.Children);
         RewriteChildren(new() { [parent.Id] = siblings }, [], validate); return parent.Id;
     }
-    public Guid DeleteNodes(IEnumerable<Guid> ids, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
+    public Guid DeleteNodes(IEnumerable<Guid> ids, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null,
+        Action<EntityBehavior,IReadOnlyCollection<string>>? reconcilePhases=null)
     {
         var nodes = NormalizeSelection(ids); var fallback = StructuralParent(nodes[0]);
         foreach (var node in nodes) { StructuralParent(node); Editable(node); }
@@ -152,7 +153,11 @@ public sealed partial class BehaviorDocument
         foreach (var entityGroup in nodes.GroupBy(n => OwningEntity(n.Id)))
         {
             var phaseNames = entityGroup.SelectMany(n => n.Descendants()).Where(n => n.Kind == "State").Select(n => StateName(n.Id)).OfType<string>().ToHashSet(StringComparer.Ordinal);
-            if (phaseNames.Count > 0) LiteralReferences(entityGroup.Key, phaseNames);
+            if (phaseNames.Count > 0)
+            {
+                if(reconcilePhases==null)LiteralReferences(entityGroup.Key,phaseNames);
+                else reconcilePhases(entityGroup.Key,phaseNames); // A workspace planner must reconcile every caller before committing.
+            }
             foreach (var reference in AllNodes.Where(n => !removed.Contains(n.Id) && n.Parameters.Any(p => ReferencesEntityPhase(n, p, entityGroup.Key) == true && PhaseLiterals(p.Expression)?.Any(v=>phaseNames.Contains(v.Name))==true)))
             {
                 if (!reference.IsTransition) throw new ArgumentException("Update actions referencing deleted phases first.");

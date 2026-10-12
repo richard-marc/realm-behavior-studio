@@ -66,8 +66,8 @@ public partial class MainWindow
         duplicateStructureButton = Tool("Duplicate", 0, DuplicateSelectedNode, node.Kind == "Reference" ? "Copy this reference. Both nodes keep using the same shared source value." : "Copy this branch with unique phase names and new editor identities.", editable);
         upStructureButton = Tool("↑", 1, MoveSelectedNodeUp, "Move earlier in source order.", editable && index > 0 && RegionEditable(siblings[index - 1]));
         downStructureButton = Tool("↓", 2, MoveSelectedNodeDown, "Move later in source order.", editable && index + 1 < siblings.Count && RegionEditable(siblings[index + 1]));
-        deleteStructureButton = Tool("×", 3, DeleteSelectedNode, "Delete this branch and transitions targeting its phases. Undo restores both.", editable);
-        panel.Children.Add(tools); panel.Children.Add(new TextBlock { Text = "Order controls phase entry and action/transition priority. Delete also removes incoming phase transitions. Undo restores the entire edit.", TextWrapping = TextWrapping.Wrap, Foreground = EncounterViewport.Brush("#92969F"), FontSize = 11, Margin = new(0, 8, 0, 0) });
+        deleteStructureButton = Tool("×", 3, DeleteSelectedNode, "Delete this branch and known incoming phase transitions/orders. Undo restores the complete edit.", editable);
+        panel.Children.Add(tools); panel.Children.Add(new TextBlock { Text = "Order controls phase entry and action/transition priority. Delete also reconciles known incoming phase references. Undo restores the entire edit.", TextWrapping = TextWrapping.Wrap, Foreground = EncounterViewport.Brush("#92969F"), FontSize = 11, Margin = new(0, 8, 0, 0) });
         organizeExpander = new Expander { Header = "Organize", Content = panel, Margin = new(0, 12, 0, 4) }; Inspector.Children.Add(organizeExpander);
     }
     void RenameSelectedPhase(object sender, RoutedEventArgs e) => Try(() =>
@@ -88,7 +88,9 @@ public partial class MainWindow
     });
     void DeleteSelectedNode(object sender, RoutedEventArgs e) => Try(() =>
     {
-        if (selectedNode == null) return; var parent = document.DeleteNode(selectedNode.Id, ValidateAuthoring); Changed(parent);
+        if (selectedNode == null) return;
+        if(adapter.HasAdditionalSources&&selectedNode.Kind=="State"){DeleteWorkspacePhase(selectedNode.Id);return;}
+        var parent = document.DeleteNode(selectedNode.Id, ValidateAuthoring); Changed(parent);
     });
     void SelectTreeNode(Guid id)
     {

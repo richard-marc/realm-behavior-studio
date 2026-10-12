@@ -309,6 +309,22 @@ public sealed partial class BehaviorDocument
         var errors=candidate.SourceDiagnostics().Where(d=>d.IsError).ToArray();if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
         baseSchema=binding;Commit(changed,Identities,null);
     }
+    public void ApplySourceRevision(long expectedRevision,string expectedSource,string source,List<NodeIdentity> identities,IBehaviorSchema binding)
+    {
+        if(expectedRevision!=Revision||expectedSource!=Source)throw new InvalidOperationException("The source changed while the coordinated structural edit was prepared.");
+        var candidate=new BehaviorDocument(source,binding,identities,SourceFile);
+        if(identities.Any(i=>!candidate.Identities.Any(n=>n.Id==i.Id)))throw new InvalidOperationException("The accepted source revision did not retain its planned identities.");
+        var protectedNodes=new Queue<Guid>(LockedNodes);var checkedNodes=new HashSet<Guid>();
+        while(protectedNodes.TryDequeue(out var id))
+        {
+            if(!checkedNodes.Add(id))continue;
+            var original=Find(id);var retained=candidate.AllNodes.FirstOrDefault(n=>n.Id==id);
+            if(retained==null||Expression(original)!=candidate.Expression(retained))throw new InvalidOperationException("A coordinated source revision cannot change a locked region.");
+            foreach(var definition in ReferencedDefinitions(original))protectedNodes.Enqueue(definition.Root.Id);
+        }
+        var previous=baseSchema;
+        try{baseSchema=binding;Commit(source,identities,null);}catch{baseSchema=previous;throw;}
+    }
     void Commit(string source, List<NodeIdentity> ids, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate)
     {
         var candidate = new BehaviorDocument(source, names, ids, baseSchema, SourceFile);

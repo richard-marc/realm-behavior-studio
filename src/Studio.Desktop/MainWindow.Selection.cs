@@ -160,7 +160,10 @@ public partial class MainWindow
         if (target == null) return;
         ChangedSelection(document.PasteNodes(target.Id, target.Children.Count, clipboard, ValidateAuthoring));
     });
-    void DeleteSelectedNodes() => Try(() => { var parent = document.DeleteNodes(nodeSelection, ValidateAuthoring); Changed(parent); });
+    void DeleteSelectedNodes() => Try(() => {
+        if(adapter.HasAdditionalSources&&document.NormalizeSelection(nodeSelection).Any(n=>n.Descendants().Any(c=>c.Kind=="State"))){DeleteWorkspacePhases(nodeSelection);return;}
+        var parent = document.DeleteNodes(nodeSelection, ValidateAuthoring); Changed(parent);
+    });
     void GroupSelectedNodes() => Try(() => { var id = document.GroupNodes(nodeSelection, NextPhaseName(), ValidateAuthoring); Changed(id); });
     void UngroupSelectedPhase() => Try(() => { if (selectedNode != null) Changed(document.UngroupState(selectedNode.Id, ValidateAuthoring)); });
     void SyncCollapsedGraph() { if (document != null) Graph.CollapsedNodes = CollapsedNodes.ToHashSet(); }

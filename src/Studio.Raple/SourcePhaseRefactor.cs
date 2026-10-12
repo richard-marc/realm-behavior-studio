@@ -5,12 +5,17 @@ using Studio.Core;
 
 namespace Studio.Raple;
 
-public sealed record SourcePhaseChange(string SourceFile,string Before,string After,List<NodeIdentity> Identities,IReadOnlyList<SourceLiteralEdit> Edits);
-public sealed record SourcePhaseRename(StudioProject Before,StudioProject After,IReadOnlyList<SourcePhaseChange> Changes);
-
-public static class SourcePhaseRefactor
+public sealed record SourcePhaseChange(string SourceFile,string Before,string After,List<NodeIdentity> Identities,IReadOnlyList<SourceLiteralEdit> Edits)
 {
-    public static SourcePhaseRename Rename(RapleAdapter adapter,StudioProject project,string sourceFile,Guid phaseId,string name)
+    public List<NodeIdentity>? AfterIdentities {get;init;}
+}
+public sealed record SourcePhaseEdit(StudioProject Before,StudioProject After,IReadOnlyList<SourcePhaseChange> Changes);
+
+public static partial class SourcePhaseRefactor
+{
+    public static SourcePhaseEdit Rename(RapleAdapter adapter,StudioProject project,string sourceFile,Guid phaseId,string name)
+        =>PlanRename(adapter,project,sourceFile,phaseId,name,true);
+    static SourcePhaseEdit PlanRename(RapleAdapter adapter,StudioProject project,string sourceFile,Guid phaseId,string name,bool validateCandidate)
     {
         if(string.IsNullOrWhiteSpace(name))throw new ArgumentException("Enter a non-empty phase name.");
         var originals=SourceVerification.SourceSet(adapter.ServerRoot,project);
@@ -125,13 +130,16 @@ public static class SourcePhaseRefactor
         }
         var primaryPath=Path.GetFullPath(project.SourceFile);var primary=records[primaryPath];
         var after=project with{Source=primary.Source,Identities=primary.Identities,AdditionalSources=records.Where(p=>!p.Key.Equals(primaryPath,StringComparison.OrdinalIgnoreCase)).Select(p=>p.Value).ToList()};
-        var candidateAdapter=adapter.ForProject(after);
-        foreach(var record in records.Values)
+        if(validateCandidate)
         {
-            var candidate=new BehaviorDocument(record.Source,candidateAdapter,record.Identities,record.SourceFile);
-            var errors=candidate.SourceDiagnostics().Where(d=>d.IsError).ToArray();
-            if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
-            if(record.Identities.Any(id=>!candidate.Identities.Any(next=>next.Id==id.Id)))throw new InvalidOperationException("Phase reconciliation changed a surviving source identity.");
+            var candidateAdapter=adapter.ForProject(after);
+            foreach(var record in records.Values)
+            {
+                var candidate=new BehaviorDocument(record.Source,candidateAdapter,record.Identities,record.SourceFile);
+                var errors=candidate.SourceDiagnostics().Where(d=>d.IsError).ToArray();
+                if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
+                if(record.Identities.Any(id=>!candidate.Identities.Any(next=>next.Id==id.Id)))throw new InvalidOperationException("Phase reconciliation changed a surviving source identity.");
+            }
         }
         return new(project,after,changesList);
     }

@@ -54,6 +54,9 @@ try {
     & dotnet run --project tests/PhaseWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/phase-workspace-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/phase-workspace-checks.log' -Tail 25; throw 'Coordinated phase workspace checks failed.' }
     Get-Content '.artifacts/phase-workspace-checks.log' -Tail 1
+    & dotnet run --project tests/DeleteWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/workspace-delete-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/workspace-delete-checks.log' -Tail 25; throw 'Coordinated workspace deletion checks failed.' }
+    Get-Content '.artifacts/workspace-delete-checks.log' -Tail 1
     & dotnet run --project tests/Transformation.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/transformation-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/transformation-checks.log' -Tail 25; throw 'Native transformation checks failed.' }
     Get-Content '.artifacts/transformation-checks.log' -Tail 1
@@ -103,7 +106,9 @@ try {
     $studioProcess = Start-Process -FilePath $studioExe -ArgumentList @('--smoke', '--server', ('"' + [IO.Path]::GetFullPath($ServerRoot) + '"')) -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
     $studioDeadline = [Diagnostics.Stopwatch]::StartNew()
     while (!$studioProcess.WaitForExit(5000)) {
-        if ($studioDeadline.Elapsed.TotalSeconds -gt 1200) { throw 'Desktop authoring/native-preview smoke suite did not finish within 1200 seconds.' }
+        # Full native authoring/history smoke measured 1556 seconds with 559 assertions.
+        # This suite deadline does not alter native startup, tick or memory limits.
+        if ($studioDeadline.Elapsed.TotalSeconds -gt 2400) { throw 'Desktop authoring/native-preview smoke suite did not finish within 2400 seconds.' }
     }
     if ($studioProcess.ExitCode -ne 0) { throw 'Desktop smoke test failed; see .artifacts/desktop-smoke-error.txt.' }
     Write-Host 'Desktop import/edit/play/save/trace/render smoke passed.'
