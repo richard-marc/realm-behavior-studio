@@ -175,6 +175,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         {
             var nodes = entity.Root.Descendants().ToArray();
             var states = nodes.Where(n => n.Kind == "State").ToArray();
+            var callerPhaseScopes=KnownLocalPhaseScopes(document,entity);
             foreach (var group in states.Where(s => document.StateName(s.Id) != null).GroupBy(s => document.StateName(s.Id)).Where(g => g.Count() > 1))
                 yield return new("Duplicate state name: " + group.Key, group.First().Id);
             foreach (var n in nodes)
@@ -219,7 +220,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                     }
                     if (typeError != null) yield return new($"{n.Kind}.{p.Name}: {typeError}", n.Id);
                     if (entity.Definition?.CompletePhaseContents!=false && (document.SchemaAt(n)?.TargetsPhaseOf(document.Expression(n), p.Name, entity.EntityId, entity.EntityId) ?? TargetsPhaseOf(document.Expression(n), p.Name, entity.EntityId, entity.EntityId)) == true && !nodes.Any(n => n.Kind is "Opaque" or "Factory" or "Reference" or "Spread") && !states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) && BehaviorDocument.PhaseLiterals(p.Expression) is {} phaseTargets)
-                        foreach(var stateTarget in phaseTargets.Where(t=>!states.Any(s=>(document.StateName(s.Id)??"")==t.Name)).DistinctBy(t=>t.Name))yield return new("Missing transition target: " + SyntaxFactory.Literal(stateTarget.Name).Text, n.Id);
+                        foreach(var stateTarget in phaseTargets.Where(t=>callerPhaseScopes==null?!states.Any(s=>(document.StateName(s.Id)??"")==t.Name):callerPhaseScopes.Any(scope=>!scope.Contains(t.Name))).DistinctBy(t=>t.Name))yield return new("Missing transition target: " + SyntaxFactory.Literal(stateTarget.Name).Text, n.Id);
                     if (p.Name is "children" or "target" or "childName" && BehaviorDocument.LiteralString(p.Expression) is { } resourceTarget && !SimEngine.Data.IdToObjectType.ContainsKey(resourceTarget))
                         yield return new("Missing entity resource: " + p.Expression, n.Id);
                     if (double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))

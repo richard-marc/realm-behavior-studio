@@ -12,6 +12,8 @@ public sealed record SourcePhaseChange(string SourceFile,string Before,string Af
 public sealed record SourcePhaseEdit(StudioProject Before,StudioProject After,IReadOnlyList<SourcePhaseChange> Changes)
 {
     public IReadOnlyList<Guid> Selection {get;init;}=[];
+    public string? OriginSourceFile {get;init;}
+    public string? SelectionSourceFile {get;init;}
 }
 
 public static partial class SourcePhaseRefactor

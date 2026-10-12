@@ -88,7 +88,9 @@ public partial class MainWindow
         }
         InstallPhaseWorkspace(plan.After,plan.Changes);
         DiscardWorkspacePhaseRedo();foreach(var change in plan.Changes)sourceRedo.Remove(change.SourceFile);
-        workspacePhaseUndo.Push(new(plan,affected));scenarioRevision++;Changed(selection);
+        workspacePhaseUndo.Push(new(plan,affected));scenarioRevision++;
+        if(plan.SelectionSourceFile is {} targetFile)FocusWorkspaceSource(targetFile,selection);
+        Changed(selection);
         Status.Text=action+" phase across "+plan.Changes.Count+" source files · Undo restores the complete edit";
     }
     void InstallPhaseWorkspace(StudioProject project,IReadOnlyList<SourcePhaseChange> changes)
@@ -129,6 +131,17 @@ public partial class MainWindow
             }
         }
         catch{foreach(var editing in restored.AsEnumerable().Reverse()){if(redo)editing.Undo();else editing.Redo();}throw;}
-        InstallPhaseWorkspace(target,edit.Plan.Changes);from.Pop();to.Push(edit);scenarioRevision++;Changed(selectedNode?.Id);return true;
+        InstallPhaseWorkspace(target,edit.Plan.Changes);from.Pop();to.Push(edit);scenarioRevision++;
+        if((redo?edit.Plan.SelectionSourceFile:edit.Plan.OriginSourceFile) is {} targetFile)
+        {var selected=edit.Plan.Selection[0];FocusWorkspaceSource(targetFile,selected);Changed(selected);}
+        else Changed(selectedNode?.Id);
+        return true;
+    }
+    void FocusWorkspaceSource(string file,Guid selection)
+    {
+        var target=file.Equals(PrimaryDocument.SourceFile,StringComparison.OrdinalIgnoreCase)?PrimaryDocument:dependencyDocuments[file];
+        if(target==PrimaryDocument){document=target;encounterDocument=null;}else{encounterDocument??=PrimaryDocument;document=target;}
+        var owner=document.AllRoots.Single(r=>r.Root.Descendants().Any(n=>n.Id==selection));definitionViewKey=owner.Definition==null?null:owner.EntityId;
+        nodeSelection.Clear();WorkspaceTabs.SelectedIndex=1;
     }
 }

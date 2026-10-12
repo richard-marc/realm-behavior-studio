@@ -89,6 +89,8 @@ Native `InitMany` ranges now appear in the entity library. Inline State lambdas 
 
 ## What Play currently means
 
+The collapsed **Organize → Extract helper** form moves a selected source-backed phase/action into a named helper in an accepted source file. It retains native hierarchy and phase destinations, carries required source inputs, and opens the new body with its original node identities. One Undo/Redo restores both files and follows the original/extracted view. Add a source file through Source before choosing it as the destination. Multi-node/collection extraction and cloning existing shared definitions remain pending.
+
 Deleting shared child phases now coordinates their known source files: selected and nested branches, incoming caller transitions and native orders are removed together. Bulk Delete and one Undo/Redo cover the full edit. Orders addressing other actors retain their destinations. Source drafts, caller/reference locks, dynamic references and required child slots block incomplete reconciliation. The declaring helper body itself remains a source root; shared-definition cloning/extraction and grouping across separate bodies are still pending.
 
 **Group selection into phase** now supports adjacent siblings in a shared helper body. It checks every known caller, selects a free phase name, retains action/child-phase identities and destinations, and uses one workspace Undo/Redo. Save/reopen retains the group and collapse state. Grouping authors a real nested game State, which changes phase entry and inheritance; shared-definition cloning/extraction and grouping selections from separate bodies remain pending.

@@ -36,6 +36,7 @@ public partial class MainWindow
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;
         if (deleteStructureButton != null) deleteStructureButton.IsEnabled = editable;
+        if (extractApplyButton != null) extractApplyButton.IsEnabled = editable;
         if (chooseChildSlotButton != null) chooseChildSlotButton.IsEnabled = editable;
         if (document.Parent(selectedNode.Id) is not { } parent) return;
         var siblings = parent.Children.ToList(); var index = siblings.FindIndex(n => n.Id == selectedNode.Id);
@@ -44,6 +45,7 @@ public partial class MainWindow
     }
     void AddOrganizeControls(BehaviorNode node)
     {
+        extractNameInput=null;extractDestination=null;extractApplyButton=null;
         phaseNameInput = null; renamePhaseButton = null; organizeExpander = null;
         duplicateStructureButton = upStructureButton = downStructureButton = deleteStructureButton = null;
         if (node.Kind == "State" && document.StateName(node.Id) is { } name)
@@ -68,6 +70,7 @@ public partial class MainWindow
         downStructureButton = Tool("↓", 2, MoveSelectedNodeDown, "Move later in source order.", editable && index + 1 < siblings.Count && RegionEditable(siblings[index + 1]));
         deleteStructureButton = Tool("×", 3, DeleteSelectedNode, "Delete this branch and known incoming phase transitions/orders. Undo restores the complete edit.", editable);
         panel.Children.Add(tools); panel.Children.Add(new TextBlock { Text = "Order controls phase entry and action/transition priority. Delete also reconciles known incoming phase references. Undo restores the entire edit.", TextWrapping = TextWrapping.Wrap, Foreground = EncounterViewport.Brush("#92969F"), FontSize = 11, Margin = new(0, 8, 0, 0) });
+        AddExtractionControls(node,panel);
         organizeExpander = new Expander { Header = "Organize", Content = panel, Margin = new(0, 12, 0, 4) }; Inspector.Children.Add(organizeExpander);
     }
     void RenameSelectedPhase(object sender, RoutedEventArgs e) => Try(() =>
