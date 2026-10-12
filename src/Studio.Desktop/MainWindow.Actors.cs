@@ -16,6 +16,7 @@ public partial class MainWindow
             "\nSpawned by behavior: " + (actor.SpawnedByBehavior ? "yes" : "no")+"\nDefense: "+actor.Defense+
             "\nSize: "+actor.Size+" · texture stat: "+actor.AltTexture+" · visible texture: "+actor.TextureIndex+"\nGlow: "+(actor.GlowColor is {} glow?glow.ToString("X6",CultureInfo.InvariantCulture):"unavailable")+" · projectile size base: "+actor.ProjectileSizeBase+(actor.Damage is {} damage?"\nRecorded damage: "+damage.RecordedDamage+"\nDamage credited to present players: "+damage.PresentPlayerDamage+
                 (damage.ParentActorId is {} counterParent?"\nCounter parent: #"+counterParent:"")+string.Concat(damage.Players.Select(p=>"\nPlayer #"+p.PlayerId+": "+p.Damage)):""))).ToArray() ?? [];
+        rows=rows.Concat(session?.WorldObjects.Select(actor=>new RuntimeActorChoice(actor.Id,actor.Name+" · #"+actor.Id,actor.Name,string.Create(CultureInfo.InvariantCulture,$"{actor.Name} · #{actor.Id}\nNative class: {actor.Kind}\nPosition: {actor.X:0.###}, {actor.Y:0.###}\nSize: {actor.Size} · texture stat: {actor.AltTexture} · visible texture: {actor.TextureIndex}\nPhase: {actor.Phase}\nThis object has no enemy health counter.")))??[]).OrderBy(actor=>actor.Id).ToArray();
         if (rows.SequenceEqual(runtimeActorRows)) return;
         var selected = (RuntimeActors.SelectedItem as RuntimeActorChoice)?.Id;
         runtimeActorRows = rows; RuntimeActors.ItemsSource = rows;

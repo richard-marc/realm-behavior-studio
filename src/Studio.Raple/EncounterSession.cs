@@ -17,6 +17,7 @@ public record EncounterInput(double X = 0, double Y = 0, bool Attack = false, do
 public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null, int? ActorId = null, int? ParentId = null);
 public record DamageContribution(int PlayerId,int Damage);
 public record DamageCounterView(int RecordedDamage,int PresentPlayerDamage,int? ParentActorId,ImmutableArray<DamageContribution> Players);
+public record WorldObjectView(int Id,string Name,string Kind,float X,float Y,int Size,int AltTexture,int TextureIndex,string Phase);
 public record EntityView(int Id, string Name, float X, float Y, int Hp, int MaxHp, string Phase, HitGeometry Hitbox, EntityMotion? Motion = null, int? ParentId = null, bool SpawnedByBehavior = false,int? Size=null,string? DisplayName=null,int? Defense=null,DamageCounterView? Damage=null,int? AltTexture=null,int? TextureIndex=null,int? GlowColor=null,int? ProjectileSizeBase=null);
 public record BulletView(float X, float Y, int OwnerId, int ProjectileIndex, Guid? NodeId, string TextureId, double Angle, bool Friendly);
 public record ReplayInput(long Ms, EncounterInput Input, int DurationMs = 100);
@@ -53,7 +54,8 @@ public sealed class EncounterSession : IEncounterSession
     public bool Dead => PlayerHp <= 0;
     public float PlayerX => engine.Actor.X;
     public float PlayerY => engine.Actor.Y;
-    public int BossHp => boss.HP;
+    bool BossActive=>engine.World.Enemies.TryGetValue(boss.Id,out var current)&&ReferenceEquals(current,boss)&&!boss.Dead;
+    public int BossHp => BossActive?boss.HP:0;
     public int BossMaxHp => boss.MaximumHP;
     public int Seed => seed;
     public double StartMs { get; }
@@ -83,6 +85,10 @@ public sealed class EncounterSession : IEncounterSession
     IReadOnlyList<ReplayInput> IEncounterSession.Inputs => Inputs;
     public IReadOnlyList<EntityView> Entities => engine.World.Enemies.Values.Where(e => !e.Dead)
         .Select(e => new EntityView(e.Id, e.ObjectDesc.IdName, e.X, e.Y, e.HP, e.MaximumHP, e.CurrentState?.Name ?? "", ClientCollision.Geometry(e.ObjectType), motions.GetValueOrDefault(e.Id), e.ParentEntity?.Id, e.SpawnedByBehavior,e.Size,e.Name,e.Defense,CounterView(e),e.AltTextureIndex,appearances.GetValueOrDefault(e.Id).Texture,e.GlowEnemy,e.ProjectileSizeBase)).ToArray();
+    IEnumerable<TKR.WorldServer.core.objects.Entity> NativeObjects()=>engine.World.StaticObjects.Values.Cast<TKR.WorldServer.core.objects.Entity>().Concat(engine.World.Portals.Values).Concat(engine.World.Containers.Values).Where(e=>!e.Dead);
+    readonly Dictionary<int,int> objectTextures=[];
+    readonly Dictionary<int,string> liveObjectNames=[];
+    public IReadOnlyList<WorldObjectView> WorldObjects=>NativeObjects().Select(e=>new WorldObjectView(e.Id,e.ObjectDesc.IdName,e.ObjectDesc.Class??"World object",e.X,e.Y,e.Size,e.AltTextureIndex,objectTextures.GetValueOrDefault(e.Id),e.CurrentState?.Name??"")).ToArray();
     static DamageCounterView CounterView(Enemy enemy)
     {
         var counter=enemy.DamageCounter;var players=counter.GetPlayerData().Select(p=>new DamageContribution(p.Item1.Id,p.Item2)).OrderBy(p=>p.PlayerId).ToImmutableArray();
@@ -173,6 +179,7 @@ public sealed class EncounterSession : IEncounterSession
     }
     public void SetBossHpFraction(double fraction)
     {
+        if(!BossActive)throw new InvalidOperationException("The original encounter actor is no longer active. Its health override is unavailable.");
         if (!double.IsFinite(fraction) || fraction < 0 || fraction > 1) throw new ArgumentOutOfRangeException(nameof(fraction));
         boss.HP = Math.Max(1, (int)(boss.MaximumHP * fraction)); Add("override", "Boss HP forced to " + (fraction * 100).ToString("0") + "%");
         Recording?.Record(this, new(Ms, "boss-hp", Fraction: fraction));
@@ -299,6 +306,13 @@ public sealed class EncounterSession : IEncounterSession
     }
     void ObserveActorRemovals()
     {
+        foreach(var actor in NativeObjects())
+        {
+            if(!liveObjectNames.ContainsKey(actor.Id))Add("spawn",actor.ObjectDesc.IdName+" · "+actor.ObjectDesc.Class,actor:actor.Id);
+            liveObjectNames[actor.Id]=actor.ObjectDesc.IdName;objectTextures[actor.Id]=AlternateTextures.Resolve(actor.ObjectDesc.IdName,actor.AltTextureIndex,objectTextures.GetValueOrDefault(actor.Id));
+        }
+        var liveObjects=NativeObjects().Select(e=>e.Id).ToHashSet();foreach(var id in objectTextures.Keys.Where(id=>!liveObjects.Contains(id)).ToArray())objectTextures.Remove(id);
+        foreach(var pair in liveObjectNames.Where(pair=>!liveObjects.Contains(pair.Key)).ToArray()){Add("despawn",pair.Value+" is no longer active in the native world.",actor:pair.Key);liveObjectNames.Remove(pair.Key);}
         foreach(var actor in engine.World.Enemies.Values.Where(e=>!e.Dead))
         {
             var previous=appearances.GetValueOrDefault(actor.Id);
@@ -327,7 +341,7 @@ public sealed class EncounterSession : IEncounterSession
         var matches = phase.StateChildren.Where(n => n.Kind == "Shoot" && (n.Parameters.FirstOrDefault(p => p.Name == "projectileIndex")?.Expression ?? "0") == index.ToString()).ToArray();
         return matches.Length == 1 ? matches[0].Id : null; // Ambiguous emission provenance is not guessed.
     }
-    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities, events = Events, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
-    public string InspectTimers() => string.Join("\n", boss.StateStorage.Select(p => p.Key.GetType().Name + ": " + (p.Value is int n ? n + " ms / scalar" : p.Value?.GetType().Name ?? "null")));
+    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities,objects=WorldObjects, events = Events, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
+    public string InspectTimers() => BossActive?string.Join("\n", boss.StateStorage.Select(p => p.Key.GetType().Name + ": " + (p.Value is int n ? n + " ms / scalar" : p.Value?.GetType().Name ?? "null"))):"Original encounter actor is no longer active. Live replacements appear in Actors.";
     public void Dispose() => packetCapture.Dispose();
 }

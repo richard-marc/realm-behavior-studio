@@ -14,6 +14,7 @@ public partial class MainWindow
     void AddTransformationControls(BehaviorNode node)
     {
         textureChoices=null;useTextureButton=null;
+        if(node.Kind is "Transform" or "TransformOnDeath")Inspector.Children.Add(new TextBlock{Text=node.Kind=="Transform"?"Replaces this actor through the game's entity resolver. The replacement runs its own behavior and appears in Actors. Original-actor health controls stop when this actor leaves the world.":"Runs the game's replacement callback on actual death. Count and probability retain native behavior; removing an actor for a test bypasses death callbacks.",TextWrapping=TextWrapping.Wrap,Foreground=EncounterViewport.Brush("#92969F"),FontSize=11,Margin=new(0,8,0,0)});
         if(node.Kind is "SizeTransform" or "ChangeSize" or "SizeTransformComplete")
         {
             var text=node.Kind=="SizeTransform"?"Uses the native growth/shrink animation. Entry size, glow and projectile settings are restored on completion or exit.":node.Kind=="ChangeSize"?"Native size pulses persist after leaving this phase. The supplied rate and its sign control clamping.":"Completion reads the actor's state for the same SizeTransform object. Open its shared reference to edit the running transform.";

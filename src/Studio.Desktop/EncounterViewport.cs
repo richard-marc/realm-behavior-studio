@@ -99,6 +99,8 @@ public sealed partial class EncounterViewport : FrameworkElement
         }
         var renderMs = session.Ms + FrameRemainderMs;
         DrawNativeEffects(dc,session,renderMs);
+        var tileObjects=session.Arena.Cells.Select(cell=>cell.ObjectId).Where(id=>id!=0).ToHashSet();
+        foreach(var obj in session.WorldObjects.Where(obj=>!tileObjects.Contains(obj.Id)).OrderBy(obj=>obj.Y))DrawCharacter(dc,obj.Name,Screen(obj.X,obj.Y),SpriteAction.Stand,0,0,characterSize:Math.Max(0,obj.Size)/100d,altTexture:obj.TextureIndex);
         var entities = session.Entities;
         foreach (var stale in facings.Keys.Where(id => !entities.Any(e => e.Id == id)).ToArray()) facings.Remove(stale);
         foreach (var e in entities.OrderBy(e => EntityPosition(e, renderMs).Y))

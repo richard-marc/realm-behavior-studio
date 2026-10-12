@@ -32,6 +32,7 @@ public interface IEncounterSession : IDisposable
     IReadOnlyList<int> PlayerStats { get; }
     string Coverage { get; }
     IReadOnlyList<EntityView> Entities { get; }
+    IReadOnlyList<WorldObjectView> WorldObjects { get; }
     IReadOnlyList<BulletView> Projectiles { get; }
     void SetBossHpFraction(double fraction);
     void RemoveMinionsForTest();

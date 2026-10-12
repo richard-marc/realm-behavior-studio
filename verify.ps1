@@ -54,6 +54,9 @@ try {
     & dotnet run --project tests/Transformation.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/transformation-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/transformation-checks.log' -Tail 25; throw 'Native transformation checks failed.' }
     Get-Content '.artifacts/transformation-checks.log' -Tail 1
+    & dotnet run --project tests/Replacement.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/replacement-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/replacement-checks.log' -Tail 25; throw 'Native entity replacement checks failed.' }
+    Get-Content '.artifacts/replacement-checks.log' -Tail 1
     & dotnet run --project tests/OwnedEmitter.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/owned-emitter-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/owned-emitter-checks.log' -Tail 25; throw 'Owned emitter checks failed.' }
     Get-Content '.artifacts/owned-emitter-checks.log' -Tail 1

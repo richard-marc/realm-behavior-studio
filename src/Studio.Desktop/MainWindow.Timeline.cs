@@ -56,7 +56,7 @@ public partial class MainWindow
         TimelineSeek.IsEnabled=available; TimelineSeekButton.IsEnabled=available; TimelineCancelButton.IsEnabled=runtimeStarting!=null; TimelinePlayButton.IsEnabled=available && timelineReplay!.DurationMs>0;
         TimelineSaveButton.IsEnabled=available; TimelineGoButton.IsEnabled=available && TimelineEvents.SelectedItem is EventRow;
         TimelineLiveButton.IsEnabled=available && replayCursor!=null && session!=null && replayAdvancing==null;
-        BossHp.IsEnabled=runtimeStarting==null && replayAdvancing==null;
+        BossHp.IsEnabled=runtimeStarting==null && replayAdvancing==null && (session==null||session.BossHp>0);
         TimelinePlayButton.Content=recordedPlayback && running ? "Ⅱ Pause recording" : "▶ Play recording";
         TimelineTime.Text=$"{(session?.Ms??0)/1000d:0.000} / {(timelineReplay?.DurationMs??0)/1000d:0.000} s";
         TimelineInfo.Text=timelineReplay==null ? "Play an encounter to record its native events." : $"Recorded seed {timelineReplay.Project.Seed} · {timelineReplay.Commands.Length} inputs / overrides · {(timelineReplay.Phase==null ? "encounter start" : "forced phase "+timelineReplay.Phase)}";

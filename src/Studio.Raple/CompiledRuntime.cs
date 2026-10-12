@@ -46,6 +46,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     public float PlayerY => Frame.PlayerY;
     public int BossHp => Frame.BossHp;
     public int BossMaxHp => Frame.BossMaxHp;
+    public IReadOnlyList<WorldObjectView> WorldObjects=>Frame.WorldObjects??[];
     public int Seed => Frame.Seed;
     public double StartMs => Frame.StartMs;
     public bool PauseRequested => Frame.PauseRequested;

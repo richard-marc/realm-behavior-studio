@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -100,6 +100,10 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "minValue" when kind=="SetAltTexture"=>"First XML AltTexture ID, applied on entry. Zero restores the base texture; undefined IDs leave the client's previous texture intact.",
         "maxValue" when kind=="SetAltTexture"=>"Last ID in the native integer sequence. -1 holds the first texture. Undefined IDs still consume their native timer slots.",
         "loop" when kind=="SetAltTexture"=>"Wraps from maxValue to minValue. This does not skip undefined XML IDs; leaving the phase does not restore the original texture.",
+        "target" when kind is "Transform" or "TransformOnDeath"=>"Actual XML entity ID resolved by the game. The replacement runs its own native behavior. Spawned enemies preserve the native Spawned flag and receive permanent Invisible; parent ownership is not assigned here.",
+        "min" when kind=="TransformOnDeath"=>"Inclusive minimum replacement count. The native object mutates max to min if min exceeds max.",
+        "max" when kind=="TransformOnDeath"=>"Inclusive maximum replacement count: the game uses Random.Next(min, max + 1).",
+        "probability" when kind=="TransformOnDeath"=>"Converted to native float, then compared strictly with Random.NextDouble(). Values outside 0–1 retain their native behavior rather than being clamped.",
         "damage" when kind=="DamageTakenTransition"=>"Inclusive threshold for the original counter's damage credited to players currently present in their world. This is not HP lost since phase entry.",
         "wipeProgress" when kind=="DamageTakenTransition"=>"In this game source, this flag only resets a local accumulator that already starts at zero. It does not clear stored damage; credit persists across phases.",
         "entity" when kind=="EntityHpLessTransition"=>"Case-insensitive substring of the native XML ID name. The nearest match can be this host; null matches any name. The runtime expects that match to be an Enemy.",
@@ -245,7 +249,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         return root;
     }
     public bool NeedsCompiledRuntime(BehaviorDocument document, string entityId) => HasAdditionalSources || document.Entities.Single(e => e.EntityId == entityId).Registration?.Shared==true || document.Entities.Single(e => e.EntityId == entityId)
-        .Root.Descendants().Any(n => n.Kind != "ArgumentGroup" && (document.SchemaAt(n)?.DescribeExpression(document.Expression(n))?.RequiresCompiled == true || !Supported.Contains(n.Kind) || Binding(document.Expression(n)).RequiresContext));
+        .Root.Descendants().Any(n => n.Kind != "ArgumentGroup" && (n.Kind is "Transform" or "TransformOnDeath" || document.SchemaAt(n)?.DescribeExpression(document.Expression(n))?.RequiresCompiled == true || !Supported.Contains(n.Kind) || Binding(document.Expression(n)).RequiresContext));
     public static object? Evaluate(ExpressionSyntax expr, Type expected)
     {
         var nullable = Nullable.GetUnderlyingType(expected); var type = nullable ?? expected;

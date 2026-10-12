@@ -37,7 +37,7 @@ public sealed class ReplayJournal
         var signature = Hash(JsonSerializer.Serialize(new {
             session.Ms, session.PlayerHp, session.PlayerX, session.PlayerY, session.BossHp, session.BossMaxHp, session.Seed,
             session.PlayerFacing, session.PlayerAttackAngle, session.PlayerMoveSpeed, session.PlayerAttackStart, session.PlayerAttackPeriod,
-            session.PlayerStats, session.Coverage, actors = session.Entities.OrderBy(e => e.Id), projectiles = session.Projectiles,
+            session.PlayerStats, session.Coverage, actors = session.Entities.OrderBy(e => e.Id), objects=session.WorldObjects.OrderBy(e=>e.Id),projectiles = session.Projectiles,
             timers = session.InspectTimers(), eventsHash, shotsHash, playerShotsHash, movementHash,arenaHash,effectsHash
         }));
         return new(session.Ms, signature, events, shots, playerShots,movements,effects);
