@@ -23,7 +23,7 @@ public static partial class BehaviorAnalysis
     static readonly HashSet<string> Known = ["State", "ArgumentGroup", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
         "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
         "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "SizeTransform", "ChangeSize", "SetAltTexture", "SizeTransformComplete", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "SizeTransform", "ChangeSize", "SetAltTexture", "SizeTransformComplete", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
     static double? Number(BehaviorNode node, string parameter)
     {
@@ -44,6 +44,8 @@ public static partial class BehaviorAnalysis
         "HpLessTransition" => Number(node, "threshold") is { } hp ? $"HP < {hp * 100:0.##}%" : $"HP < {Value(node, "threshold")}",
         "DamageTakenTransition"=>$"Credited damage ≥ {Value(node,"damage")}",
         "SizeTransformComplete"=>"Size transform complete",
+        "FollowDistanceCompleteTransition"=>"Bounded follow complete",
+        "LockedFollowDistanceCompleteTransition"=>"Locked follow complete",
         "EntityHpLessTransition"=>$"Nearest name {Value(node,"entity")} · HP < "+(Number(node,"threshold") is {} entityHp?$"{entityHp*100:0.##}%":Value(node,"threshold")),
         "PlayerWithinTransition" => $"Player within {Value(node, "dist")} tiles" + (Value(node, "seeInvis", "false") == "true" ? " · sees invisible" : ""),
         "EntityExistsTransition" => $"{Resource(node)} within {Value(node, "dist")} tiles",

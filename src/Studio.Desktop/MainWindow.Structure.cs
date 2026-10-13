@@ -37,6 +37,7 @@ public partial class MainWindow
         if (pathEditorButton != null) pathEditorButton.IsEnabled = editable;
         RefreshPathSelection();
         UpdateProjectileControls();
+        UpdateCompletionControls();
         UpdateEntityControls();
         if(ownedLaneAxes!=null)ownedLaneAxes.IsEnabled=editable;
         UpdatePhaseChoiceControls();

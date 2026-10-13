@@ -93,6 +93,9 @@ try {
     & dotnet run --project tests/DefinitionRemoval.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/definition-removal-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/definition-removal-checks.log' -Tail 25; throw 'Unused definition removal checks failed.' }
     Get-Content '.artifacts/definition-removal-checks.log' -Tail 1
+    & dotnet run --project tests/Completion.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/completion-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/completion-checks.log' -Tail 25; throw 'Native completion relationship checks failed.' }
+    Get-Content '.artifacts/completion-checks.log' -Tail 1
     & dotnet run --project tests/Hazard.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/hazard-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/hazard-checks.log' -Tail 25; throw 'Native hazard checks failed.' }
     Get-Content '.artifacts/hazard-checks.log' -Tail 1
