@@ -16,7 +16,7 @@ public sealed partial class BehaviorDocument
         try
         {
             var container = ChildContainer(id); var slot = Slot(container);
-            var owner = container.Kind == "ArgumentGroup" ? Parent(container.Id)??container : container;
+            var owner = ChildOwner(container);
             return (!replace || !slot.IsCollection) && (replace || slot.IsCollection || container.Children.Count == 0) && (OwningEntity(container.Id).Definition?.Collection!=null&&Parent(container.Id)==null?SchemaAt(container)?.AcceptsDefinitionElement(Expression(container),expression)==true:SchemaAt(owner)?.AcceptsChild(Expression(owner), slot.Name, expression, container.Kind == "ArgumentGroup" && !container.ArgumentFromCall ? Expression(container) : null) ?? true);
         }
         catch (ArgumentException) { return false; }
@@ -27,14 +27,20 @@ public sealed partial class BehaviorDocument
         if (node.Kind == "ArgumentGroup") return !node.ArgumentRequiresSource ? node : throw new ArgumentException("This generated/shared child collection requires source editing.");
         var slots = SchemaAt(node)?.ChildArguments(Expression(node)) ?? (node.Kind == "State" ? [new ChildArgument("children", "IStateChildren", true, true)] : []);
         if (slots.Count != 1) throw new ArgumentException("Select a typed argument list or phase with one known child slot.");
-        var group = node.Children.SingleOrDefault(n => n.Kind == "ArgumentGroup");
+        var groups=node.Children.Where(n=>n.Kind=="ArgumentGroup").ToArray();if(groups.Length>1)throw new ArgumentException("Select the constructor or member child list to edit.");
+        var group = groups.SingleOrDefault();
         if (group != null) return group;
         if (SyntaxFactory.ParseExpression(Expression(node)) is BaseObjectCreationExpressionSyntax { Initializer.Expressions.Count: > 0 }) throw new ArgumentException("This source initializer may add hidden children or references. Open Source to edit this region.");
         if (!slots[0].IsParams && slots[0].IsCollection) throw new ArgumentException("Create an explicit collection for this child parameter first.");
         return node;
     }
     ChildArgument Slot(BehaviorNode container) => container.Argument ?? SchemaAt(container)?.ChildArguments(Expression(container)).Single() ?? new("children", "IStateChildren", true, true);
-    bool PhaseContainer(BehaviorNode node) => node.Kind == "State" || node.Kind == "ArgumentGroup" && Parent(node.Id)?.Kind == "State";
+    BehaviorNode ChildOwner(BehaviorNode container)
+    {
+        var owner=container.Kind=="ArgumentGroup"?Parent(container.Id)??container:container;
+        while(owner.IsMemberInitializer)owner=Parent(owner.Id)??throw new ArgumentException("The member initializer has no native owner.");return owner;
+    }
+    bool PhaseContainer(BehaviorNode node) => node.Kind == "State" || node.Kind == "ArgumentGroup"&&node.Argument?.IsMember!=true && Parent(node.Id)?.Kind == "State";
     static IReadOnlyList<SyntaxNode>? ListItems(ExpressionSyntax expression) => expression switch
     {
         CollectionExpressionSyntax collection => collection.Elements.Select(e => e is ExpressionElementSyntax value ? (SyntaxNode)value.Expression : e).ToArray(),
@@ -42,6 +48,7 @@ public sealed partial class BehaviorDocument
         ImplicitArrayCreationExpressionSyntax array => array.Initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         ObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         ImplicitObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer.Expressions.Cast<SyntaxNode>().ToArray(),
+        InitializerExpressionSyntax initializer when SimpleCollectionInitializer(initializer)=>initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         _ => null
     };
     static bool SimpleCollectionInitializer(InitializerExpressionSyntax initializer) => (initializer.IsKind(SyntaxKind.CollectionInitializerExpression) || initializer.IsKind(SyntaxKind.ObjectInitializerExpression) && initializer.Expressions.Count == 0) && !initializer.Expressions.Any(e => e.IsKind(SyntaxKind.ComplexElementInitializerExpression));
@@ -58,6 +65,7 @@ public sealed partial class BehaviorDocument
         ImplicitArrayCreationExpressionSyntax implicitArray => implicitArray.Initializer,
         ObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer,
         ImplicitObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer,
+        InitializerExpressionSyntax initializer when SimpleCollectionInitializer(initializer)=>initializer,
         _ => throw new ArgumentException("This collection requires source editing.")
     };
     ExpressionSyntax NodeExpression(SyntaxNode tree, BehaviorNode node) => tree.DescendantNodes().OfType<ExpressionSyntax>().Single(n => n.SpanStart == node.Start && n.Span.Length == node.Length);
@@ -127,6 +135,7 @@ public sealed partial class BehaviorDocument
             if (current is CollectionExpressionSyntax collection)
                 return collection.WithElements(SyntaxFactory.SeparatedList(children.Select(child => child is RangeExpressionSyntax { LeftOperand: null, RightOperand: { } operand } range ? (CollectionElementSyntax)SyntaxFactory.SpreadElement(range.OperatorToken, operand).WithTriviaFrom(child) : SyntaxFactory.ExpressionElement(child))));
             var initializer = Initializer(current).WithExpressions(SyntaxFactory.SeparatedList(children));
+            if(current is InitializerExpressionSyntax)return initializer;
             if (current is ArrayCreationExpressionSyntax array) return array.WithInitializer(initializer);
             if (current is ObjectCreationExpressionSyntax constructor) return constructor.WithInitializer(initializer);
             if (current is ImplicitObjectCreationExpressionSyntax implicitConstructor) return implicitConstructor.WithInitializer(initializer);

@@ -39,6 +39,7 @@ public static partial class SourcePhaseRefactor
             foreach(var expression in syntax.DescendantNodes().OfType<ExpressionSyntax>())
             {
                 var dependency=semantic.GetSymbolInfo(expression).Symbol;
+                if(expression.Parent is AssignmentExpressionSyntax assignment&&assignment.Left==expression&&assignment.Right is InitializerExpressionSyntax&&dependency is IPropertySymbol property&&property.ContainingType.ToDisplayString()=="TKR.WorldServer.logic.State"&&property.Name is "Behaviors" or "Transitions")continue;
                 var type=dependency switch{IMethodSymbol m=>m.ReturnType,IFieldSymbol f=>f.Type,IPropertySymbol p=>p.Type,_=>null};
                 if(type!=null&&ChildType(type)&&dependency!.DeclaringSyntaxReferences.Length>0)queue.Enqueue(dependency);
             }

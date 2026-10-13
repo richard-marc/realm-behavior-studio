@@ -22,7 +22,7 @@ public sealed partial class RapleAdapter
                         var name=document.StateName(node.Id);if(name==null&&node.Parameters.Any(p=>p.Name=="name"))return null;
                         names.Add(name??"");
                     }
-                    if(node.Kind is not ("Factory" or "Reference" or "Spread")&&!(node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource))continue;
+                    if(node.IsMemberInitializer||node.Kind is not ("Factory" or "Reference" or "Spread")&&!(node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource))continue;
                     if(document.ExternalDefinitions(node).Count>0)return null;
                     var definitions=document.ReferencedDefinitions(node);if(definitions.Count==0)return null;foreach(var definition in definitions)queue.Enqueue(definition);
                 }

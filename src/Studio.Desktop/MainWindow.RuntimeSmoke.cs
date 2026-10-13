@@ -32,6 +32,7 @@ public partial class MainWindow
         RunCollectionUiSmoke(source, root, helpers, output, check);
         RunTypedCollectionUiSmoke(source, root, helpers, output, check);
         await RunInitializerUiSmoke(source, root, helpers, output, check);
+        await RunMemberInitializerUiSmoke(output,check);
         await RunAttackUiSmoke(source, root, helpers, output, check);
         await RunProjectileUiSmoke(output, check);
         await RunMovementUiSmoke(source, root, helpers, output, check);
@@ -197,9 +198,9 @@ public partial class MainWindow
         check(document.Find(first.Id).Children.First().Id == moving.Id && document.Find(second.Id).Children.Count == 1 && document.Find(third.Id).Children.Single().Id == created, "Desktop initializer Undo restores both constructors and preserves unrelated edits");
         SelectNode(third.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "collection-initializers.png"));
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, "new State(\"source initialized\") { Behaviors = { new Shoot(8, count: 7) } }") + helpers, adapter, sourceFile: selectedEntity.SourceFile);
-        Changed(); WorkspaceTabs.SelectedIndex = 1; var region = EncounterRoot.Children.Single(); SelectNode(region.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "source-initializer.png"));
+        Changed(); WorkspaceTabs.SelectedIndex = 1; var region = EncounterRoot.Children.Single(n=>n.IsMemberInitializer); SelectNode(region.Id); UpdateLayout(); CaptureView(this, Path.Combine(output, "source-initializer.png"));
         Inspector.Children.OfType<Button>().Single(b => Equals(b.Content, "Open Source")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        check(region.Kind == "Opaque" && region.Label == "Source initializer" && WorkspaceTabs.SelectedIndex == 2 && SourceEditor.SelectionStart == region.Start && SourceEditor.SelectionLength == region.Length, "Source initializer navigation opens and selects its exact retained C# region");
+        check(region.IsMemberInitializer && WorkspaceTabs.SelectedIndex == 2 && SourceEditor.SelectionStart == region.Start && SourceEditor.SelectionLength == region.Length, "Native member initializer navigation opens and selects its exact retained C# region");
         WorkspaceTabs.SelectedIndex = 0;
         check(await StartSessionAsync() && session is CompiledRuntime && ReferenceEquals(session, Viewport.Session), "Desktop Play selects compiled runtime for a native State object initializer");
         running = false; Playback.SelectedIndex = 2; await AdvanceCompiledPlayback(100, new(Y: 1));

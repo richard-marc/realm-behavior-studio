@@ -89,6 +89,8 @@ Native `InitMany` ranges now appear in the entity library. Inline State lambdas 
 
 ## What Play currently means
 
+Native State **Behaviors** and **Transitions** member initializers now appear as typed lists. Edit, reorder, duplicate or drag their inputs while preserving constructor inputs and the original initializer code. Member-region locks and Undo/Redo cover the whole edit.
+
 Select adjacent actions or phases to extract them together into a reusable child-array helper. Their source order, native hierarchy and identities remain intact, including captured storage used by following actions.
 
 Extraction also supports matching file-scoped namespaces. Destination imports stay unchanged, and the native compiler checks actual helper binding before accepting the edit.

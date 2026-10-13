@@ -62,7 +62,7 @@ public sealed partial class BehaviorDocument
         while(queue.TryDequeue(out var node))
         {
             if(!seen.Add(node.Id))continue;
-            if (node.Kind is "Factory" or "Reference" or "Spread"||node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource)
+            if (node.Kind is "Factory" or "Reference" or "Spread"||node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource&&!node.IsMemberInitializer)
             {
                 var definitions=ReferencedDefinitions(node);
                 if(definitions.Count==0||definitions.Any(d=>!d.Definition!.CompletePhaseContents))throw new ArgumentException("This encounter contains source-generated phases or references. Update phase names in source so their hidden references stay consistent.");

@@ -219,10 +219,10 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
         if (expression == null) return adapter.AcceptsChild(text, parameter, childExpression, arrayExpression);
         var model = Model;
         if (model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method) return false;
-        var slot = method.Parameters.FirstOrDefault(p => p.Name == parameter); if (slot == null) return false;
+        var slot = method.Parameters.FirstOrDefault(p => p.Name == parameter);var member=MemberElement(expression,parameter,arrayExpression);if (slot == null&&member==null) return false;
         var child = SyntaxFactory.ParseExpression(childExpression);
         var type = model.GetSpeculativeTypeInfo(expression.SpanStart, child, SpeculativeBindingOption.BindAsExpression).Type;
-        ITypeSymbol target = Element(slot.Type);
+        ITypeSymbol target = member??Element(slot!.Type);
         if (arrayExpression != null && model.GetSpeculativeTypeInfo(expression.SpanStart, SyntaxFactory.ParseExpression(arrayExpression), SpeculativeBindingOption.BindAsExpression).Type is { } collectionType && Collection(collectionType)) target = Element(collectionType);
         return type != null && context.Binding.Value.Compilation.ClassifyConversion(type, target).IsImplicit;
     }

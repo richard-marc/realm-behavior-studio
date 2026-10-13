@@ -54,7 +54,7 @@ public static partial class SourcePhaseRefactor
                         sites.Add((pending.File.ToUpperInvariant(),node.Start));
                     }
                 }
-                if(node.Kind is not ("Factory" or "Reference" or "Spread")&&!(node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource))continue;
+                if(node.IsMemberInitializer||node.Kind is not ("Factory" or "Reference" or "Spread")&&!(node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource))continue;
                 var local=doc.ReferencedDefinitions(node);var foreign=doc.ExternalDefinitions(node);
                 if(local.Count+foreign.Count==0)throw new ArgumentException("A caller's generated phase contents cannot be fully discovered.");
                 foreach(var body in local)queue.Enqueue((pending.File,body));

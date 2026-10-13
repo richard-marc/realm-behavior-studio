@@ -10,7 +10,7 @@ public sealed partial class BehaviorDocument
         var edits=new List<SourceLiteralEdit>();
         foreach(var node in nodes)
         {
-            if(node.Kind is "Factory" or "Reference" or "Spread"||node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource)
+            if(node.Kind is "Factory" or "Reference" or "Spread"||node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource&&!node.IsMemberInitializer)
             {
                 var definitions=ReferencedDefinitions(node);
                 if(ExternalDefinitions(node).Count>0||definitions.Count==0||definitions.Any(d=>!d.Definition!.StructurallyComplete||d.Root.Descendants().Any(n=>n.Kind=="State")))

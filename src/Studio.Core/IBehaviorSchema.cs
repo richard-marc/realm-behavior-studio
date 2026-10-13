@@ -3,6 +3,7 @@ namespace Studio.Core;
 public record ChildArgument(string Name, string ElementType, bool IsArray, bool IsParams, int Minimum = 0)
 {
     public string? CollectionType { get; init; }
+    public bool IsMember { get; init; }
     public bool IsCollection => IsArray || CollectionType != null;
 }
 public record SourceParameter(string Name, string Type, string Default);
@@ -20,6 +21,7 @@ public record SourceExpression(string Kind, string Label, bool IsState, IReadOnl
 public record SourceDefinitionUse(int Start,int Length);
 public record ClipboardSymbol(int ExpressionIndex,int Start,int Length,string Signature);
 public record SourceDefinitionReference(string SourceFile,string Label,int Start,int Length);
+public record SourceMemberCollection(int Start,int Length,ChildArgument Argument);
 public record SourceDefinition(string Key,string Label,int Start,int Length,ChildArgument? Collection,
     IReadOnlyList<string> Encounters,IReadOnlyList<SourceDefinitionUse> Uses,bool CompletePhaseContents,string Boundary)
 {
@@ -29,6 +31,7 @@ public record SourceDefinition(string Key,string Label,int Start,int Length,Chil
 
 public interface IBehaviorSchema
 {
+    IReadOnlyList<SourceMemberCollection> InitializerCollections(string expression)=>[];
     IReadOnlyList<ClipboardSymbol> ClipboardSymbols(string expression)=>[];
     IReadOnlyList<SourceDefinitionReference> ExternalDefinitions(int start,int length)=>[];
     IReadOnlyList<SourceDefinition> SourceDefinitions()=>[];

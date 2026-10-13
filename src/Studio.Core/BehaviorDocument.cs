@@ -12,8 +12,10 @@ public sealed record BehaviorNode(Guid Id, string Path, string Kind, string Labe
     public ChildArgument? Argument { get; init; }
     public bool ArgumentFromCall { get; init; }
     public bool ArgumentRequiresSource { get; init; }
+    public bool IsMemberInitializer { get; init; }
     public bool IsTransition=>Kind.EndsWith("Transition",StringComparison.Ordinal)||Kind=="SizeTransformComplete";
-    public IReadOnlyList<BehaviorNode> StateChildren => Kind == "State" ? Children.SelectMany(n => n.Kind == "ArgumentGroup" ? n.Children : [n]).ToArray() : Children;
+    public IReadOnlyList<BehaviorNode> StateChildren => Kind == "State" ? Children.SelectMany(Flatten).ToArray() : Children;
+    static IEnumerable<BehaviorNode> Flatten(BehaviorNode node)=>node.Kind=="ArgumentGroup"?node.Children.SelectMany(Flatten):[node];
     public IEnumerable<BehaviorNode> Descendants() => new[] { this }.Concat(Children.SelectMany(n => n.Descendants()));
     public override string ToString() => Label;
 }
@@ -158,7 +160,8 @@ public sealed partial class BehaviorDocument
                 var parameters = new List<Parameter>();
                 var children = new List<BehaviorNode>();
                 var slots = scoped?.ChildArguments(c.ToString()) ?? [];
-                var separateSlots = slots.Count > 1 || slots.Any(s => s.CollectionType != null);
+                var memberLists=scoped?.InitializerCollections(c.ToString())??[];
+                var separateSlots = slots.Count > 1 || slots.Any(s => s.CollectionType != null)||memberLists.Count>0;
                 var legacyPaths = new Dictionary<int, string>();
                 var index = 0;
                 foreach (var arg in args)
@@ -213,7 +216,24 @@ public sealed partial class BehaviorDocument
                             : nullList ? [] : supplied.Select((p, i) => Read(p.arg.Expression, groupPath + "/" + i, legacyPaths[p.i])).ToArray();
                         children.Add(new BehaviorNode(oldGroup?.Id ?? Guid.NewGuid(), groupPath, "ArgumentGroup", slot.Name + " · " + (requiresSource ? "source" : unassignedList ? "unassigned" : ChildListCount(elements)), expression.SpanStart, expression.Span.Length, [], elements) { Argument = slot, ArgumentFromCall = fromCall, ArgumentRequiresSource = requiresSource });
                     }
-                if (c is BaseObjectCreationExpressionSyntax { Initializer: { Expressions.Count: > 0 } initialization }) children.Add(Opaque(initialization, path + "/" + children.Count) with { Label = "Source initializer" });
+                if (c is BaseObjectCreationExpressionSyntax { Initializer: { Expressions.Count: > 0 } initialization })
+                {
+                    if(memberLists.Count==0)children.Add(Opaque(initialization,path+"/"+children.Count) with{Label="Source initializer"});
+                    else
+                    {
+                        var wrapperPath=path+"/"+children.Count;var oldWrapper=identities.FirstOrDefault(i=>!usedIdentities.Contains(i.Id)&&(i.Path==wrapperPath&&i.Kind=="ArgumentGroup"||i.Kind=="Opaque"&&i.Signature==initialization.ToString()&&i.Path.StartsWith(entityId+"/",StringComparison.Ordinal)));
+                        if(oldWrapper!=null)usedIdentities.Add(oldWrapper.Id);var members=new List<BehaviorNode>();
+                        foreach(var input in initialization.Expressions)
+                        {
+                            var member=memberLists.FirstOrDefault(m=>input.Span.Contains(new Microsoft.CodeAnalysis.Text.TextSpan(m.Start,m.Length)));
+                            if(member==null){members.Add(Opaque(input,wrapperPath+"/"+members.Count));continue;}
+                            var list=(InitializerExpressionSyntax)((AssignmentExpressionSyntax)input).Right;var listPath=wrapperPath+"/"+members.Count;var oldList=identities.FirstOrDefault(i=>i.Path==listPath&&i.Kind=="ArgumentGroup"&&!usedIdentities.Contains(i.Id));if(oldList!=null)usedIdentities.Add(oldList.Id);
+                            var elements=(ListItems(list)??[]).Select((item,i)=>ReadItem(item,listPath+"/"+i)).ToArray();
+                            members.Add(new(oldList?.Id??Guid.NewGuid(),listPath,"ArgumentGroup",member.Argument.Name+" · "+ChildListCount(elements),list.SpanStart,list.Span.Length,[],elements){Argument=member.Argument});
+                        }
+                        children.Add(new(oldWrapper?.Id??Guid.NewGuid(),wrapperPath,"ArgumentGroup","Member initializer",initialization.SpanStart,initialization.Span.Length,[],members){ArgumentRequiresSource=true,IsMemberInitializer=true});
+                    }
+                }
                 var matches = identities.Where(n => n.Kind == kind && n.Signature == c.ToString() && n.Path.StartsWith(entityId + "/") && !usedIdentities.Contains(n.Id)).ToArray();
                 var legacy = legacyPath == null ? null : identities.FirstOrDefault(n => n.Path == legacyPath && n.Signature == c.ToString() && n.Kind == kind && !usedIdentities.Contains(n.Id));
                 var old = matches.Length == 1 ? matches[0] : legacy ?? identities.FirstOrDefault(n => n.Path == path && (n.Kind == kind || (kind is "Factory" or "Reference") && n.Kind == "Opaque" && n.Signature == c.ToString()) && !usedIdentities.Contains(n.Id));

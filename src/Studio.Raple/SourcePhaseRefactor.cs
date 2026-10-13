@@ -58,7 +58,7 @@ public static partial class SourcePhaseRefactor
             {
                 if(node.Kind=="Opaque")throw new ArgumentException("Opaque caller contents prevent complete phase reconciliation.");
                 if(node.Kind is not ("ArgumentGroup" or "Factory" or "Reference" or "Spread")&&!scoped.PhasePrimitive(doc,node))throw new ArgumentException("A custom controller prevents complete phase-reference discovery. Reconcile it in Source.");
-                if(node.Kind is not ("Factory" or "Reference" or "Spread")&&!(node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource))continue;
+                if(node.IsMemberInitializer||node.Kind is not ("Factory" or "Reference" or "Spread")&&!(node.Kind=="ArgumentGroup"&&node.ArgumentRequiresSource))continue;
                 var local=doc.ReferencedDefinitions(node);var foreign=doc.ExternalDefinitions(node);
                 if(local.Count+foreign.Count==0)throw new ArgumentException("A caller's generated phase contents cannot be fully discovered.");
                 foreach(var body in local)queue.Enqueue((pending.File,body));
