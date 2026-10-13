@@ -89,6 +89,8 @@ Native `InitMany` ranges now appear in the entity library. Inline State lambdas 
 
 ## What Play currently means
 
+Extraction also supports matching file-scoped namespaces. Destination imports stay unchanged, and the native compiler checks actual helper binding before accepting the edit.
+
 Explicit arrays, target-typed child collections and list initializers also offer **Extract helper**. The whole ordered collection moves into its actual native return type, with captured storage, child identities and collapse state preserved.
 
 For a known source factory, field or getter, **Organize → Independent clone** creates independent definition and child-producing dependency declarations, plus a call or reference beside the original. Cloned phases get unique names and internal destinations; existing calls keep their original source. One workspace Undo/Redo covers all changed files. The clone's Edit link opens its independent body. Cloned fields retain their original declaration order so dependent native values initialize correctly. Generated/ambiguous declaration ownership remains pending.

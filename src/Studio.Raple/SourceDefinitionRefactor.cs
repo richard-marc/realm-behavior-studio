@@ -68,8 +68,12 @@ public static class SourceDefinitionRefactor
         var usingText=string.Join("\n",imports.GroupBy(u=>u.Alias?.Name.Identifier.ValueText??u.ToString()).Select(g=>g.Last().WithoutTrivia().ToFullString()));
         var classText=(host.IsStatic?"static ":"")+"partial "+hostSyntax.Keyword.Text+" "+hostSyntax.Identifier.Text+" { "+helper+" }";
         var ns=host.ContainingNamespace.IsGlobalNamespace?null:host.ContainingNamespace.ToDisplayString();
-        if(CSharpSyntaxTree.ParseText(records[destinationFile].Source).GetRoot().DescendantNodes().OfType<FileScopedNamespaceDeclarationSyntax>().Any())throw new ArgumentException("This destination uses a file-scoped namespace; choose a block-namespace source until declaration migration is available.");
-        var declarationText="\n"+(ns==null?usingText+"\n"+classText:"namespace "+ns+" {\n"+usingText+"\n"+classText+"\n}")+"\n";
+        var destinationTree=compiler.SyntaxTrees.Single(t=>Path.GetFullPath(t.FilePath).Equals(destinationFile,StringComparison.OrdinalIgnoreCase));
+        var scopedNamespace=destinationTree.GetRoot().DescendantNodes().OfType<FileScopedNamespaceDeclarationSyntax>().SingleOrDefault();
+        if(scopedNamespace!=null&&compiler.GetSemanticModel(destinationTree).GetDeclaredSymbol(scopedNamespace)?.ToDisplayString()!=ns)throw new ArgumentException("The destination's file-scoped namespace must match the original source type.");
+        // Existing file-scoped imports apply to the appended partial type. Do not add imports
+        // that could silently rebind the destination's earlier declarations.
+        var declarationText="\n"+(scopedNamespace!=null?classText:ns==null?usingText+"\n"+classText:"namespace "+ns+" {\n"+usingText+"\n"+classText+"\n}")+"\n";
         var call=name+"("+string.Join(", ",arguments)+")";
         records[sourceFile]=original with{Source=original.Source.Remove(node.Start,node.Length).Insert(node.Start,call)};
         records[destinationFile]=records[destinationFile] with{Source=records[destinationFile].Source+declarationText};
