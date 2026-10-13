@@ -43,6 +43,15 @@ namespace TKR.WorldServer.logic { public partial class BehaviorDb {
         var beforeCreation=document.Source;var creationRevision=document.Revision;entryCreationButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));var created=selectedNode!.Id;
         check(created!=first.Id&&document.Revision==creationRevision+1&&document.Find(created).Parameters.Single().Expression=="7"&&document.Find(created).Children.Single().Parameters.Any(p=>p.Expression=="6"),"Actual Create entry accepts the key and behavior in one revision with new identities");
         Undo(this,new());check(document.Source==beforeCreation&&!document.AllNodes.Any(n=>n.Id==created),"One editor Undo removes the complete new Add entry");Redo(this,new());check(document.Find(created).Parameters.Single().Expression=="7","One editor Redo restores the new pair and its entry identity");
+        var previousRead=readNodeClipboard;var previousWrite=writeNodeClipboard;BehaviorClipboard? captured=null;
+        try
+        {
+            readNodeClipboard=()=>captured;writeNodeClipboard=value=>captured=value;SelectNode(first.Id);CopySelectedNodes();
+            check(captured?.Expressions.Count==1&&captured.Symbols.Count>0,"Actual keyed Copy captures a complete pair and its native Add binding");var beforePaste=document.Source;SelectNode(list.Id);PasteSelectedNodes();var imported=selectedNode!.Id;
+            check(imported!=first.Id&&document.Find(imported).Kind=="InitializerEntry"&&document.Find(imported).Children.Single().Id!=child,"Actual keyed Paste creates independent entry and child identities in the selected collection");
+            Undo(this,new());check(document.Source==beforePaste&&!document.AllNodes.Any(n=>n.Id==imported),"One editor Undo restores source after keyed clipboard insertion");Redo(this,new());check(document.Find(imported).Parameters.Single().Expression=="5","One editor Redo retains the pasted pair and its key");SelectNode(imported);deleteStructureButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }
+        finally{readNodeClipboard=previousRead;writeNodeClipboard=previousWrite;}
         SelectNode(first.Id);Inspector.Children.OfType<CheckBox>().Single().IsChecked=true;check(parameterApplyButton?.IsEnabled==false&&duplicateStructureButton?.IsEnabled==false,"A keyed-entry region lock protects scalar and structural controls");document.LockedNodes.Remove(first.Id);SelectNode(first.Id);
         var path=Path.Combine(output,"keyed-initializer.rbs");BehaviorDocument.Save(path,Snapshot());ApplyProject(BehaviorDocument.Load(path),path);
         check(document.Find(first.Id).Parameters.Single().Expression=="5"&&document.Find(child).Id==child&&document.Find(list.Id).Children.First().Id==second.Id,"Save/reopen retains keyed input order, edits and replacement identity");

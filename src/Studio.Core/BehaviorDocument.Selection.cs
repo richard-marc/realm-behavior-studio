@@ -37,6 +37,7 @@ public sealed partial class BehaviorDocument
         if (index < 0 || index > parent.Children.Count) throw new ArgumentOutOfRangeException(nameof(index));
         if (clipboard.Version != 1 || clipboard.Expressions == null || clipboard.Expressions.Count is < 1 or > 256 || clipboard.Expressions.Sum(e => e?.Length ?? 0) > 2_000_000)
             throw new ArgumentException("Unsupported or oversized behavior clipboard.");
+        if(clipboard.Expressions.All(e=>e?.TrimStart().StartsWith('{')==true))return PasteInitializerEntries(parent,index,clipboard,validate);
         foreach (var expression in clipboard.Expressions)
             ValidateChildExpression(expression);
         if(clipboard.Symbols==null||clipboard.Symbols.Count>10_000||clipboard.Symbols.Any(s=>s==null||s.ExpressionIndex<0||s.ExpressionIndex>=clipboard.Expressions.Count||s.Start<0||s.Length<=0||s.Start>clipboard.Expressions[s.ExpressionIndex].Length-s.Length||string.IsNullOrEmpty(s.Signature)||s.Signature.Length>4096)||clipboard.Symbols.Sum(s=>(long)s.Signature.Length)>2_000_000)

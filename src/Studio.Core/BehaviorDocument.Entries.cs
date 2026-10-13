@@ -1,9 +1,34 @@
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Studio.Core;
 public sealed partial class BehaviorDocument
 {
+    IReadOnlyList<Guid> PasteInitializerEntries(BehaviorNode parent,int index,BehaviorClipboard clipboard,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate)
+    {
+        if(schema?.HasSourceContext!=true||parent.Kind!="ArgumentGroup"||parent.ArgumentFromCall||parent.Argument?.IsMember==true)throw new ArgumentException("Paste keyed entries into an explicit source collection initializer.");
+        if(clipboard.Symbols==null||clipboard.Symbols.Count>10_000||clipboard.Symbols.Any(s=>s==null||s.ExpressionIndex<0||s.ExpressionIndex>=clipboard.Expressions.Count||s.Start<0||s.Length<=0||s.Start>clipboard.Expressions[s.ExpressionIndex].Length-s.Length||string.IsNullOrEmpty(s.Signature)||s.Signature.Length>4096)||clipboard.Symbols.Sum(s=>(long)s.Signature.Length)>2_000_000)throw new ArgumentException("Invalid entry clipboard bindings.");
+        var tree=CSharpSyntaxTree.ParseText(Source).GetRoot();var collection=tree.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>().SingleOrDefault(e=>e.SpanStart==parent.Start&&e.Span.Length==parent.Length);
+        if(collection?.Initializer==null)throw new ArgumentException("The destination has no actual Add initializer.");
+        var entries=clipboard.Expressions.Select(text=>
+        {
+            var parsed=SyntaxFactory.ParseExpression("new EntryProbe(){"+text+"}") as ObjectCreationExpressionSyntax;
+            if(parsed?.Initializer?.Expressions is not {Count:1} values||parsed.ContainsDiagnostics||values[0] is not InitializerExpressionSyntax entry||!entry.IsKind(SyntaxKind.ComplexElementInitializerExpression))throw new ArgumentException("Enter a complete native Add entry.");return (ExpressionSyntax)entry;
+        }).ToArray();
+        var probeSource=tree.ReplaceNode(collection,collection.WithInitializer(collection.Initializer.WithExpressions(SyntaxFactory.SeparatedList(entries)))).ToFullString();
+        var probe=new BehaviorDocument(probeSource,names,schema:baseSchema,sourceFile:SourceFile);var target=probe.AllNodes.Single(n=>n.Path==parent.Path&&n.Kind=="ArgumentGroup");
+        if(target.Children.Count!=entries.Length||target.Children.Any(n=>n.Kind!="InitializerEntry"||n.Descendants().Any(c=>c.Kind=="State")))throw new ArgumentException("Resolve entry-owned phases or unsupported Add contracts before clipboard import.");
+        var errors=probe.SourceDiagnostics().Where(d=>d.IsError).ToArray();if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
+        if(clipboard.Symbols.Count>0)
+        {
+            var bindings=target.Children.SelectMany((n,i)=>probe.SchemaAt(n)!.ClipboardSymbols(probe.Expression(n)).Select(s=>s with{ExpressionIndex=i})).ToArray();
+            if(!bindings.SequenceEqual(clipboard.Symbols))throw new ArgumentException("Copied Add entries bind differently in this destination. Keep or qualify their original source context.");
+        }
+        var order=parent.Children.ToList();var additions=target.Children.ToArray();order.InsertRange(index,additions);
+        var inputs=additions.ToDictionary(n=>n.Id,n=>SyntaxFactory.Argument((ExpressionSyntax)CSharpSyntaxTree.ParseText(probeSource).GetRoot().DescendantNodes().OfType<InitializerExpressionSyntax>().Single(e=>e.SpanStart==n.Start&&e.Span.Length==n.Length)));
+        RewriteChildren(new(){[parent.Id]=order},inputs,validate);return additions.Select(n=>n.Id).ToArray();
+    }
     public Guid CreateInitializerEntry(Guid prototype,IReadOnlyDictionary<string,string> scalarInputs,string childExpression,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate=null)
     {
         var entry=Find(prototype);if(entry.Kind!="InitializerEntry")throw new ArgumentException("Select a bound Add entry as the creation template.");
