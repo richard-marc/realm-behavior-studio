@@ -24,6 +24,7 @@ public partial class MainWindow
         check(adapter.ReadSequentialSweep(document,selectedNode) is {Count:7,ShotsPerVolley:3,NativeIntervalMs:200},"Actual Add creates the native partial-final-volley burst with retained source timing");
         check(sequentialSweepPanel is {IsExpanded:false}&&projectilePicker!=null&&projectileChoices!.Items.Count>0,"Burst details and actual XML projectile art remain available through collapsed controls");
         check(adapter.Callbacks(selectedNode.Kind).Select(c=>c.Stage).SequenceEqual(new[]{"Entry","Ongoing"})&&lifecycleRows.Count==2,"The sweep inspector shows actual entry and ongoing callbacks");
+        await RunSweepHandleUiSmoke(output,attack,check);
         TextBox CountInput()=>Inspector.Children.OfType<TextBox>().Single(t=>t.ToolTip?.ToString()?.StartsWith("Total projectiles in one activation")==true);
         var before=document.Source;CountInput().Text="8";parameterApplyButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(adapter.ReadSequentialSweep(document,document.Find(attack))!.VolleyCounts.SequenceEqual(new[]{3,3,2}),"Actual parameter Apply changes the final volley without replacing its node identity");
@@ -32,8 +33,9 @@ public partial class MainWindow
         SelectNode(attack);Inspector.Children.OfType<CheckBox>().Single().IsChecked=true;check(parameterApplyButton?.IsEnabled==false&&useProjectileButton?.IsEnabled==false,"A sweep region lock disables both parameter and XML selection edits");document.LockedNodes.Clear();SelectNode(attack);
         var saved=Path.Combine(output,"sweep.rbs");BehaviorDocument.Save(saved,Snapshot());ApplyProject(BehaviorDocument.Load(saved),saved);
         check(document.Find(attack).Kind=="SequentialAimedSweep"&&adapter.ReadSequentialSweep(document,document.Find(attack))!.Count==8,"Save/reopen retains native sweep parameters and exact identity");
-        check(await StartSessionAsync(),"Play loads the accepted burst through the native executor");running=false;await session!.AdvanceAsync(new(),1000);UpdateSession();
+        check(await StartSessionAsync()&&Viewport.Sweep==null&&!sweepEditing,"Play loads the accepted burst and restores ordinary input after sweep editing");running=false;await session!.AdvanceAsync(new(),1000);UpdateSession();
         check(session.Shots.Select(s=>s.Count).SequenceEqual(new[]{3,3,2,3})&&session.Shots.Select(s=>s.Ms).SequenceEqual(new long[]{0,200,400,800}),"Desktop playback preserves native volley sizes, tick spacing and recovery");
+        check(Math.Abs(session.Shots[0].AngleIncrement-Math.PI/4)<1e-6,"Native playback executes the viewport-edited 90-degree opening fan");
         Stop(this,new());WorkspaceTabs.SelectedIndex=1;SelectNode(attack);sequentialSweepPanel!.IsExpanded=true;UpdateLayout();CaptureView(this,Path.Combine(output,"sequential-sweep-editor.png"));
         check(File.ReadAllText(primary)==supplied,"Burst creation, XML selection, history and native playback leave supplied game source unchanged");ApplyProject(previous,null);WorkspaceTabs.SelectedIndex=0;
     }

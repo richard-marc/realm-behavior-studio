@@ -15,7 +15,7 @@ public partial class MainWindow
         movementEditing = false; Viewport.Movement = null;
         if (movementEditorButton != null) movementEditorButton.Content = "Edit movement bounds";
     }
-    void ClearViewportEditors() { ClearArenaEditor(); ClearAttackEditor(); ClearMovementEditor(); ClearPathEditor(); ClearCombatPreview(); }
+    void ClearViewportEditors() { ClearArenaEditor(); ClearAttackEditor(); ClearMovementEditor(); ClearPathEditor(); ClearSweepEditor(); ClearCombatPreview(); }
     void RefreshMovementSelection()
     {
         if (!movementEditing) return;
@@ -35,7 +35,7 @@ public partial class MainWindow
         movementEditorButton.Click += (_, _) =>
         {
             if (movementEditing) { ClearMovementEditor(); return; }
-            ClearAttackEditor(); ClearPathEditor(); Stop(this, new()); movementEditing = true; RefreshMovementSelection();
+            ClearAttackEditor(); ClearPathEditor(); ClearSweepEditor(); Stop(this, new()); movementEditing = true; RefreshMovementSelection();
             movementEditorButton!.Content = "Close movement editor"; WorkspaceTabs.SelectedIndex = 0; UpdateLayout(); Viewport.FitMovement(); Viewport.Focus();
             Status.Text = "Movement editor · drag a boundary to change one parameter · Play runs native movement";
         };

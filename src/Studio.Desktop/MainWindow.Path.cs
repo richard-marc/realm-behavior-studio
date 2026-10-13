@@ -41,7 +41,7 @@ public partial class MainWindow
         pathEditorButton.Click += (_, _) =>
         {
             if (pathEditing) { ClearPathEditor(); return; }
-            ClearAttackEditor(); ClearMovementEditor(); Stop(this, new()); pathEditing = true; RefreshPathSelection();
+            ClearAttackEditor(); ClearMovementEditor(); ClearSweepEditor(); Stop(this, new()); pathEditing = true; RefreshPathSelection();
             pathEditorButton!.Content = "Close path editor"; pathPreviewButton!.Visibility = Visibility.Visible; WorkspaceTabs.SelectedIndex = 0; UpdateLayout(); Viewport.FitPath(); Viewport.Focus();
             Status.Text = "Path editor · requested native coordinates · preview samples the whole phase";
         }; Inspector.Children.Add(pathEditorButton);
