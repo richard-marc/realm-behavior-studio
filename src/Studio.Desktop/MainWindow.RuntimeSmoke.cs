@@ -51,6 +51,7 @@ public partial class MainWindow
         await RunSourceSetUiSmoke(output,check);
         await RunExternalDefinitionUiSmoke(output,check);
         await RunWorkspacePhaseUiSmoke(output,check);
+        await RunSingleSourcePhaseUiSmoke(output,check);
         await RunWorkspaceDeleteUiSmoke(output,check);
         await RunWorkspaceGroupUiSmoke(output,check);
         await RunWorkspaceCopyUiSmoke(output,check);

@@ -83,8 +83,7 @@ public partial class MainWindow
     void RenameSelectedPhase(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null || phaseNameInput == null) return;
-        if(adapter.HasAdditionalSources){RenameWorkspacePhase(selectedNode.Id,phaseNameInput.Text);return;}
-        var id = selectedNode.Id; var before = document.Revision; document.RenameState(id, phaseNameInput.Text, ValidateAuthoring); if (document.Revision != before) Changed(id);
+        RenameWorkspacePhase(selectedNode.Id,phaseNameInput.Text);
     });
     void DuplicateSelectedNode(object sender, RoutedEventArgs e) => Try(() =>
     {
@@ -105,7 +104,7 @@ public partial class MainWindow
     void DeleteSelectedNode(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null) return;
-        if(adapter.HasAdditionalSources&&selectedNode.Kind=="State"){DeleteWorkspacePhase(selectedNode.Id);return;}
+        if(selectedNode.Descendants().Any(n=>n.Kind=="State")){DeleteWorkspacePhase(selectedNode.Id);return;}
         var parent = document.DeleteNode(selectedNode.Id, ValidateAuthoring); Changed(parent);
     });
     void SelectTreeNode(Guid id)

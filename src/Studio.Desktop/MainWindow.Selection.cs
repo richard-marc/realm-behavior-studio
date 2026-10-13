@@ -163,7 +163,7 @@ public partial class MainWindow
         ChangedSelection(document.PasteNodes(target.Id, target.Children.Count, clipboard, ValidateAuthoring));
     });
     void DeleteSelectedNodes() => Try(() => {
-        if(adapter.HasAdditionalSources&&document.NormalizeSelection(nodeSelection).Any(n=>n.Descendants().Any(c=>c.Kind=="State"))){DeleteWorkspacePhases(nodeSelection);return;}
+        if(document.NormalizeSelection(nodeSelection).Any(n=>n.Descendants().Any(c=>c.Kind=="State"))){DeleteWorkspacePhases(nodeSelection);return;}
         var parent = document.DeleteNodes(nodeSelection, ValidateAuthoring); Changed(parent);
     });
     void GroupSelectedNodes() => Try(() => {
