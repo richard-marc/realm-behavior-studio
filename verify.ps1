@@ -90,6 +90,9 @@ try {
     & dotnet run --project tests/RingPattern.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/ring-pattern-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/ring-pattern-checks.log' -Tail 25; throw 'Native ring pattern checks failed.' }
     Get-Content '.artifacts/ring-pattern-checks.log' -Tail 1
+    & dotnet run --project tests/DefinitionRemoval.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/definition-removal-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/definition-removal-checks.log' -Tail 25; throw 'Unused definition removal checks failed.' }
+    Get-Content '.artifacts/definition-removal-checks.log' -Tail 1
     & dotnet run --project tests/CloneWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/clone-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/clone-checks.log' -Tail 25; throw 'Independent definition clone checks failed.' }
     Get-Content '.artifacts/clone-checks.log' -Tail 1

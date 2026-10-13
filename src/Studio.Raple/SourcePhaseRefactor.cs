@@ -13,6 +13,7 @@ public sealed record SourcePhaseEdit(StudioProject Before,StudioProject After,IR
 {
     public IReadOnlyList<Guid> Selection {get;init;}=[];
     public string? OriginSourceFile {get;init;}
+    public IReadOnlyList<Guid>? OriginSelection {get;init;}
     public string? SelectionSourceFile {get;init;}
 }
 

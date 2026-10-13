@@ -209,6 +209,7 @@ public partial class MainWindow
             if (canEdit && document.CanEditChildren(node.Id) && document.ChildContainer(node.Id).Id == node.Id && !nodeSelection.Any(selected => node.Path == document.Find(selected).Path || node.Path.StartsWith(document.Find(selected).Path + "/", StringComparison.Ordinal)))
                 yield return new("Move selection into " + node.Label, "Append in source order · one undo", () => Try(() => { var ids = nodeSelection.ToArray(); document.MoveNodes(ids, id, document.ChildContainer(id).Children.Count, ValidateAuthoring); ChangedSelection(ids); }));
         }
+        foreach(var command in DefinitionCommands())yield return command;
     }
     void CommandSearchChanged(object sender, TextChangedEventArgs e) { if (document != null) PopulateCommands(); }
     void PopulateCommands()

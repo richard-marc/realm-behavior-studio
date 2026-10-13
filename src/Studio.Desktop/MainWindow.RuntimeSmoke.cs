@@ -38,6 +38,7 @@ public partial class MainWindow
         await RunSequentialSweepUiSmoke(output,check);
         await RunCycleUiSmoke(output,check);
         await RunRingPatternUiSmoke(output,check);
+        await RunDefinitionRemovalUiSmoke(output,check);
         await RunAttackUiSmoke(source, root, helpers, output, check);
         await RunProjectileUiSmoke(output, check);
         await RunMovementUiSmoke(source, root, helpers, output, check);

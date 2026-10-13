@@ -134,7 +134,7 @@ public partial class MainWindow
         catch{foreach(var editing in restored.AsEnumerable().Reverse())editing.RestoreWorkspaceHistory(!redo,expectedBinding);throw;}
         InstallPhaseWorkspace(target,edit.Plan.Changes);from.Pop();to.Push(edit);scenarioRevision++;
         if((redo?edit.Plan.SelectionSourceFile:edit.Plan.OriginSourceFile) is {} targetFile)
-        {var selected=edit.Plan.Selection[0];FocusWorkspaceSource(targetFile,selected);Changed(selected);}
+        {var selected=(!redo?edit.Plan.OriginSelection:null)?[0]??edit.Plan.Selection[0];FocusWorkspaceSource(targetFile,selected);Changed(selected);}
         else Changed(selectedNode?.Id);
         return true;
     }
