@@ -7,13 +7,16 @@ namespace Studio.Raple;
 public static partial class SourcePhaseRefactor
 {
     public static SourcePhaseEdit CloneFactory(RapleAdapter adapter,StudioProject project,string sourceFile,Guid selected,string name)
+        =>CloneDefinition(adapter,project,sourceFile,selected,name);
+    public static SourcePhaseEdit CloneDefinition(RapleAdapter adapter,StudioProject project,string sourceFile,Guid selected,string name)
     {
         var token=SyntaxFactory.ParseToken(name);if(!token.IsKind(SyntaxKind.IdentifierToken)||token.ContainsDiagnostics||token.ToFullString()!=name)throw new ArgumentException("Enter a valid C# clone name.");
         var scope=PrepareStructureScope(adapter,project,sourceFile,selected);var doc=scope.Target;var node=doc.Find(selected);
-        if(node.Kind!="Factory"||doc.Parent(selected) is not {} parent||!doc.CanOrganize(selected)||!doc.CanEditRegion(selected))throw new ArgumentException("Select an editable source factory in a native child list.");
+        if(node.Kind is not ("Factory" or "Reference")||doc.Parent(selected) is not {} parent||!doc.CanOrganize(selected)||!doc.CanEditRegion(selected))throw new ArgumentException("Select an editable source factory or value reference in a native child list.");
         var compiler=adapter.ForProject(project).SourceCompilation(project);var tree=compiler.SyntaxTrees.Single(t=>Path.GetFullPath(t.FilePath).Equals(scope.SourceFile,StringComparison.OrdinalIgnoreCase));var model=compiler.GetSemanticModel(tree);
-        var invocation=tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>().Single(e=>e.SpanStart==node.Start&&e.Span.Length==node.Length);
-        if(model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol original||original.MethodKind!=MethodKind.Ordinary||original.IsGenericMethod)throw new ArgumentException("Clone a declared nongeneric source method.");
+        var sourceExpression=tree.GetRoot().DescendantNodes().OfType<ExpressionSyntax>().Single(e=>e.SpanStart==node.Start&&e.Span.Length==node.Length);
+        var original=model.GetSymbolInfo(sourceExpression).Symbol??throw new ArgumentException("The selected source definition cannot be resolved.");
+        if(original is not (IMethodSymbol or IFieldSymbol or IPropertySymbol)||original is IMethodSymbol method&&(method.MethodKind!=MethodKind.Ordinary||method.IsGenericMethod))throw new ArgumentException("Clone a declared nongeneric source method, field or property.");
         original=original.OriginalDefinition;
         if(original.ContainingType.GetMembers(token.ValueText).Length>0)throw new ArgumentException("That clone member already exists.");
         var declarations=new Dictionary<ISymbol,(MemberDeclarationSyntax Member,SyntaxNode Body)>(SymbolEqualityComparer.Default);var queue=new Queue<ISymbol>([original]);
@@ -54,7 +57,7 @@ public static partial class SourcePhaseRefactor
                 var prefix=old+"-copy";var candidate=prefix;var suffix=2;while(taken.Contains(candidate))candidate=prefix+"-"+suffix++;taken.Add(candidate);phaseMap[old]=candidate;
             }
         }
-        var additions=new Dictionary<string,List<(TypeDeclarationSyntax Host,MemberDeclarationSyntax Member)>>(StringComparer.OrdinalIgnoreCase);
+        var additions=new Dictionary<string,List<(TypeDeclarationSyntax Host,MemberDeclarationSyntax Member,int Order)>>(StringComparer.OrdinalIgnoreCase);
         foreach(var pair in declarations)
         {
             var syntax=pair.Value.Body;var semantic=compiler.GetSemanticModel(syntax.SyntaxTree);var path=Path.GetFullPath(syntax.SyntaxTree.FilePath);var declaring=scope.Documents[path];
@@ -86,18 +89,19 @@ public static partial class SourcePhaseRefactor
                 var parsed=CSharpSyntaxTree.ParseText("class C { "+field.Declaration.Type+" "+text+"; }").GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>().Single();
                 cloned=field.WithDeclaration(field.Declaration.WithVariables(SyntaxFactory.SingletonSeparatedList(parsed.WithIdentifier(newName))));
             }
-            var host=syntax.Ancestors().OfType<TypeDeclarationSyntax>().First();if(!additions.TryGetValue(path,out var list))additions[path]=list=[];list.Add((host,cloned.WithLeadingTrivia(SyntaxFactory.ElasticCarriageReturnLineFeed).NormalizeWhitespace()));
+            var host=syntax.Ancestors().OfType<TypeDeclarationSyntax>().First();if(!additions.TryGetValue(path,out var list))additions[path]=list=[];list.Add((host,cloned.WithLeadingTrivia(SyntaxFactory.ElasticCarriageReturnLineFeed).NormalizeWhitespace(),syntax.SpanStart));
         }
         var beforeRecords=scope.Records.ToDictionary(p=>p.Key,p=>p.Value,StringComparer.OrdinalIgnoreCase);
         foreach(var pair in additions)
         {
             var edited=scope.Records[pair.Key].Source;
-            foreach(var host in pair.Value.GroupBy(a=>a.Host.CloseBraceToken.SpanStart).OrderByDescending(g=>g.Key))edited=edited.Insert(host.Key,"\n"+string.Join("\n",host.Select(a=>a.Member.ToFullString()))+"\n");
+            foreach(var host in pair.Value.GroupBy(a=>a.Host.CloseBraceToken.SpanStart).OrderByDescending(g=>g.Key))edited=edited.Insert(host.Key,"\n"+string.Join("\n",host.OrderBy(a=>a.Order).Select(a=>a.Member.ToFullString()))+"\n");
             scope.Records[pair.Key]=scope.Records[pair.Key] with{Source=edited};
         }
         StudioProject Snapshot(){var primary=scope.Records[Path.GetFullPath(project.SourceFile)];return project with{Source=primary.Source,Identities=primary.Identities,AdditionalSources=scope.Records.Where(p=>!p.Key.Equals(Path.GetFullPath(project.SourceFile),StringComparison.OrdinalIgnoreCase)).Select(p=>p.Value).ToList()};}
         var withDeclarations=Snapshot();var scoped=adapter.ForProject(withDeclarations);var caller=new BehaviorDocument(scope.Records[scope.SourceFile].Source,scoped,doc.Identities,scope.SourceFile);caller.LockedNodes.UnionWith(doc.LockedNodes);
-        var clonedCall=invocation.WithExpression(invocation.Expression switch{IdentifierNameSyntax=>SyntaxFactory.IdentifierName(name),MemberAccessExpressionSyntax member=>member.WithName(SyntaxFactory.IdentifierName(name)),_=>throw new ArgumentException("A factory call has unresolved source dispatch.")}).ToString();
+        ExpressionSyntax Named(ExpressionSyntax expression)=>expression switch{IdentifierNameSyntax=>SyntaxFactory.IdentifierName(name),MemberAccessExpressionSyntax member=>member.WithName(SyntaxFactory.IdentifierName(name)),_=>throw new ArgumentException("The selected source access has unresolved dispatch.")};
+        var clonedCall=(sourceExpression is InvocationExpressionSyntax call?call.WithExpression(Named(call.Expression)):Named(sourceExpression)).ToString();
         var index=parent.Children.ToList().FindIndex(n=>n.Id==selected)+1;var pasted=caller.PasteNodes(parent.Id,index,new(1,[clonedCall]));scope.Records[scope.SourceFile]=scope.Records[scope.SourceFile] with{Source=caller.Source,Identities=caller.Identities};
         var after=Snapshot();var final=adapter.ForProject(after);var changes=new List<SourcePhaseChange>();
         foreach(var pair in scope.Records.ToArray())

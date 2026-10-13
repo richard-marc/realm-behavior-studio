@@ -89,7 +89,7 @@ Native `InitMany` ranges now appear in the entity library. Inline State lambdas 
 
 ## What Play currently means
 
-For a known source factory, **Organize → Independent clone** creates a new helper and child-producing dependency declarations, plus a call beside the original. Cloned phases get unique names and internal destinations; existing calls keep their original source. One workspace Undo/Redo covers all changed files. The clone's Edit link opens its independent body. Generated/ambiguous declaration ownership and reference-only deep cloning remain pending.
+For a known source factory, field or getter, **Organize → Independent clone** creates independent definition and child-producing dependency declarations, plus a call or reference beside the original. Cloned phases get unique names and internal destinations; existing calls keep their original source. One workspace Undo/Redo covers all changed files. The clone's Edit link opens its independent body. Cloned fields retain their original declaration order so dependent native values initialize correctly. Generated/ambiguous declaration ownership remains pending.
 
 The collapsed **Organize → Extract helper** form moves a selected source-backed phase/action into a named helper in an accepted source file. It retains native hierarchy and phase destinations, carries required source inputs, and opens the new body with its original node identities. One Undo/Redo restores both files and follows the original/extracted view. Add a source file through Source before choosing it as the destination. Multi-node/collection extraction and cloning existing shared definitions remain pending.
 
