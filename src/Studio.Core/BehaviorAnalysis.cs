@@ -11,15 +11,19 @@ public record PhaseTransition(BehaviorNode Node, Guid OwnerId, int Priority, str
     public IReadOnlyList<PhaseDestination> Destinations {get;init;}=[];
     public bool TargetsKnown {get;init;}
 }
-public record PhaseAnalysis(IReadOnlyList<PhaseTransition> Transitions, IReadOnlyList<DocumentDiagnostic> Diagnostics);
+public record PhaseCycle(IReadOnlyList<Guid> PhaseIds,IReadOnlyList<Guid> TransitionIds,IReadOnlyList<Guid> ExitTransitionIds,bool Reachable);
+public record PhaseAnalysis(IReadOnlyList<PhaseTransition> Transitions, IReadOnlyList<DocumentDiagnostic> Diagnostics)
+{
+    public IReadOnlyList<PhaseCycle> Cycles {get;init;}=[];
+}
 
 // Conservative authoring analysis, not a prediction of HP, timers or world conditions.
-public static class BehaviorAnalysis
+public static partial class BehaviorAnalysis
 {
     static readonly HashSet<string> Known = ["State", "ArgumentGroup", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
         "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
         "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "SizeTransform", "ChangeSize", "SetAltTexture", "SizeTransformComplete"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "SizeTransform", "ChangeSize", "SetAltTexture", "SizeTransformComplete", "SequentialAimedSweep"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
     static double? Number(BehaviorNode node, string parameter)
     {
@@ -87,8 +91,8 @@ public static class BehaviorAnalysis
                 if (destinations.Any(d=>d.Id == state.Id)) diagnostics.Add(new($"Self transition in {state.Label}: stays in this branch or enters its first nested phase. Common-ancestor entry callbacks are not rerun.", node.Id, false));
             }
         }
-        var incomplete = nodes.Any(n => !Known.Contains(n.Kind)) || states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) || names.Any(g => g.Value.Length != 1) || edges.Any(e => !e.TargetsKnown||e.Destinations.Count==0);
-        if (incomplete) diagnostics.Add(new("Reachability analysis is incomplete: opaque/custom nodes, dynamic targets or duplicate names may change phase entry. Unreachable-phase notices are suppressed.", root.Id, false));
+        var incomplete = root.Kind!="State" || nodes.Any(n => !Known.Contains(n.Kind)) || states.Any(s => s.Parameters.Any(p => p.Name is "name" or "$0" && BehaviorDocument.LiteralString(p.Expression) == null)) || names.Any(g => g.Value.Length != 1) || edges.Any(e => !e.TargetsKnown||e.Destinations.Count==0);
+        if (incomplete) diagnostics.Add(new("Reachability analysis is incomplete: detached source bodies, opaque/custom nodes, dynamic targets or duplicate names may change phase entry. Unreachable-phase notices are suppressed.", root.Id, false));
         else
         {
             var parent = new Dictionary<Guid, BehaviorNode>();
@@ -112,6 +116,13 @@ public static class BehaviorAnalysis
             }
             foreach (var state in states.Where(s => !reachable.Contains(s.Id))) diagnostics.Add(new($"Unreachable phase: {state.Label}. No literal transition or first-child entry reaches this phase.", state.Id, false));
         }
-        return new(edges, diagnostics);
+        var cycles=incomplete||edges.Any(e=>e.Destinations.Any(d=>d.Id==null))?[]:FindCycles(root,states,edges);
+        foreach(var cycle in cycles.Where(c=>c.PhaseIds.Count>1))
+        {
+            var labels=cycle.PhaseIds.Select(id=>states.Single(s=>s.Id==id).Label).ToArray();var title=string.Join(" · ",labels.Take(4))+(labels.Length>4?$" · {labels.Length} phases":"");
+            var exits=cycle.ExitTransitionIds.Count==0?"No transition leaves this group in the analyzed graph.":$"{cycle.ExitTransitionIds.Count} transition{(cycle.ExitTransitionIds.Count==1?" can":"s can")} leave this group when their conditions match.";
+            diagnostics.Add(new($"Phase cycle: {title}. {exits} "+(cycle.Reachable?"Repetition depends on conditions and runtime state.":"This cycle is outside known entry routes."),cycle.TransitionIds[0],false));
+        }
+        return new(edges, diagnostics){Cycles=cycles};
     }
 }

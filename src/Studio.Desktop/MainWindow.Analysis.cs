@@ -50,4 +50,16 @@ public partial class MainWindow
             Foreground = EncounterViewport.Brush("#92969F"), FontSize = 11, ToolTip = "Child transitions take precedence over parents. Use Organize to move this transition up or down. Timer conditions run on the native 100 ms tick." });
         if(edge.Node.Kind=="DamageTakenTransition")Inspector.Children.Add(new TextBlock{Text="Credit persists across phases. In this game, wipeProgress does not clear the stored counter. Details → Actors shows the damage credited to present players.",TextWrapping=TextWrapping.Wrap,FontSize=11,Foreground=EncounterViewport.Brush("#92969F"),Margin=new(0,8,0,0)});
     }
+    void AddCycleControls(BehaviorNode node)
+    {
+        var analysis=BehaviorAnalysis.Analyze(AuthoringRoot);var descendants=node.Kind=="State"?node.Descendants().Select(n=>n.Id).ToHashSet():[];
+        foreach(var cycle in analysis.Cycles.Where(c=>c.PhaseIds.Contains(node.Id)||c.TransitionIds.Contains(node.Id)||c.ExitTransitionIds.Contains(node.Id)||c.PhaseIds.Any(descendants.Contains)))
+        {
+            var panel=new StackPanel();panel.Children.Add(new TextBlock{Text=cycle.ExitTransitionIds.Count==0?"No literal transition leaves this group in the analyzed graph. Conditions and native runtime state determine whether it repeats.":"These routes form a possible cycle. Exit conditions and native runtime state determine whether it repeats.",TextWrapping=TextWrapping.Wrap,FontSize=11,Foreground=EncounterViewport.Brush("#979DA7"),Margin=new(0,8,0,8)});
+            foreach(var id in cycle.PhaseIds){var member=document.Find(id);var button=new Button{Content=member.Label,Tag=id,Style=(Style)FindResource("QuietButton"),HorizontalContentAlignment=HorizontalAlignment.Left,ToolTip="Open this cycle phase"};button.Click+=(_,_)=>{WorkspaceTabs.SelectedIndex=1;SelectNode(id);Graph.BringPhaseIntoView(id);};panel.Children.Add(button);}
+            if(cycle.ExitTransitionIds.Count>0)panel.Children.Add(new TextBlock{Text="Possible exits",FontSize=11,Margin=new(0,10,0,4)});
+            foreach(var id in cycle.ExitTransitionIds){var edge=analysis.Transitions.Single(t=>t.Node.Id==id);var button=new Button{Content=new TextBlock{Text=edge.Condition+" → "+edge.TargetName,TextWrapping=TextWrapping.Wrap},Tag=id,Style=(Style)FindResource("QuietButton"),HorizontalContentAlignment=HorizontalAlignment.Left};button.Click+=(_,_)=>NavigateDiagnostic(new("Cycle exit",id,false));panel.Children.Add(button);}
+            Inspector.Children.Add(new Expander{Header=$"Phase cycle · {cycle.PhaseIds.Count} phase{(cycle.PhaseIds.Count==1?"":"s")}",Content=new ScrollViewer{Content=panel,MaxHeight=220,VerticalScrollBarVisibility=ScrollBarVisibility.Auto},Margin=new(0,12,0,6)});
+        }
+    }
 }
