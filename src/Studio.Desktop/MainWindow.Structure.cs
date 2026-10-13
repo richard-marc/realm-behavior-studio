@@ -22,6 +22,8 @@ public partial class MainWindow
     {
         if (selectedNode == null) return; var editable = RegionEditable(selectedNode);
         if(parameterApplyButton!=null)parameterApplyButton.IsEnabled=editable;
+        if(hazardLayout!=null)hazardLayout.IsEnabled=editable;
+        if(hazardOutward!=null)hazardOutward.IsEnabled=editable&&adapter.ReadHazardPattern(document,selectedNode)?.Layout=="Lattice";
         if(entryCreationButton!=null)entryCreationButton.IsEnabled=editable;
         if(removeDefinitionButton!=null)removeDefinitionButton.IsEnabled=editable;
         if(sweepEditorButton!=null)sweepEditorButton.IsEnabled=editable;

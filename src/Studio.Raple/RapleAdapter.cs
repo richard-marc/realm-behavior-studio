@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -76,7 +76,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
                 t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,12 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "projectileIndex" when kind=="DelayedOriginHazards"=>"Owner XML projectile with zero base speed, positive acceleration and speed cap, acceleration delay at least 500 ms, and arming between acceleration and expiry. Native entry validates the complete motion contract.",
+        "layout" when kind=="DelayedOriginHazards"=>"Trail emits three backward rays at the host only after movement of at least 0.1 tile since its last unstunned attempt. Lattice emits two rays at each of four fixed offsets (±5, ±5) from the original spawn point.",
+        "intervalMs" when kind=="DelayedOriginHazards"=>"Native attempt interval, at least 100 ms. One attempt per enemy tick; stun consumes the interval without advancing the volley. Suppressed trail or out-of-bounds lattice emissions still consume an unstunned volley.",
+        "startupMs" when kind=="DelayedOriginHazards"=>"Nonnegative age from state entry before the first attempt, rounded up by native 100 ms ticks. Projectile dormancy and arming come from XML rather than a delayed server callback.",
+        "volleyLimit" when kind=="DelayedOriginHazards"=>"Maximum unstunned emission attempts per entry, including attempts producing no packets. Default int.MaxValue. Exit, death and encounter removal release the per-actor state.",
+        "outwardFirst" when kind=="DelayedOriginHazards"=>"Lattice alternates inward and outward volleys. False begins inward; true begins outward. Trail ignores this input. Origin fits and the native 14-tile host distance gate apply to each site.",
         "distance" when kind is "FollowDistance" or "LockedFollowDistance"=>"Maximum cumulative distance actually moved during this state entry. Native steps clamp to the remaining budget and stop boundary; 500 ms of blocked movement completes the segment early.",
         "stopRange" when kind is "FollowDistance" or "LockedFollowDistance"=>"Stop within this many tiles of the target. LockedFollowDistance requires this to be strictly smaller than acquireRange. There is no Follow-style range + 1 hysteresis.",
         "acquireRange" when kind=="FollowDistance"=>"Nearest visible player search radius, evaluated again each tick. No target pauses the segment without consuming its travel budget.",
@@ -161,6 +167,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "DelayedOriginHazards" when name is "intervalMs" or "startupMs"=>"ms",
+        "DelayedOriginHazards" when name=="projectileIndex"=>"XML index",
         "FollowDistance" or "LockedFollowDistance" when name is "distance" or "stopRange" or "acquireRange"=>"tiles",
         "LockedFollowDistance" when name=="timeoutMs"=>"ms",
         "ReturnToSpawn" when name=="returnWithinRadius"=>"tiles",
@@ -222,6 +230,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateOwnedEmitters(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSequentialSweeps(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateRingPatterns(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateDelayedHazards(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

@@ -125,6 +125,7 @@ public partial class MainWindow
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
         if(kind=="Charge")return "";
+        if(kind=="DelayedOriginHazards")return parameter.Name switch{"projectileIndex"=>adapter.HazardProjectiles(selectedEntity!.Id).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"","layout"=>"global::TKR.WorldServer.logic.behaviors.HazardLayout.Trail","intervalMs"=>"900",_=>""};
         if(kind=="SequentialAimedSweep"&&parameter.Name=="projectile")return EnemyProjectiles.ForEntity(selectedEntity!.Id).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";
         if(kind is "GordoSpiral" or "GapRing"&&parameter.Name=="projectile")return EnemyProjectiles.ForEntity(selectedEntity!.Id).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";
         if(kind=="GordoSpiral")return parameter.Name switch{"count"=>"8","spacing"=>"45","rotation"=>"15","interval"=>"1000",_=>""};

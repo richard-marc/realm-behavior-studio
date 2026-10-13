@@ -41,6 +41,7 @@ public partial class MainWindow
         await RunDefinitionRemovalUiSmoke(output,check);
         await RunMovementFamilyUiSmoke(output,check);
         await RunBoundedFollowUiSmoke(output,check);
+        await RunHazardUiSmoke(output,check);
         await RunAttackUiSmoke(source, root, helpers, output, check);
         await RunProjectileUiSmoke(output, check);
         await RunMovementUiSmoke(source, root, helpers, output, check);

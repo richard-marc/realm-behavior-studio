@@ -33,7 +33,7 @@ public static class EnemyProjectiles
 public sealed partial class RapleAdapter
 {
     public bool IsNativeShoot(BehaviorDocument document, BehaviorNode node) => node.Kind == "Shoot" && NativeKind(document, node) == "Shoot";
-    public string? ProjectileParameter(BehaviorDocument document,BehaviorNode node)=>node.Kind==NativeKind(document,node)?node.Kind switch { "Shoot"=>"projectileIndex", "SequentialAimedSweep" or "GordoSpiral" or "GapRing"=>"projectile", _=>null }:null;
+    public string? ProjectileParameter(BehaviorDocument document,BehaviorNode node)=>node.Kind==NativeKind(document,node)?node.Kind switch { "Shoot" or "DelayedOriginHazards"=>"projectileIndex", "SequentialAimedSweep" or "GordoSpiral" or "GapRing"=>"projectile", _=>null }:null;
     public int? ReadProjectileIndex(BehaviorDocument document, BehaviorNode node) => ProjectileParameter(document,node) is {} parameter && ReadNumericParameter(document, node, parameter, parameter=="projectileIndex"?0:null, out var value) && value is >= 0 and <= int.MaxValue && value == Math.Truncate(value.Value) ? (int)value.Value : null;
     string? NativeKind(BehaviorDocument document, BehaviorNode node)
     {
