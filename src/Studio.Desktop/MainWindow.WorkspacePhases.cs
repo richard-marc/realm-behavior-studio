@@ -37,7 +37,7 @@ public partial class MainWindow
     }
     void PasteWorkspaceNodes(Guid parent,int index,BehaviorClipboard clipboard)
     {
-        var plan=SourcePhaseRefactor.Paste(adapter,Snapshot(),document.SourceFile!,parent,index,clipboard);
+        var plan=clipboard.Expressions.All(e=>e.TrimStart().StartsWith('{'))?SourceEntryRefactor.Paste(adapter,Snapshot(),document.SourceFile!,parent,index,clipboard):SourcePhaseRefactor.Paste(adapter,Snapshot(),document.SourceFile!,parent,index,clipboard);
         ApplyWorkspacePhaseEdit(plan,plan.Selection[0],"Pasted");
         nodeSelection.Clear();nodeSelection.UnionWith(plan.Selection);selectionAnchor=plan.Selection[0];RefreshSelectionVisuals();
     }
@@ -91,7 +91,7 @@ public partial class MainWindow
         workspacePhaseUndo.Push(new(plan,affected));scenarioRevision++;
         if(plan.SelectionSourceFile is {} targetFile)FocusWorkspaceSource(targetFile,selection);
         Changed(selection);
-        Status.Text=action+" phase across "+plan.Changes.Count+" source files · Undo restores the complete edit";
+        Status.Text=action+" · "+plan.Changes.Count+" source file"+(plan.Changes.Count==1?"":"s")+" · Undo restores the complete edit";
     }
     void InstallPhaseWorkspace(StudioProject project,IReadOnlyList<SourcePhaseChange> changes)
     {

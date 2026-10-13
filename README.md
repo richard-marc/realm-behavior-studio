@@ -89,7 +89,7 @@ Native `InitMany` ranges now appear in the entity library. Inline State lambdas 
 
 ## What Play currently means
 
-Keyed Add entries show their actual key fields and native behavior input. Edit keys, replace the behavior, or duplicate/reorder/delete whole pairs. Duplicate retains the original key; the collection implementation defines its runtime constraints and enumeration order.
+Keyed Add entries show their actual key fields and native behavior input. Edit keys, replace the behavior, create a pair from an existing entry, or copy/paste/duplicate/reorder/delete whole pairs. Copy/Paste also works in a known shared collection body, with caller locks, affected drafts and one workspace Undo/Redo protecting the edit. Copies retain the original key; set an independent key when the collection requires unique keys. The actual collection implementation defines runtime constraints and enumeration order. Helper/generated child inputs and entry-owned phases still require source ownership reconciliation.
 
 Native State **Behaviors** and **Transitions** member initializers now appear as typed lists. Edit, reorder, duplicate or drag their inputs while preserving constructor inputs and the original initializer code. Member-region locks and Undo/Redo cover the whole edit.
 

@@ -81,6 +81,9 @@ try {
     & dotnet run --project tests/KeyedInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/keyed-initializer-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/keyed-initializer-checks.log' -Tail 25; throw 'Native keyed Add initializer checks failed.' }
     Get-Content '.artifacts/keyed-initializer-checks.log' -Tail 1
+    & dotnet run --project tests/SharedEntry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/shared-entry-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/shared-entry-checks.log' -Tail 25; throw 'Shared keyed entry workspace checks failed.' }
+    Get-Content '.artifacts/shared-entry-checks.log' -Tail 1
     & dotnet run --project tests/CloneWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/clone-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/clone-checks.log' -Tail 25; throw 'Independent definition clone checks failed.' }
     Get-Content '.artifacts/clone-checks.log' -Tail 1
