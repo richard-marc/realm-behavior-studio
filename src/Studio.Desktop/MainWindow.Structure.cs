@@ -36,7 +36,7 @@ public partial class MainWindow
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;
         if (deleteStructureButton != null) deleteStructureButton.IsEnabled = editable;
-        if (extractApplyButton != null) extractApplyButton.IsEnabled = editable;
+        if (extractApplyButton != null) extractApplyButton.IsEnabled = editable&&nodeSelection.All(id=>RegionEditable(document.Find(id)));
         if (cloneDefinitionButton != null) cloneDefinitionButton.IsEnabled = editable;
         if (chooseChildSlotButton != null) chooseChildSlotButton.IsEnabled = editable;
         if (document.Parent(selectedNode.Id) is not { } parent) return;

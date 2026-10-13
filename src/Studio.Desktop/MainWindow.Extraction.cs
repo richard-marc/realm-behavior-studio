@@ -20,7 +20,8 @@ public partial class MainWindow
     void ExtractSelectedSource()
     {
         if(selectedNode==null||extractNameInput==null||extractDestination?.SelectedItem is not SourceFileChoice destination)return;
-        var plan=SourceDefinitionRefactor.Extract(adapter,Snapshot(),document.SourceFile!,selectedNode.Id,destination.Path,extractNameInput.Text);
+        var ids=nodeSelection.Count>1?nodeSelection.ToArray():new[]{selectedNode.Id};
+        var plan=SourceDefinitionRefactor.Extract(adapter,Snapshot(),document.SourceFile!,ids,destination.Path,extractNameInput.Text);
         ApplyWorkspacePhaseEdit(plan,plan.Selection[0],"Extracted");
     }
 }

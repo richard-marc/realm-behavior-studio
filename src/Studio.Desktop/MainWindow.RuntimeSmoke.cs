@@ -58,6 +58,7 @@ public partial class MainWindow
         await RunExtractionUiSmoke(output,check);
         await RunCollectionExtractionUiSmoke(output,check);
         await RunScopedExtractionUiSmoke(output,check);
+        await RunSelectionExtractionUiSmoke(output,check);
         await RunDefinitionCloneUiSmoke(output,check);
         await RunReferenceCloneUiSmoke(output,check);
         await RunTransformationUiSmoke(output,check);

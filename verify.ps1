@@ -72,6 +72,9 @@ try {
     & dotnet run --project tests/ScopedExtraction.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/scoped-extraction-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/scoped-extraction-checks.log' -Tail 25; throw 'File-scoped native helper extraction checks failed.' }
     Get-Content '.artifacts/scoped-extraction-checks.log' -Tail 1
+    & dotnet run --project tests/SelectionExtraction.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/selection-extraction-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/selection-extraction-checks.log' -Tail 25; throw 'Native multi-expression helper extraction checks failed.' }
+    Get-Content '.artifacts/selection-extraction-checks.log' -Tail 1
     & dotnet run --project tests/CloneWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/clone-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/clone-checks.log' -Tail 25; throw 'Independent definition clone checks failed.' }
     Get-Content '.artifacts/clone-checks.log' -Tail 1

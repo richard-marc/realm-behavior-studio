@@ -89,6 +89,8 @@ Native `InitMany` ranges now appear in the entity library. Inline State lambdas 
 
 ## What Play currently means
 
+Select adjacent actions or phases to extract them together into a reusable child-array helper. Their source order, native hierarchy and identities remain intact, including captured storage used by following actions.
+
 Extraction also supports matching file-scoped namespaces. Destination imports stay unchanged, and the native compiler checks actual helper binding before accepting the edit.
 
 Explicit arrays, target-typed child collections and list initializers also offer **Extract helper**. The whole ordered collection moves into its actual native return type, with captured storage, child identities and collapse state preserved.
