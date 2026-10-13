@@ -18,11 +18,13 @@ public partial class MainWindow
     void AddArgumentControls(BehaviorNode node)
     {
         chooseChildSlotButton = null;
+        entryCreationButton=null;entryCreationChild=null;entryCreationInputs.Clear();
         if(node.IsMemberInitializer)
         {
             Inspector.Children.Add(new TextBlock{Text="These member lists initialize after the constructor inputs. Select a list to edit its native actions or transitions.",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.LightSlateGray,Margin=new(0,12,0,8)});
             var source=new Button{Content="Open Source",Style=(Style)FindResource("QuietButton")};source.Click+=(_,_)=>{ShowEncounterSource();SourceEditor.Select(node.Start,node.Length);SourceEditor.Focus();};Inspector.Children.Add(source);return;
         }
+        if(node.Kind=="InitializerEntry"){AddEntryCreationControls(node);return;}
         if (node.Kind != "ArgumentGroup" || node.Argument is not { } slot) return;
         var description = node.ArgumentRequiresSource ? "This collection comes from source. Open Source to edit its definition." : slot.IsCollection ? node.ArgumentFromCall && !slot.IsParams && node.Children.Count == 0 ? "No list is assigned. Adding a child creates an explicit " + slot.ElementType + (slot.IsArray ? " array." : " collection.") : (slot.IsArray ? "Ordered " + slot.ElementType + " list." : slot.ElementType + " inputs in source order.") + " Add a child or organize its contents." : (slot.Minimum == 0 ? "Optional " : "Required ") + slot.ElementType + " child. " + (node.Children.Count == 0 ? "Choose an action to fill this slot." : "Choose an action to replace this child in one edit.");
         Inspector.Children.Add(new TextBlock { Text = description, ToolTip = slot.CollectionType, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new(0, 12, 0, 8) });

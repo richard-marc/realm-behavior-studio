@@ -22,6 +22,7 @@ public partial class MainWindow
     {
         if (selectedNode == null) return; var editable = RegionEditable(selectedNode);
         if(parameterApplyButton!=null)parameterApplyButton.IsEnabled=editable;
+        if(entryCreationButton!=null)entryCreationButton.IsEnabled=editable;
         if (attackEditorButton != null) attackEditorButton.IsEnabled = editable;
         RefreshAttackSelection();
         if (movementEditorButton != null) movementEditorButton.IsEnabled = editable;
