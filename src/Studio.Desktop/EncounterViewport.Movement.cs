@@ -18,6 +18,7 @@ public sealed partial class EncounterViewport
         get => movement;
         set
         {
+            if(value!=null&&crossCut!=null)CrossCut=null;
             if (value != null && attack != null) Attack = null;
             if (value != null && path != null) Path = null;
             if(value!=null&&ring!=null)Ring=null;

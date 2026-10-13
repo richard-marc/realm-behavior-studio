@@ -31,6 +31,7 @@ public partial class MainWindow
         RefreshAttackSelection();
         RefreshSweepSelection();
         RefreshRingSelection();if(ringEditorButton!=null)ringEditorButton.IsEnabled=editable;
+        RefreshCrossCutSelection();if(crossCutEditorButton!=null)crossCutEditorButton.IsEnabled=editable;
         if (movementEditorButton != null) movementEditorButton.IsEnabled = editable;
         if (movementDirection != null) movementDirection.IsEnabled = editable;
         RefreshMovementSelection();

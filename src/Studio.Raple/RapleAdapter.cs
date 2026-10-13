@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -76,7 +76,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
                 t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,11 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "radius" when kind=="EdgeCrossCut"=>"Positive distance from the position captured at state entry to each edge center. Requested origins must fit within 14 tiles of that anchor; live host distance and map passability can suppress packets.",
+        "spacing" when kind=="EdgeCrossCut"=>"Positive tiles between centered parallel origins. sqrt(radius² + ((count - 1) * spacing / 2)²) must not exceed 14.",
+        "count" when kind=="EdgeCrossCut"=>"One to eight single-projectile origins. The native sequence alternates opposing horizontal edges, opposing vertical edges, then four diagonals. Suppressed origins still advance the attempt's edge step.",
+        "intervalMs" when kind=="EdgeCrossCut"=>"At least 100 ms between native attempts. One attempt per tick, no backlog. Stun consumes the interval without advancing the edge sequence.",
+        "startupMs" when kind=="EdgeCrossCut"=>"Nonnegative age from state entry before the first attempt, quantized by native 100 ms ticks. Exit, death and encounter removal release the per-actor state.",
         "group" when kind is "SpawnGroup" or "ReproduceGroup"=>"Exact case-sensitive XML Group. Native selection uses every matching ObjectDesc, not XML aliases or an enemy-only filter. Empty selection cannot emit; members needing extra world context retain that prerequisite.",
         "group" when kind=="GroupNotExistTransition"=>"Native group lookup uses invariant case-insensitive matching and strict distance in the enemy/static collision index. A blank group always returns false. This host can match its own group; no parent/ownership filter is applied.",
         "maxChildren" when kind=="SpawnGroup"=>"Ongoing cap on the per-entry attempt counter, not live minion count. Initial attempts are trunc(maxChildren * initialSpawn) and can exceed this cap. Blocked attempts count; death/removal never replenishes it.",
@@ -182,6 +187,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string Unit(string name,string? kind=null)=>kind switch
     {
         "Reproduce" or "ReproduceGroup" when name is "densityRadius" or "regionRange"=>"tiles",
+        "EdgeCrossCut" when name=="spacing"=>"tiles",
+        "EdgeCrossCut" when name is "intervalMs" or "startupMs"=>"ms",
         "DelayedOriginHazards" when name is "intervalMs" or "startupMs"=>"ms",
         "DelayedOriginHazards" when name=="projectileIndex"=>"XML index",
         "FollowDistance" or "LockedFollowDistance" when name is "distance" or "stopRange" or "acquireRange"=>"tiles",
@@ -247,6 +254,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateRingPatterns(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateDelayedHazards(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateNativeGroups(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateCrossCuts(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

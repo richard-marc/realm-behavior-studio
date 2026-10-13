@@ -1,0 +1,32 @@
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using Studio.Core;
+using Studio.Raple;
+namespace Studio.Desktop;
+public partial class MainWindow
+{
+    async void CrossCutSmoke()=>await TryRuntime(async()=>
+    {
+        var output=Path.GetFullPath(".artifacts/crosscut-desktop");Directory.CreateDirectory(output);var checks=new List<string>();
+        await RunCrossCutUiSmoke(output,(passed,label)=>{if(!passed)throw new InvalidOperationException("UI check failed: "+label);checks.Add(label);});File.WriteAllText(Path.Combine(output,"ui-checks.json"),System.Text.Json.JsonSerializer.Serialize(new{checks},BehaviorDocument.JsonOptions));Application.Current.Shutdown(0);
+    });
+    async Task RunCrossCutUiSmoke(string output,Action<bool,string> check)
+    {
+        var previous=Snapshot();var primary=selectedEntity!.SourceFile;var supplied=File.ReadAllText(primary);const string source="using TKR.WorldServer.logic.behaviors;namespace TKR.WorldServer.logic{public partial class BehaviorDb{private _ StudioCrossCutDesktop=()=>Behav().Init(\"Cave Pirate Brawler\",new State(\"crosscut\"));}}";
+        ApplyProject(previous with{Source=source,Identities=[],SourceDrafts=[],SelectedSourceFile=null,AdditionalSources=[],LockedNodes=[],CollapsedNodes=[],Layout=[],Player=previous.Player with{Invulnerable=true}},null);SelectNode(EncounterRoot.Id);BeginNativeCreation(adapter.Primitives.Single(p=>p.Name=="EdgeCrossCut"));
+        check(constructorInputs["projectileIndex"].Text=="0"&&createNativeButton!.IsEnabled,"Native crosscut creation seeds an actual owned XML projectile and native defaults");constructorInputs["radius"].Text="4";constructorInputs["count"].Text="3";constructorInputs["spacing"].Text="2";constructorInputs["intervalMs"].Text="100";constructorInputs["startupMs"].Text="0";createNativeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));var node=selectedNode!;
+        check(crossCutEditorButton?.IsEnabled==true&&Viewport.CrossCut==null&&projectilePicker!=null,"Crosscut exposes a quiet opt-in origin editor and original XML chooser");crossCutEditorButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));check(Viewport.CrossCut?.NodeId==node.Id&&Viewport.Input()==new EncounterInput()&&session==null,"Origin editing suspends gameplay input and uses the real selected source action");
+        foreach(var(handle,value,parameter)in new[]{(CrossCutHandle.Radius,5.25,"radius"),(CrossCutHandle.Spacing,1.5,"spacing")})
+        {
+            var before=document.Source;var revision=document.Revision;check(Viewport.BeginCrossCutDrag(Viewport.CrossCutHandlePoint(handle)),"Crosscut "+parameter+" handle uses real viewport hit testing");Viewport.MoveCrossCutDrag(Viewport.CrossCutPoint(handle,value));check(document.Source==before&&document.Revision==revision,"Crosscut "+parameter+" drag previews without repeated source mutation");Viewport.EndCrossCutDrag();
+            check(document.Revision==revision+1&&Math.Abs(double.Parse(document.Find(node.Id).Parameters.Single(p=>p.Name==parameter).Expression,System.Globalization.CultureInfo.InvariantCulture)-value)<1e-6,"Crosscut "+parameter+" release makes one typed edit with stable identity");Undo(this,new());check(document.Source==before&&document.Find(node.Id).Id==node.Id,"Crosscut "+parameter+" Undo restores complete source and identity");Redo(this,new());SelectNode(node.Id);if(!crossCutEditing)crossCutEditorButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }
+        var accepted=document.Source;Viewport.BeginCrossCutDrag(Viewport.CrossCutHandlePoint(CrossCutHandle.Spacing));Viewport.MoveCrossCutDrag(Viewport.CrossCutPoint(CrossCutHandle.Spacing,4));Viewport.CancelCrossCutDrag();check(document.Source==accepted&&Viewport.CrossCut!.Pattern.Spacing==1.5,"Cancelled crosscut gestures restore source and original layout");
+        Viewport.BeginCrossCutDrag(Viewport.CrossCutHandlePoint(CrossCutHandle.Radius));Viewport.MoveCrossCutDrag(Viewport.CrossCutPoint(CrossCutHandle.Radius,30));Viewport.EndCrossCutDrag();check(adapter.ReadCrossCut(document,document.Find(node.Id)) is{} limit&&Math.Sqrt(limit.Radius*limit.Radius+limit.HalfWidth*limit.HalfWidth)<=14,"Origin radius gesture preserves the actual native 14-tile envelope");Undo(this,new());SelectNode(node.Id);if(!crossCutEditing)crossCutEditorButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Viewport.BeginCrossCutDrag(Viewport.CrossCutHandlePoint(CrossCutHandle.Spacing));Viewport.MoveCrossCutDrag(Viewport.CrossCutPoint(CrossCutHandle.Spacing,40));Viewport.EndCrossCutDrag();check(adapter.ReadCrossCut(document,document.Find(node.Id)) is{} width&&Math.Sqrt(width.Radius*width.Radius+width.HalfWidth*width.HalfWidth)<=14,"Spacing gesture also retains the coupled native origin envelope");Undo(this,new());SelectNode(node.Id);if(!crossCutEditing)crossCutEditorButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var stale=false;try{CommitCrossCutEdit(Viewport.CrossCut! with{Revision=document.Revision-1},new Dictionary<string,double>{{"radius",4}});}catch(InvalidOperationException){stale=true;}check(stale&&document.Source==accepted,"Stale origin gestures reject atomically");Inspector.Children.OfType<CheckBox>().Single().IsChecked=true;check(Viewport.CrossCut is{Editable:false}&&!Viewport.BeginCrossCutDrag(Viewport.CrossCutHandlePoint(CrossCutHandle.Radius)),"Source locks protect both crosscut handles and controls");document.LockedNodes.Clear();SelectNode(node.Id);UpdateLayout();CaptureView(this,Path.Combine(output,"crosscut-origins.png"));
+        var saved=Path.Combine(output,"crosscut.rbs");BehaviorDocument.Save(saved,Snapshot());ApplyProject(BehaviorDocument.Load(saved),saved);check(adapter.ReadCrossCut(document,document.Find(node.Id)) is{Radius:5.25,Spacing:1.5,Count:3},"Crosscut geometry and native source identity persist through reopening");check(await StartSessionAsync()&&Viewport.CrossCut==null&&!crossCutEditing,"Play closes origin authoring and loads the accepted native controller");running=false;await session!.AdvanceAsync(new(),100);UpdateSession();check(session.Shots.Count==3&&session.Shots.All(s=>Math.Abs(s.X-59.25)<1e-5)&&session.Shots.Select(s=>s.Y).SequenceEqual(new[]{63f,64.5f,66f}),"Desktop native packets use the viewport-edited actual origins and spacing");Stop(this,new());
+        check(File.ReadAllText(primary)==supplied,"Crosscut controls, history and native playback preserve supplied source");ApplyProject(previous,null);WorkspaceTabs.SelectedIndex=0;
+    }
+}
