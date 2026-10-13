@@ -55,6 +55,7 @@ public partial class MainWindow
         await RunWorkspaceGroupUiSmoke(output,check);
         await RunWorkspaceCopyUiSmoke(output,check);
         await RunExtractionUiSmoke(output,check);
+        await RunDefinitionCloneUiSmoke(output,check);
         await RunTransformationUiSmoke(output,check);
         await RunReplacementUiSmoke(output,check);
         document = new BehaviorDocument(source.Remove(root.Start, root.Length).Insert(root.Start, expression) + helpers, adapter, sourceFile: selectedEntity.SourceFile);

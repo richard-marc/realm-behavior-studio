@@ -89,6 +89,8 @@ Native `InitMany` ranges now appear in the entity library. Inline State lambdas 
 
 ## What Play currently means
 
+For a known source factory, **Organize → Independent clone** creates a new helper and child-producing dependency declarations, plus a call beside the original. Cloned phases get unique names and internal destinations; existing calls keep their original source. One workspace Undo/Redo covers all changed files. The clone's Edit link opens its independent body. Generated/ambiguous declaration ownership and reference-only deep cloning remain pending.
+
 The collapsed **Organize → Extract helper** form moves a selected source-backed phase/action into a named helper in an accepted source file. It retains native hierarchy and phase destinations, carries required source inputs, and opens the new body with its original node identities. One Undo/Redo restores both files and follows the original/extracted view. Add a source file through Source before choosing it as the destination. Multi-node/collection extraction and cloning existing shared definitions remain pending.
 
 Deleting shared child phases now coordinates their known source files: selected and nested branches, incoming caller transitions and native orders are removed together. Bulk Delete and one Undo/Redo cover the full edit. Orders addressing other actors retain their destinations. Source drafts, caller/reference locks, dynamic references and required child slots block incomplete reconciliation. The declaring helper body itself remains a source root; shared-definition cloning/extraction and grouping across separate bodies are still pending.

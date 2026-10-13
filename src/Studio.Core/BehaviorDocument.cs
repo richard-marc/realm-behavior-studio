@@ -369,6 +369,14 @@ public sealed partial class BehaviorDocument
         _ => false
     };
     public bool Redo() => Restore(redo, undo);
+    public bool RestoreWorkspaceHistory(bool redoDirection,IBehaviorSchema binding)
+    {
+        var from=redoDirection?redo:undo;if(from.Count==0)return false;
+        var restored=from.Peek();var candidate=new BehaviorDocument(restored.Source,binding,restored.Ids,SourceFile);
+        var errors=candidate.SourceDiagnostics().Where(d=>d.IsError).ToArray();if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
+        if(restored.Ids.Any(i=>!candidate.Identities.Any(n=>n.Id==i.Id)))throw new InvalidOperationException("Workspace history lost a saved source identity.");
+        var to=redoDirection?undo:redo;to.Push((Source,Identities));from.Pop();baseSchema=binding;Source=restored.Source;Parse(restored.Ids,candidate.schema);LockedNodes.IntersectWith(Identities.Select(i=>i.Id));Revision++;return true;
+    }
     bool Restore(Stack<(string Source, List<NodeIdentity> Ids)> from, Stack<(string Source, List<NodeIdentity> Ids)> to)
     {
         if (from.Count == 0) return false;

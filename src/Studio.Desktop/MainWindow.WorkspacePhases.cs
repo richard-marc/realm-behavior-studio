@@ -123,14 +123,15 @@ public partial class MainWindow
         if(edit.Plan.Changes.Any(c=>sourceDrafts.TryGetValue(c.SourceFile,out var draft)&&draft!=(redo?c.Before:c.After)))throw new InvalidOperationException("Apply or discard drafts in the affected source files before restoring the coordinated phase edit.");
         if(edit.Documents.Any(d=>d.LockedNodes.Count>0))throw new InvalidOperationException("Unlock the affected sources before restoring the coordinated phase edit.");
         var restored=new List<BehaviorDocument>();
+        var targetBinding=adapter.ForProject(target);var expectedBinding=adapter.ForProject(expected);
         try
         {
             foreach(var editing in edit.Documents)
             {
-                if(!(redo?editing.Redo():editing.Undo()))throw new InvalidOperationException("The coordinated phase history is unavailable.");restored.Add(editing);
+                if(!editing.RestoreWorkspaceHistory(redo,targetBinding))throw new InvalidOperationException("The coordinated phase history is unavailable.");restored.Add(editing);
             }
         }
-        catch{foreach(var editing in restored.AsEnumerable().Reverse()){if(redo)editing.Undo();else editing.Redo();}throw;}
+        catch{foreach(var editing in restored.AsEnumerable().Reverse())editing.RestoreWorkspaceHistory(!redo,expectedBinding);throw;}
         InstallPhaseWorkspace(target,edit.Plan.Changes);from.Pop();to.Push(edit);scenarioRevision++;
         if((redo?edit.Plan.SelectionSourceFile:edit.Plan.OriginSourceFile) is {} targetFile)
         {var selected=edit.Plan.Selection[0];FocusWorkspaceSource(targetFile,selected);Changed(selected);}

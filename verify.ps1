@@ -66,6 +66,9 @@ try {
     & dotnet run --project tests/Extraction.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/extraction-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/extraction-checks.log' -Tail 25; throw 'Source extraction checks failed.' }
     Get-Content '.artifacts/extraction-checks.log' -Tail 1
+    & dotnet run --project tests/CloneWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/clone-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/clone-checks.log' -Tail 25; throw 'Independent definition clone checks failed.' }
+    Get-Content '.artifacts/clone-checks.log' -Tail 1
     & dotnet run --project tests/Transformation.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/transformation-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/transformation-checks.log' -Tail 25; throw 'Native transformation checks failed.' }
     Get-Content '.artifacts/transformation-checks.log' -Tail 1
