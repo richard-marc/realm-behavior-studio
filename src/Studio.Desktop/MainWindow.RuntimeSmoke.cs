@@ -43,6 +43,7 @@ public partial class MainWindow
         await RunBoundedFollowUiSmoke(output,check);
         await RunHazardUiSmoke(output,check);
         await RunCompletionUiSmoke(output,check);
+        await RunGroupUiSmoke(output,check);
         await RunAttackUiSmoke(source, root, helpers, output, check);
         await RunProjectileUiSmoke(output, check);
         await RunMovementUiSmoke(source, root, helpers, output, check);

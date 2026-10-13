@@ -112,6 +112,7 @@ public partial class MainWindow
                 constructorInputs.Add(parameter.Name, input); fields.Children.Add(input); input.TextChanged += (_, _) => Preview();
                 if (RapleAdapter.EntityParameterFor(primitive.Name) is { } entityParameter && entityParameter.Name == parameter.Name)
                     fields.Children.Add(CreateEntityInputPicker(entityParameter, input));
+                if(primitive.Name is "SpawnGroup" or "ReproduceGroup" or "GroupNotExistTransition"&&parameter.Name=="group")fields.Children.Add(CreateGroupInputPicker(input));
             }
             Preview();
         };

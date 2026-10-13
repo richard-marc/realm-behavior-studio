@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -75,7 +75,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
-                t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") ? "Spawning" :
+                t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
                 t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
@@ -87,6 +87,19 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "group" when kind is "SpawnGroup" or "ReproduceGroup"=>"Exact case-sensitive XML Group. Native selection uses every matching ObjectDesc, not XML aliases or an enemy-only filter. Empty selection cannot emit; members needing extra world context retain that prerequisite.",
+        "group" when kind=="GroupNotExistTransition"=>"Native group lookup uses invariant case-insensitive matching and strict distance in the enemy/static collision index. A blank group always returns false. This host can match its own group; no parent/ownership filter is applied.",
+        "maxChildren" when kind=="SpawnGroup"=>"Ongoing cap on the per-entry attempt counter, not live minion count. Initial attempts are trunc(maxChildren * initialSpawn) and can exceed this cap. Blocked attempts count; death/removal never replenishes it.",
+        "initialSpawn" when kind=="SpawnGroup"=>"Fraction multiplied by maxChildren and truncated to an integer on construction. Entry makes that many attempts before ongoing ticks. Native source permits values beyond the usual 0–1 fraction.",
+        "radius" when kind=="SpawnGroup"=>"Native spawn offsets are independently Random.NextDouble * radius in X and Y. Positive radius samples a positive-quadrant square, not a centered circle. Passability can suppress each attempt.",
+        "coolDown" when kind=="SpawnGroup"=>"Zero default remains zero; after a failed/completed attempt the cooldown resets. Ordinary countdown ticks subtract 100 ms, with a later attempt tick. Children are not assigned ParentEntity ownership by this controller.",
+        "children" when kind=="Reproduce"=>"Null reproduces this host's object type. An ID resolves that exact native object type. Reproduction is suppressed by a player strictly inside 15 tiles; native Hidden is skipped, while Invisible is not.",
+        "densityRadius" when kind is "Reproduce" or "ReproduceGroup"=>"Strict native CountEntity distance, including this host when its type/group matches. This is local population density, not the number of owned children.",
+        "densityMax" when kind is "Reproduce" or "ReproduceGroup"=>"Emit one child when the native nearby count is below this value. Counts use current world/collision state; children give no XP and have no ParentEntity assigned here.",
+        "coolDown" when kind is "Reproduce" or "ReproduceGroup"=>"Default normalizes to 60000 ms. First tick initializes then decrements the countdown; a later tick attempts reproduction. ReproduceGroup has no Reproduce-style nearby-player gate.",
+        "regionRange" when kind=="ReproduceGroup"=>"The supplied group controller compares integer/fractional host coordinates, not candidate tile coordinates. Keep this source behavior; matching region tiles can be far away.",
+        "regionRange" when kind=="Reproduce"=>"Inclusive X/Y tile-coordinate bounds around the integer host position. Native source can throw when matching region tiles exist but none fall inside this range.",
+        "region" when kind is "Reproduce" or "ReproduceGroup"=>"None emits at the host. Other values cache matching native map regions at entry on the behavior object; region/world/cache ownership must be tested in its actual context.",
         "targetState" when kind is "FollowDistanceCompleteTransition" or "LockedFollowDistanceCompleteTransition"=>"Destination when the exact referenced movement instance reports completion for this actor. A separately constructed movement never observes the phase action's state. Use Movement completion to select a stable shared reference.",
         "projectileIndex" when kind=="DelayedOriginHazards"=>"Owner XML projectile with zero base speed, positive acceleration and speed cap, acceleration delay at least 500 ms, and arming between acceleration and expiry. Native entry validates the complete motion contract.",
         "layout" when kind=="DelayedOriginHazards"=>"Trail emits three backward rays at the host only after movement of at least 0.1 tile since its last unstunned attempt. Lattice emits two rays at each of four fixed offsets (±5, ±5) from the original spawn point.",
@@ -168,6 +181,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "Reproduce" or "ReproduceGroup" when name is "densityRadius" or "regionRange"=>"tiles",
         "DelayedOriginHazards" when name is "intervalMs" or "startupMs"=>"ms",
         "DelayedOriginHazards" when name=="projectileIndex"=>"XML index",
         "FollowDistance" or "LockedFollowDistance" when name is "distance" or "stopRange" or "acquireRange"=>"tiles",
@@ -232,6 +246,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateSequentialSweeps(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateRingPatterns(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateDelayedHazards(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateNativeGroups(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();
@@ -287,7 +302,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                     if (double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
                     {
                         if (!double.IsFinite(value) || p.Name == "count" && (value < 1 || value > 255 || value != Math.Truncate(value)) ||
-                            p.Name == "threshold" && (value < 0 || value > 1) || p.Name is "radius" or "speed" && value < 0 ||
+                            p.Name == "threshold" && (value < 0 || value > 1) || p.Name == "speed" && value < 0 || p.Name == "radius" && n.Kind!="SpawnGroup" && value < 0 ||
                             p.Name == "maxChildren" && (value < 0 || value > 128) || n.Kind == "InstantSpawnRing" && p.Name == "count" && value > 12)
                             yield return new("Invalid value for " + p.Name + ": " + p.Expression, n.Id);
                         if (p.Name == "projectileIndex" && SimEngine.Data.IdToObjectType.TryGetValue(entity.EntityId, out var type) && !SimEngine.Data.ObjectDescs[type].Projectiles.ContainsKey((int)value))

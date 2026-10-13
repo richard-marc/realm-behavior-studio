@@ -11,11 +11,12 @@ public sealed record EntityResource(string Id, string DisplayName, ushort Object
     public string Title => Id;
     public string Summary => $"{RuntimeKind} · 0x{ObjectType:X4}" + (RuntimeKind == "Enemy" ? $" · HP {MaxHp} · defense {Defense}" : "") + (string.IsNullOrWhiteSpace(Group) ? "" : "\n" + Group);
 }
-public sealed record EntityParameter(string Name, string Label, EntityResourceScope Scope, bool AllowsPlayer, string? InactiveReason = null, int? RequiredProjectileIndex = null,bool NameFragment=false);
+public sealed record EntityParameter(string Name, string Label, EntityResourceScope Scope, bool AllowsPlayer, string? InactiveReason = null, int? RequiredProjectileIndex = null,bool NameFragment=false,string? NullTitle=null,string? NullSummary=null);
 public sealed record EntityReference(bool Known, string? Id);
 
 public static class EntityResources
 {
+    public static EntityResource FromDescriptor(ObjectDesc descriptor)=>Describe(descriptor.IdName,descriptor);
     static bool MatchesScope(EntityResource resource,EntityResourceScope scope)=>scope == EntityResourceScope.Resolvable || scope == EntityResourceScope.Enemy && resource.RuntimeKind == "Enemy" || scope == EntityResourceScope.Queryable && resource.Queryable;
     static bool HasProjectile(ObjectDesc desc,int? required)=>required is not {} index||desc.Projectiles.TryGetValue(index,out var projectile)&&projectile.BulletType==index;
     public static IReadOnlyList<EntityResource> Catalog(EntityParameter parameter)=>Catalog(parameter.Scope).Where(resource=>HasProjectile(SimEngine.Data.ObjectDescs[resource.ObjectType],parameter.RequiredProjectileIndex)).ToArray();
@@ -46,6 +47,7 @@ public sealed partial class RapleAdapter
     public static EntityParameter? EntityParameterFor(string nativeKind) => nativeKind switch
     {
         "Spawn" => new("children", "Spawn entity", EntityResourceScope.Enemy, false),
+        "Reproduce"=>new("children","Reproduce entity",EntityResourceScope.Resolvable,true,NullTitle:"This host's XML type",NullSummary:"Native null children reproduces the host's object type; it does not select a player."),
         "InstantSpawnRing" => new("childName", "Ring helper", EntityResourceScope.Enemy, false),
         "OwnedLaneEmitters" => new("childName", "Lane emitter", EntityResourceScope.Enemy, false, RequiredProjectileIndex: 0),
         "Order" or "OrderOnce" => new("children", "Ordered entity", EntityResourceScope.Queryable, false),

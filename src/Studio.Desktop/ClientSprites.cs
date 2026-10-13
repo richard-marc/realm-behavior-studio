@@ -76,7 +76,10 @@ public sealed class ClientSprites
         {
             var xml=XDocument.Load(file);
             foreach (var element in xml.Descendants("Object"))
+            {
                 if (element.Attribute("id") is { } id) objects[id.Value] = element;
+                if(element.Attribute("type") is {} type){var text=type.Value;var number=text.StartsWith("0x",StringComparison.OrdinalIgnoreCase)?Convert.ToUInt16(text[2..],16):ushort.Parse(text,CultureInfo.InvariantCulture);objects["@object:"+number]=element;}
+            }
             foreach(var element in xml.Descendants("Ground"))
                 if(element.Attribute("type") is {} type)
                 { var text=type.Value;var number=text.StartsWith("0x",StringComparison.OrdinalIgnoreCase)?Convert.ToUInt16(text[2..],16):ushort.Parse(text,CultureInfo.InvariantCulture);objects["@ground:"+number]=element; }
@@ -85,6 +88,7 @@ public sealed class ClientSprites
     }
     public BitmapSource? Get(string id, int frame = 0, bool down = false,int altTexture=0) => GetRaw(id, frame, down ? 2 : 0,altTexture);
     public BitmapSource? GetGround(ushort type)=>Get("@ground:"+type);
+    public BitmapSource? GetObject(ushort type)=>Get("@object:"+type);
     XElement? Texture(string id,int alternate)
     {
         if(!objects.TryGetValue(id,out var root))return null;
@@ -209,4 +213,9 @@ public sealed class SpriteConverter : IValueConverter
 {
     public object? Convert(object value, Type targetType, object parameter, CultureInfo culture) => ClientSprites.Current?.Get(value is CatalogEntry entry ? entry.Id : value?.ToString() ?? "");
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+public sealed class ObjectSpriteConverter : IValueConverter
+{
+    public object? Convert(object value,Type targetType,object parameter,CultureInfo culture)=>value is ushort type?ClientSprites.Current?.GetObject(type):null;
+    public object ConvertBack(object value,Type targetType,object parameter,CultureInfo culture)=>throw new NotSupportedException();
 }
