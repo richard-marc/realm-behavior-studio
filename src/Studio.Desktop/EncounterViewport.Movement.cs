@@ -32,7 +32,7 @@ public sealed partial class EncounterViewport
     internal Point MovementPoint(MovementHandle handle, double distance)
     {
         var pattern = movement!.Pattern;
-        var centerX = pattern.Kind == "StayCloseToSpawn" || handle == MovementHandle.Acquire ? 64.5 : 70.5;
+        var centerX = pattern.Kind is "StayCloseToSpawn" or "ReturnToSpawn" or "Charge" || handle == MovementHandle.Acquire ? 64.5 : 70.5;
         return handle switch { MovementHandle.Acquire => HitScreen(centerX, 64.5 - distance), MovementHandle.Variance => HitScreen(centerX + distance, 64.5), _ => HitScreen(centerX, 64.5 + distance) };
     }
     internal Point MovementHandlePoint(MovementHandle handle)
@@ -77,7 +77,7 @@ public sealed partial class EncounterViewport
     internal void FitMovement()
     {
         if (movement == null) return;
-        var pattern = movement.Pattern; var extent = Math.Max(pattern.AcquireRange ?? 0, pattern.Range + Math.Abs(pattern.RadiusVariance) + (pattern.Kind == "StayCloseToSpawn" ? 0 : 6) + 1);
+        var pattern = movement.Pattern; var extent = Math.Max(pattern.AcquireRange ?? 0, pattern.Range + Math.Abs(pattern.RadiusVariance) + (pattern.Kind is "StayCloseToSpawn" or "ReturnToSpawn" or "Charge" ? 0 : 6) + 1);
         scale = Math.Clamp(Math.Min(ActualWidth, ActualHeight) * .32 / Math.Max(6, extent), .001, 32); pan = new(); InvalidateVisual();
     }
     void DrawMovementMarker(DrawingContext dc, string id, double x, double y, double facing)
@@ -90,7 +90,7 @@ public sealed partial class EncounterViewport
     void DrawMovement(DrawingContext dc)
     {
         if (movement is not { } selected) return;
-        var pattern = selected.Pattern; var home = pattern.Kind == "StayCloseToSpawn"; var origin = HitScreen(64.5, 64.5); var center = MovementPoint(MovementHandle.Range, 0);
+        var pattern = selected.Pattern; var home = pattern.Kind is "StayCloseToSpawn" or "ReturnToSpawn"; var origin = HitScreen(64.5, 64.5); var center = MovementPoint(MovementHandle.Range, 0);
         var boundary = new Pen(Brush("#8EAEA1"), 1.2); var dashed = new Pen(Brush("#465B52"), 1) { DashStyle = DashStyles.Dash };
         if (pattern.AcquireRange is { } acquire) dc.DrawEllipse(null, dashed, origin, acquire * scale, acquire * scale);
         if (pattern.Kind == "Orbit" && pattern.RadiusVariance != 0)
@@ -103,18 +103,18 @@ public sealed partial class EncounterViewport
         dc.DrawEllipse(null, boundary, center, pattern.Range * scale, pattern.Range * scale);
         if (pattern.ResumeRange is { } resume) dc.DrawEllipse(null, dashed, center, resume * scale, resume * scale);
         DrawMovementMarker(dc, PreviewEntity, 64.5, 64.5, 0);
-        if (!home) DrawMovementMarker(dc, pattern.Target ?? "Wizard", 70.5, 64.5, Math.PI);
-        if (home) { dc.DrawEllipse(Brush("#B6CDC1"), null, center, 3, 3); Text(dc, "State-entry position", center + new Vector(10, -30), 11, Brush("#A4B8B0")); }
+        if (!home) DrawMovementMarker(dc, pattern.Target ?? "Wizard", 70.5, pattern.Kind=="Charge"?66.5:64.5, Math.PI);
+        if (home) { dc.DrawEllipse(Brush("#B6CDC1"), null, center, 3, 3); Text(dc, pattern.Kind=="ReturnToSpawn"?"Original spawn point":"State-entry position", center + new Vector(10, -30), 11, Brush("#A4B8B0")); }
         foreach (var handle in MovementHandles())
         {
             var point = MovementHandlePoint(handle);
             if (handle == MovementHandle.Variance) dc.DrawLine(dashed, point - new Vector(16, 0), point);
             dc.DrawEllipse(Brush("#182821"), new Pen(Brush(selected.Editable ? "#A8CDBE" : "#737D79"), 1.5), point, 6, 6);
-            Text(dc, handle switch { MovementHandle.Acquire => "Acquire target", MovementHandle.Variance => "Radius variance", _ => home ? "Home range" : pattern.Kind == "Orbit" ? "Orbit radius" : "Stop range" }, point + new Vector(10, -9), 11, Brush("#A4B8B0"));
+            Text(dc, handle switch { MovementHandle.Acquire => "Acquire target", MovementHandle.Variance => "Radius variance", _ => home ? "Home range" : pattern.Kind == "Orbit" ? "Orbit radius" : pattern.Kind=="StayBack"?"Retreat distance":pattern.Kind=="Charge"?"Charge acquisition":"Stop range" }, point + new Vector(10, -9), 11, Brush("#A4B8B0"));
         }
-        Text(dc, pattern.Kind == "Orbit" ? "Orbit editor" : home ? "Home-range editor" : "Follow editor", new(18, 18), 13, Brush("#C4D5CF"));
+        Text(dc, pattern.Kind == "Orbit" ? "Orbit editor" : home ? "Home-range editor" : pattern.Kind=="StayBack"?"Retreat editor":pattern.Kind=="Charge"?"Charge editor":"Follow editor", new(18, 18), 13, Brush("#C4D5CF"));
         Text(dc, string.Create(CultureInfo.InvariantCulture, $"{pattern.Range:0.###} tile {pattern.PrimaryParameter}") + (pattern.AcquireRange is { } a ? string.Create(CultureInfo.InvariantCulture, $" · {a:0.###} tile acquisition") : ""), new(18, 41), 11, Brush("#9FB0A8"));
-        var detail = pattern.Kind == "Follow" ? "Dashed stop boundary: resume beyond range + 1 tile" : home ? "Anchor is captured on state entry; it can differ from the spawn position" : "Direction: " + (pattern.Clockwise == null ? "seeded choice" : pattern.Clockwise.Value ? "clockwise" : "counterclockwise") + string.Create(CultureInfo.InvariantCulture, $" · radius variance ±{Math.Abs(pattern.RadiusVariance):0.###}");
+        var detail = pattern.Kind == "Follow" ? "Dashed stop boundary: resume beyond range + 1 tile" : pattern.Kind=="ReturnToSpawn"?"Anchor is the original SpawnPoint; native steps can overshoot":pattern.Kind=="StayBack"?"Retreats while a target is strictly inside this distance":pattern.Kind=="Charge"?"Acquisition rejects aligned X/Y; charge direction then stays fixed":home ? "Anchor is captured on state entry; it can differ from the spawn position" : "Direction: " + (pattern.Clockwise == null ? "seeded choice" : pattern.Clockwise.Value ? "clockwise" : "counterclockwise") + string.Create(CultureInfo.InvariantCulture, $" · radius variance ±{Math.Abs(pattern.RadiusVariance):0.###}");
         Text(dc, detail, new(18, 61), 11, Brush("#869C91"));
         if (pattern.Kind == "Orbit" && Math.Abs(pattern.RadiusVariance) >= pattern.Range) Text(dc, "Native sampled radius can reach or cross zero", new(18, 81), 11, Brush("#C6AF85"));
         Text(dc, selected.Editable ? "Drag a boundary · Esc cancels · Play tests native movement" : "This movement is locked", new(18, ActualHeight - 48), 11, Brush("#8D9D95"));

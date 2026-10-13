@@ -58,7 +58,8 @@ public partial class MainWindow
     }
     void CommitMovementEdit(MovementSelection selection, string parameter, double value)
     {
-        CommitMovementValue(selection.NodeId, selection.Revision, parameter, value.ToString("0.###", CultureInfo.InvariantCulture));
+        var expression=selection.Pattern.Kind=="Charge"&&parameter=="range"?((float)value).ToString("R",CultureInfo.InvariantCulture)+"f":value.ToString("0.###", CultureInfo.InvariantCulture);
+        CommitMovementValue(selection.NodeId, selection.Revision, parameter, expression);
     }
     void CommitMovementValue(Guid nodeId, long revision, string parameter, string expression)
     {

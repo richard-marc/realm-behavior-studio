@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -75,7 +75,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
-                t.Name.Contains("Spawn") ? "Spawning" :
+                t.Name is "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") ? "Spawning" :
                 t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
@@ -87,6 +87,14 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "returnWithinRadius" when kind=="ReturnToSpawn"=>"Completion radius around the enemy's original SpawnPoint. The native comparison is distance greater than this radius; it does not replace the anchor on state entry.",
+        "speed" when kind=="ReturnToSpawn"=>"Converted to native float and passed to GetSpeed with BehaviourTickTime. Native Slowed and the game's movement scaling apply; steps are not clamped to the remaining distance.",
+        "distance" when kind=="StayBack"=>"Strict nearby-target acquisition distance in tiles. The enemy retreats while a target is within this range; the native one-second cycle timer advances only during active retreat.",
+        "entity" when kind=="StayBack"=>"Null selects a visible player. A string uses the game's case-insensitive XML-name substring query and can match the host itself; source ownership determines the actual target.",
+        "speed" when kind=="StayBack"=>"Native GetSpeed and BehaviourTickTime control retreat. This controller uses MoveWithinBossLab rather than the ordinary ValidateAndMove collision path.",
+        "range" when kind=="Charge"=>"Native float player acquisition radius. A charge starts only when both target X and Y differ from the host; axis-aligned targets are intentionally rejected by this source.",
+        "speed" when kind=="Charge"=>"Unscaled native movement coefficient. Slowed applies, while the game's ordinary movement multiplier does not. The acquired direction stays fixed through the charge.",
+        "coolDown" when kind=="Charge"=>"Native cooldown normalizes zero to 2000 ms. Charge travel duration uses distance / unscaled speed, integer milliseconds, then a separate cooldown completion tick.",
         "projectile" when kind is "GordoSpiral" or "GapRing"=>"Index in this enemy's XML. A missing native projectile lookup suppresses the volley; choose an owned definition.",
         "count" when kind=="GordoSpiral"=>"Projectiles in each volley, from 1 to 64. Native Dazed rounds half upward; the first warned volley never exceeds its marked count.",
         "slots" when kind=="GapRing"=>"Full ring divisions, from 4 to 64. Native spacing is 360 / slots degrees.",
@@ -148,6 +156,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "ReturnToSpawn" when name=="returnWithinRadius"=>"tiles",
+        "StayBack" when name=="distance"=>"tiles",
         "GordoSpiral" or "GapRing" when name is "interval" or "delay"=>"ms",
         "GordoSpiral" or "GapRing" when name is "spacing" or "rotation" or "angle" or "gapAngle" or "randomStartStep"=>"degrees",
         "GordoSpiral" when name=="degreesPerSecond"=>"degrees/s",

@@ -53,6 +53,7 @@ public sealed partial class RapleAdapter
         "Follow" or "Orbit" => new("target", "Target entity", EntityResourceScope.Queryable, true),
         "EntityExistsTransition" => new("target", "Required entity", EntityResourceScope.Queryable, false),
         "EntityHpLessTransition"=>new("entity","Nearest enemy name",EntityResourceScope.Enemy,false,NameFragment:true),
+        "StayBack"=>new("entity","Retreat target name",EntityResourceScope.Enemy,true,NameFragment:true),
         "EntityNotExistsTransition" => new("target", "Absent entity", EntityResourceScope.Queryable, true),
         "Transform" or "TransformOnDeath" => new("target", "Transform into", EntityResourceScope.Resolvable, false),
         _ => null
