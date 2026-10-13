@@ -2,9 +2,9 @@ using Studio.Core;
 
 namespace Studio.Raple;
 
-public sealed record MovementPattern(string Kind, double Range, double? AcquireRange, double RadiusVariance, double? Speed, double? SpeedVariance, bool? Clockwise, string? Target)
+public sealed record MovementPattern(string Kind, double Range, double? AcquireRange, double RadiusVariance, double? Speed, double? SpeedVariance, bool? Clockwise, string? Target, double? TravelDistance = null)
 {
-    public string PrimaryParameter => Kind switch {"Orbit"=>"radius","ReturnToSpawn"=>"returnWithinRadius","StayBack"=>"distance",_=>"range"};
+    public string PrimaryParameter => Kind switch {"Orbit"=>"radius","ReturnToSpawn"=>"returnWithinRadius","StayBack"=>"distance","FollowDistance" or "LockedFollowDistance"=>"stopRange",_=>"range"};
     public bool IntegerRange => Kind == "StayCloseToSpawn";
     public double? ResumeRange => Kind == "Follow" ? Range + 1 : null;
 }
@@ -14,11 +14,21 @@ public sealed partial class RapleAdapter
     public string? MovementKind(BehaviorDocument document, BehaviorNode node)
     {
         if (node.Kind is "State" or "ArgumentGroup" or "Factory" or "Reference" or "Opaque" or "Spread") return null;
-        var kind = NativeKind(document, node); return kind is "Follow" or "Orbit" or "StayCloseToSpawn" or "ReturnToSpawn" or "StayBack" or "Charge" ? kind : null;
+        var kind = NativeKind(document, node); return kind is "Follow" or "Orbit" or "StayCloseToSpawn" or "ReturnToSpawn" or "StayBack" or "Charge" or "FollowDistance" or "LockedFollowDistance" ? kind : null;
     }
     public MovementPattern? ReadMovementPattern(BehaviorDocument document, BehaviorNode node)
     {
         var kind = MovementKind(document, node); if (kind == null || node.Children.Any(n => n.Kind == "Opaque")) return null;
+        if (kind is "FollowDistance" or "LockedFollowDistance")
+        {
+            if (!ReadNumericParameter(document,node,"stopRange",kind=="FollowDistance"?.5:4,out var stop) || stop is null or < 0 ||
+                !ReadNumericParameter(document,node,"acquireRange",null,out var acquireRange) || acquireRange is null or <= 0 ||
+                !ReadNumericParameter(document,node,"distance",null,out var travel) || travel is null or <= 0 ||
+                new[]{stop.Value,acquireRange.Value,travel.Value}.Any(value=>!double.IsFinite(value)||!float.IsFinite((float)value)) ||
+                kind=="LockedFollowDistance" && stop>=acquireRange) return null;
+            ReadNumericParameter(document,node,"speed",null,out var followSpeed);
+            return new(kind,stop.Value,acquireRange.Value,0,followSpeed,0,false,null,travel.Value);
+        }
         if(kind is "ReturnToSpawn" or "StayBack" or "Charge")
         {
             var parameter=kind=="ReturnToSpawn"?"returnWithinRadius":kind=="StayBack"?"distance":"range";var fallback=kind=="ReturnToSpawn"?1:kind=="StayBack"?8:10;

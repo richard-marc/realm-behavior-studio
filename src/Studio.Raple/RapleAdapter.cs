@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -75,7 +75,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
-                t.Name is "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") ? "Spawning" :
+                t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") ? "Spawning" :
                 t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
@@ -87,6 +87,11 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "distance" when kind is "FollowDistance" or "LockedFollowDistance"=>"Maximum cumulative distance actually moved during this state entry. Native steps clamp to the remaining budget and stop boundary; 500 ms of blocked movement completes the segment early.",
+        "stopRange" when kind is "FollowDistance" or "LockedFollowDistance"=>"Stop within this many tiles of the target. LockedFollowDistance requires this to be strictly smaller than acquireRange. There is no Follow-style range + 1 hysteresis.",
+        "acquireRange" when kind=="FollowDistance"=>"Nearest visible player search radius, evaluated again each tick. No target pauses the segment without consuming its travel budget.",
+        "acquireRange" when kind=="LockedFollowDistance"=>"Inclusive player acquisition radius at state entry. The nearest living visible player is selected with ID as the tie-breaker, then retained even outside this radius. No target completes the segment.",
+        "timeoutMs" when kind=="LockedFollowDistance"=>"Positive segment lifetime in milliseconds, default 3000. Age advances even while paralyzed; target invalidation or timeout completes without reacquiring. Exit, death and encounter removal release native target state.",
         "returnWithinRadius" when kind=="ReturnToSpawn"=>"Completion radius around the enemy's original SpawnPoint. The native comparison is distance greater than this radius; it does not replace the anchor on state entry.",
         "speed" when kind=="ReturnToSpawn"=>"Converted to native float and passed to GetSpeed with BehaviourTickTime. Native Slowed and the game's movement scaling apply; steps are not clamped to the remaining distance.",
         "distance" when kind=="StayBack"=>"Strict nearby-target acquisition distance in tiles. The enemy retreats while a target is within this range; the native one-second cycle timer advances only during active retreat.",
@@ -156,6 +161,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "FollowDistance" or "LockedFollowDistance" when name is "distance" or "stopRange" or "acquireRange"=>"tiles",
+        "LockedFollowDistance" when name=="timeoutMs"=>"ms",
         "ReturnToSpawn" when name=="returnWithinRadius"=>"tiles",
         "StayBack" when name=="distance"=>"tiles",
         "GordoSpiral" or "GapRing" when name is "interval" or "delay"=>"ms",

@@ -40,6 +40,7 @@ public partial class MainWindow
         await RunRingPatternUiSmoke(output,check);
         await RunDefinitionRemovalUiSmoke(output,check);
         await RunMovementFamilyUiSmoke(output,check);
+        await RunBoundedFollowUiSmoke(output,check);
         await RunAttackUiSmoke(source, root, helpers, output, check);
         await RunProjectileUiSmoke(output, check);
         await RunMovementUiSmoke(source, root, helpers, output, check);
