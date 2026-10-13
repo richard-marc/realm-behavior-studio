@@ -21,7 +21,7 @@ public partial class MainWindow
     void AddProjectileControls(BehaviorNode node)
     {
         projectilePicker = null; projectileChoices = null; projectileSearch = null; useProjectileButton = null; projectileInfo = null;
-        if (!adapter.IsNativeShoot(document, node)) return;
+        if (adapter.ProjectileParameter(document,node)==null) return;
         if (!adapter.HasKnownProjectileOwner(document, selectedEntity!.Id, node))
         {
             Inspector.Children.Add(new TextBlock { Text = "Projectile owner comes from source. Inspect the controller before choosing an index.", TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = EncounterViewport.Brush("#929D96"), Margin = new(0, 8, 0, 0) }); return;
@@ -63,7 +63,7 @@ public partial class MainWindow
     {
         var node = document.Find(nodeId);
         if (!adapter.HasKnownProjectileOwner(document, selectedEntity!.Id, node) || !EnemyProjectiles.ForEntity(selectedEntity.Id).Any(choice => choice.Index == index)) throw new InvalidOperationException("Choose a projectile owned by this attack's native enemy.");
-        document.Apply(new(revision, "Choose enemy projectile", [new(nodeId, "projectileIndex", index.ToString(System.Globalization.CultureInfo.InvariantCulture))]), candidate => adapter.Validate(candidate, selectedEntity.Id));
+        document.Apply(new(revision, "Choose enemy projectile", [new(nodeId, adapter.ProjectileParameter(document,node)!, index.ToString(System.Globalization.CultureInfo.InvariantCulture))]), candidate => adapter.Validate(candidate, selectedEntity.Id));
         Changed(nodeId);
     }
 }

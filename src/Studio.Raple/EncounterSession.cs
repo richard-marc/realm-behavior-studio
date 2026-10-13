@@ -340,8 +340,8 @@ public sealed class EncounterSession : IEncounterSession
     {
         var root = document.Entities.First(e => e.EntityId == entityId).Root;
         var phase = root.Descendants().FirstOrDefault(n => n.Kind == "State" && n.Label == state) ?? root;
-        var matches = phase.StateChildren.Where(n => n.Kind == "Shoot" && (n.Parameters.FirstOrDefault(p => p.Name == "projectileIndex")?.Expression ?? "0") == index.ToString()).ToArray();
-        return matches.Length == 1 ? matches[0].Id : null; // Ambiguous emission provenance is not guessed.
+        var matches = phase.StateChildren.Where(n => n.Kind is "Shoot" or "SequentialAimedSweep" && (n.Parameters.FirstOrDefault(p => p.Name == (n.Kind=="Shoot"?"projectileIndex":"projectile"))?.Expression ?? "0") == index.ToString()).ToArray();
+        return matches.Length == 1 && matches[0].Kind=="Shoot" ? matches[0].Id : null; // The shared packet does not identify its controller callback.
     }
     public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities,objects=WorldObjects, events = Events, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
     public string InspectTimers() => BossActive?string.Join("\n", boss.StateStorage.Select(p => p.Key.GetType().Name + ": " + (p.Value is int n ? n + " ms / scalar" : p.Value?.GetType().Name ?? "null"))):"Original encounter actor is no longer active. Live replacements appear in Actors.";

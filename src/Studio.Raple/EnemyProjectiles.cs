@@ -33,7 +33,8 @@ public static class EnemyProjectiles
 public sealed partial class RapleAdapter
 {
     public bool IsNativeShoot(BehaviorDocument document, BehaviorNode node) => node.Kind == "Shoot" && NativeKind(document, node) == "Shoot";
-    public int? ReadProjectileIndex(BehaviorDocument document, BehaviorNode node) => IsNativeShoot(document, node) && ReadNumericParameter(document, node, "projectileIndex", 0, out var value) && value is >= 0 and <= int.MaxValue && value == Math.Truncate(value.Value) ? (int)value.Value : null;
+    public string? ProjectileParameter(BehaviorDocument document,BehaviorNode node)=>node.Kind==NativeKind(document,node)?node.Kind switch { "Shoot"=>"projectileIndex", "SequentialAimedSweep"=>"projectile", _=>null }:null;
+    public int? ReadProjectileIndex(BehaviorDocument document, BehaviorNode node) => ProjectileParameter(document,node) is {} parameter && ReadNumericParameter(document, node, parameter, parameter=="projectileIndex"?0:null, out var value) && value is >= 0 and <= int.MaxValue && value == Math.Truncate(value.Value) ? (int)value.Value : null;
     string? NativeKind(BehaviorDocument document, BehaviorNode node)
     {
         var scoped = document.SchemaAt(node);
@@ -42,7 +43,7 @@ public sealed partial class RapleAdapter
     public bool HasKnownProjectileOwner(BehaviorDocument document, string entityId, BehaviorNode node)
     {
         var root = document.Entities.SingleOrDefault(entity => entity.EntityId == entityId)?.Root;
-        if (root == null || !root.Descendants().Any(child => child.Id == node.Id) || !IsNativeShoot(document, node)) return false;
+        if (root == null || !root.Descendants().Any(child => child.Id == node.Id) || ProjectileParameter(document,node)==null) return false;
         return root.Descendants().Where(parent => node.Path.StartsWith(parent.Path + "/", StringComparison.Ordinal))
             .All(parent => parent.Kind == "ArgumentGroup" || NativeKind(document, parent) is "State" or "Prioritize" or "Timed" or "OnDeathBehavior");
     }

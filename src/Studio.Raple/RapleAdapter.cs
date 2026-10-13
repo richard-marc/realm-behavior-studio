@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -76,7 +76,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
                 t.Name.Contains("Spawn") ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name=="OwnedLaneEmitters" ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "OwnedLaneEmitters" or "SequentialAimedSweep" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,15 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "projectile" when kind=="SequentialAimedSweep"=>"Projectile index in this enemy's XML. The sweep emits from the native host position.",
+        "count" when kind=="SequentialAimedSweep"=>"Total projectiles in one activation, from 2 to 255. The final volley uses only the remaining projectiles.",
+        "shotsPerVolley" when kind=="SequentialAimedSweep"=>"Projectiles per native tick, from 1 to 12 and no more than count. One traces a sweep; larger volleys alternate full-width and inset fans.",
+        "intervalMs" when kind=="SequentialAimedSweep"=>"At least 100 ms between volleys. Native 100 ms ticks quantize the interval upward; at most one packet fires per tick, with no backlog burst.",
+        "recoveryMs" when kind=="SequentialAimedSweep"=>"Additional pause after the final firing interval. The next activation reverses sweep direction and reacquires a nearby player.",
+        "triggerRange" when kind=="SequentialAimedSweep"=>"Player acquisition distance at activation. Must be positive. An acquired living player remains tracked even after leaving this range.",
+        "aimRange" when kind=="SequentialAimedSweep"=>"Reacquisition distance if the original target leaves its world or dies, when lockTarget is false. Must be at least triggerRange.",
+        "sweepDegrees" when kind=="SequentialAimedSweep"=>"Sweep width from 0 to 360 degrees around the tracked player's current direction. Multi-shot volleys alternate full and inset widths.",
+        "lockTarget" when kind=="SequentialAimedSweep"=>"True abandons an activation when its player becomes invalid or invisible; false may reacquire another player. This constructor does not change existing single-shot semantics.",
         "multiplier" when kind=="SizeTransform"=>"Multiplier of this actor's size on entry. The original animation grows smoothly, then shrinks back to that size.",
         "growMs" when kind=="SizeTransform"=>"Native smooth-step growth duration in milliseconds. Zero grows immediately on the first native tick.",
         "shrinkMs" when kind=="SizeTransform"=>"Native smooth-step return duration. An HP interruption shrinks from the visible intermediate size.",
@@ -124,6 +133,10 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "SequentialAimedSweep" when name is "intervalMs" or "recoveryMs"=>"ms",
+        "SequentialAimedSweep" when name is "triggerRange" or "aimRange"=>"tiles",
+        "SequentialAimedSweep" when name=="sweepDegrees"=>"degrees",
+        "SequentialAimedSweep" when name=="projectile"=>"XML index",
         "SizeTransform" when name is "growMs" or "shrinkMs" or "maxDurationMs"=>"ms",
         "SizeTransform" when name=="multiplier"=>"× entry size",
         "SizeTransform" when name=="hpThreshold"=>"fraction of max HP",
@@ -171,6 +184,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     {
         foreach (var diagnostic in document.SourceDiagnostics()) yield return diagnostic;
         foreach (var diagnostic in ValidateOwnedEmitters(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateSequentialSweeps(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

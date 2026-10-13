@@ -124,6 +124,7 @@ public partial class MainWindow
     }
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
+        if(kind=="SequentialAimedSweep"&&parameter.Name=="projectile")return EnemyProjectiles.ForEntity(selectedEntity!.Id).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";
         if (kind is "Order" or "OrderOnce" or "OrderOnDeath" && parameter.Name is "targetState" or "state") return "";
         if (kind == "State" && parameter.Name == "name") return PhaseLiteral(NextPhaseName());
         if(kind=="TimedRandomTransition"&&parameter.Name=="states")return (document.StateName(owner.Id)??AuthoringRoot.Descendants().Where(n=>n.Kind=="State").Select(n=>document.StateName(n.Id)).OfType<string>().FirstOrDefault()) is {} phase?"new[] { "+PhaseLiteral(phase)+" }":"";
