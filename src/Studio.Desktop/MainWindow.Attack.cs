@@ -33,7 +33,7 @@ public partial class MainWindow
         attackEditorButton.Click += (_, _) =>
         {
             if (attackEditing) { ClearAttackEditor(); return; }
-            ClearMovementEditor(); ClearPathEditor(); ClearSweepEditor(); Stop(this, new()); attackEditing = true; RefreshAttackSelection();
+            ClearMovementEditor(); ClearPathEditor(); ClearSweepEditor(); ClearRingEditor(); Stop(this, new()); attackEditing = true; RefreshAttackSelection();
             attackEditorButton!.Content = "Close attack editor"; WorkspaceTabs.SelectedIndex = 0; UpdateLayout(); Viewport.FitAttack(); Viewport.Focus();
             Status.Text = "Attack editor · drag a handle to change one parameter · edits restart playback";
         };

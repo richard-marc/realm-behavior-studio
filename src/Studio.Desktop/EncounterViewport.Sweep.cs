@@ -16,7 +16,7 @@ public sealed partial class EncounterViewport
         get=>sweep;
         set
         {
-            if(value!=null){if(attack!=null)Attack=null;if(movement!=null)Movement=null;if(path!=null)Path=null;}
+            if(value!=null){if(attack!=null)Attack=null;if(movement!=null)Movement=null;if(path!=null)Path=null;if(ring!=null)Ring=null;}
             if(sweep==null&&value!=null)sweepCamera=(scale,pan);
             CancelSweepDrag();sweep=value;
             if(value==null&&sweepCamera is {} camera){scale=camera.Scale;pan=camera.Pan;sweepCamera=null;}

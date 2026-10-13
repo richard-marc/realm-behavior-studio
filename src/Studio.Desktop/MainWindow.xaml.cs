@@ -49,6 +49,7 @@ public partial class MainWindow : Window
         InitializeMapControls();
         Viewport.AttackEdited += ApplyAttackEdit;
         Viewport.SweepEdited += ApplySweepEdit;
+        Viewport.RingEdited += ApplyRingEdit;
         Viewport.MovementEdited += ApplyMovementEdit;
         Viewport.PathEdited += ApplyPathEdit;
         autosaveTimer.Tick += (_, _) => { if (initialized && !arguments.Contains("--smoke")) {Try(() => BehaviorDocument.Save(RecoveryPath(), Snapshot()));BeginMapRecovery();} };
@@ -178,6 +179,7 @@ public partial class MainWindow : Window
             RefreshFragmentDestinations();
             RefreshAttackSelection();
             RefreshSweepSelection();
+            RefreshRingSelection();
             RefreshMovementSelection();
             RefreshPathSelection();
             if (!retainNodeSelection) { nodeSelection.Clear(); nodeSelection.Add(id); selectionAnchor = id; }

@@ -20,6 +20,7 @@ public sealed partial class EncounterViewport
         {
             if (value != null && attack != null) Attack = null;
             if (value != null && path != null) Path = null;
+            if(value!=null&&ring!=null)Ring=null;
             if (value != null && sweep != null) Sweep = null;
             if (movement == null && value != null) movementCamera = (scale, pan);
             CancelMovementDrag(); movement = value;

@@ -28,6 +28,7 @@ public partial class MainWindow
         if (attackEditorButton != null) attackEditorButton.IsEnabled = editable;
         RefreshAttackSelection();
         RefreshSweepSelection();
+        RefreshRingSelection();if(ringEditorButton!=null)ringEditorButton.IsEnabled=editable;
         if (movementEditorButton != null) movementEditorButton.IsEnabled = editable;
         if (movementDirection != null) movementDirection.IsEnabled = editable;
         RefreshMovementSelection();
