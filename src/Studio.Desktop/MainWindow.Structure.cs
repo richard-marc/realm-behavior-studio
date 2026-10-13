@@ -50,6 +50,10 @@ public partial class MainWindow
         cloneNameInput=null;cloneDefinitionButton=null;
         phaseNameInput = null; renamePhaseButton = null; organizeExpander = null;
         duplicateStructureButton = upStructureButton = downStructureButton = deleteStructureButton = null;
+        if(node.Kind=="ArgumentGroup"&&!node.ArgumentFromCall&&!node.ArgumentRequiresSource)
+        {
+            var collectionTools=new StackPanel();AddExtractionControls(node,collectionTools);Inspector.Children.Add(collectionTools);return;
+        }
         if (node.Kind == "State" && document.StateName(node.Id) is { } name)
         {
             Inspector.Children.Add(new TextBlock { Text = "Phase name", Margin = new(0, 14, 0, 6) });

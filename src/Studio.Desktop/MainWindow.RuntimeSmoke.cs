@@ -55,6 +55,7 @@ public partial class MainWindow
         await RunWorkspaceGroupUiSmoke(output,check);
         await RunWorkspaceCopyUiSmoke(output,check);
         await RunExtractionUiSmoke(output,check);
+        await RunCollectionExtractionUiSmoke(output,check);
         await RunDefinitionCloneUiSmoke(output,check);
         await RunReferenceCloneUiSmoke(output,check);
         await RunTransformationUiSmoke(output,check);

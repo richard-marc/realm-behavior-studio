@@ -17,7 +17,7 @@ public static class SourceDefinitionRefactor
         if(!records.ContainsKey(sourceFile)||!records.ContainsKey(destinationFile))throw new ArgumentException("Choose source files already accepted in this project.");
         var scoped=adapter.ForProject(project);var original=records[sourceFile];var doc=new BehaviorDocument(original.Source,scoped,original.Identities,sourceFile);doc.LockedNodes.UnionWith(original.LockedNodes);
         var node=doc.Find(selected);if(!doc.CanEditRegion(selected))throw new InvalidOperationException("The extracted region or one of its source uses is locked.");
-        if(node.Kind is "ArgumentGroup" or "Spread" or "Opaque")throw new ArgumentException("Extract a native phase/action expression; child-list ownership needs collection extraction.");
+        if(node.Kind is "Spread" or "Opaque"||node.Kind=="ArgumentGroup"&&(node.ArgumentFromCall||node.ArgumentRequiresSource))throw new ArgumentException("Extract a native expression or explicit child collection; generated/expanded call slots need source ownership.");
         var owner=doc.AllRoots.Single(r=>r.Root.Descendants().Any(n=>n.Id==selected));
         var owners=owner.Definition?.Encounters??new[]{owner.EntityId};
         // A shared edit cannot bypass locks in any known source caller.
@@ -31,7 +31,7 @@ public static class SourceDefinitionRefactor
         if(records[destinationFile].LockedNodes.Count>0)throw new InvalidOperationException("Unlock the destination source before introducing a helper declaration.");
         var compiler=scoped.SourceCompilation(project);var tree=compiler.SyntaxTrees.Single(t=>Path.GetFullPath(t.FilePath).Equals(sourceFile,StringComparison.OrdinalIgnoreCase));var model=compiler.GetSemanticModel(tree);
         var expression=tree.GetRoot().DescendantNodes().OfType<ExpressionSyntax>().Single(e=>e.SpanStart==node.Start&&e.Span.Length==node.Length);
-        var type=model.GetTypeInfo(expression).Type??throw new ArgumentException("The selected expression has no resolved native type.");
+        var typeInfo=model.GetTypeInfo(expression);var type=typeInfo.Type??typeInfo.ConvertedType??throw new ArgumentException("The selected expression has no resolved native type.");
         if(type.TypeKind==TypeKind.Error||type is INamedTypeSymbol {IsAnonymousType:true}||ContainsTypeParameter(type))throw new ArgumentException("This expression needs generic/anonymous source ownership before extraction.");
         var hostSyntax=expression.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()??throw new ArgumentException("A helper needs its containing source type.");
         var host=model.GetDeclaredSymbol(hostSyntax)!;
