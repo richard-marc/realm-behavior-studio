@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -76,7 +76,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
                 t.Name.Contains("Spawn") ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "OwnedLaneEmitters" or "SequentialAimedSweep" ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,21 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "projectile" when kind is "GordoSpiral" or "GapRing"=>"Index in this enemy's XML. A missing native projectile lookup suppresses the volley; choose an owned definition.",
+        "count" when kind=="GordoSpiral"=>"Projectiles in each volley, from 1 to 64. Native Dazed rounds half upward; the first warned volley never exceeds its marked count.",
+        "slots" when kind=="GapRing"=>"Full ring divisions, from 4 to 64. Native spacing is 360 / slots degrees.",
+        "missing" when kind=="GapRing"=>"Contiguous omitted ring divisions. Must be at least 1 and less than slots - 1. The native volley emits slots - missing projectiles.",
+        "gapAngle" when kind=="GapRing"=>"Center of the opening in degrees before native seeded offset, rotation and alternating sides. The ring's centered heading is gapAngle + 180.",
+        "spacing" when kind=="GordoSpiral"=>"Signed degrees between adjacent rays. The native packet centers the volley around its heading; spacing may span multiple turns.",
+        "rotation" when kind is "GordoSpiral" or "GapRing"=>"Degrees added per successful volley, signed by GordoRotation in the current leaf when present. Suppressed volleys do not advance the step.",
+        "angle" when kind=="GordoSpiral"=>"Base centered heading in degrees, before native random offset, alternating sides, step rotation and age-based drift.",
+        "interval" when kind is "GordoSpiral" or "GapRing"=>"At least 100 ms between native attempts. The countdown subtracts a tick before checking, emits at most one packet per tick and never catches up a backlog.",
+        "delay" when kind is "GordoSpiral" or "GapRing"=>"Initial countdown in milliseconds. With warnFirstVolley, the full countdown starts when the original cue is sent. A warned volley requires positive delay.",
+        "reverseEvery" when kind=="GordoSpiral"=>"Successful-volley steps before the triangular rotation sequence reverses. Zero keeps the step increasing.",
+        "randomStartStep" when kind is "GordoSpiral" or "GapRing"=>"Seeded starting offset in degree multiples. Zero disables it; positive values must divide 360 exactly.",
+        "warnFirstVolley" when kind is "GordoSpiral" or "GapRing"=>"Sends the game's RingWarning packet before the first volley. Its marked count captures Dazed at warning time; later Dazed can reduce the first shot count. Continuous age-based drift is not included in that original cue.",
+        "alternateSides" when kind is "GordoSpiral" or "GapRing"=>"Adds 180 degrees on odd successful volleys before the native step rotation is applied.",
+        "degreesPerSecond" when kind=="GordoSpiral"=>"Age-based angular drift, signed by current-leaf GordoRotation. Age advances on every tick, including warning delay and suppressed attempts.",
         "projectile" when kind=="SequentialAimedSweep"=>"Projectile index in this enemy's XML. The sweep emits from the native host position.",
         "count" when kind=="SequentialAimedSweep"=>"Total projectiles in one activation, from 2 to 255. The final volley uses only the remaining projectiles.",
         "shotsPerVolley" when kind=="SequentialAimedSweep"=>"Projectiles per native tick, from 1 to 12 and no more than count. One traces a sweep; larger volleys alternate full-width and inset fans.",
@@ -133,6 +148,10 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "GordoSpiral" or "GapRing" when name is "interval" or "delay"=>"ms",
+        "GordoSpiral" or "GapRing" when name is "spacing" or "rotation" or "angle" or "gapAngle" or "randomStartStep"=>"degrees",
+        "GordoSpiral" when name=="degreesPerSecond"=>"degrees/s",
+        "GordoSpiral" or "GapRing" when name=="projectile"=>"XML index",
         "SequentialAimedSweep" when name is "intervalMs" or "recoveryMs"=>"ms",
         "SequentialAimedSweep" when name is "triggerRange" or "aimRange"=>"tiles",
         "SequentialAimedSweep" when name=="sweepDegrees"=>"degrees",
@@ -185,6 +204,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in document.SourceDiagnostics()) yield return diagnostic;
         foreach (var diagnostic in ValidateOwnedEmitters(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSequentialSweeps(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateRingPatterns(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

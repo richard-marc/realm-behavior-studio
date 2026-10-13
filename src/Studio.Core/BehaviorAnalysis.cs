@@ -23,7 +23,7 @@ public static partial class BehaviorAnalysis
     static readonly HashSet<string> Known = ["State", "ArgumentGroup", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
         "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
         "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "SizeTransform", "ChangeSize", "SetAltTexture", "SizeTransformComplete", "SequentialAimedSweep"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "SizeTransform", "ChangeSize", "SetAltTexture", "SizeTransformComplete", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
     static double? Number(BehaviorNode node, string parameter)
     {
