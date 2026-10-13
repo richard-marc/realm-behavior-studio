@@ -20,7 +20,7 @@ public static partial class SourceDefinitionRefactor
         var scoped=adapter.ForProject(project);var original=records[sourceFile];var doc=new BehaviorDocument(original.Source,scoped,original.Identities,sourceFile);doc.LockedNodes.UnionWith(original.LockedNodes);
         var nodes=doc.NormalizeSelection(selection);var node=nodes[0];var selected=node.Id;var multiple=nodes.Count>1;
         if(nodes.Any(n=>!doc.CanEditRegion(n.Id)))throw new InvalidOperationException("The extracted region or one of its source uses is locked.");
-        if(nodes.Any(n=>n.Kind is "Spread" or "Opaque"||n.Kind=="ArgumentGroup"&&(multiple||n.ArgumentFromCall||n.ArgumentRequiresSource||n.Argument?.IsMember==true)))throw new ArgumentException("Extract native expressions or an explicit child collection; generated/member initializer slots need source ownership.");
+        if(nodes.Any(n=>n.Kind is "Spread" or "Opaque" or "InitializerEntry"||n.Kind=="ArgumentGroup"&&(multiple||n.ArgumentFromCall||n.ArgumentRequiresSource||n.Argument?.IsMember==true)))throw new ArgumentException("Extract native expressions or an explicit child collection; generated/member/Add initializer slots need source ownership.");
         var owner=doc.AllRoots.Single(r=>r.Root.Descendants().Any(n=>n.Id==selected));
         var owners=owner.Definition?.Encounters??new[]{owner.EntityId};
         // A shared edit cannot bypass locks in any known source caller.

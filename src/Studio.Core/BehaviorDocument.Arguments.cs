@@ -51,7 +51,7 @@ public sealed partial class BehaviorDocument
         InitializerExpressionSyntax initializer when SimpleCollectionInitializer(initializer)=>initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         _ => null
     };
-    static bool SimpleCollectionInitializer(InitializerExpressionSyntax initializer) => (initializer.IsKind(SyntaxKind.CollectionInitializerExpression) || initializer.IsKind(SyntaxKind.ObjectInitializerExpression) && initializer.Expressions.Count == 0) && !initializer.Expressions.Any(e => e.IsKind(SyntaxKind.ComplexElementInitializerExpression));
+    static bool SimpleCollectionInitializer(InitializerExpressionSyntax initializer) => (initializer.IsKind(SyntaxKind.CollectionInitializerExpression) || initializer.IsKind(SyntaxKind.ObjectInitializerExpression) && initializer.Expressions.Count == 0) && !initializer.Expressions.Any(e=>e is AssignmentExpressionSyntax);
     bool CollectionContainer(BehaviorNode node) => node.Kind == "ArgumentGroup" && !node.ArgumentFromCall && SyntaxFactory.ParseExpression(Expression(node)) is CollectionExpressionSyntax;
     static string ChildListCount(IReadOnlyList<BehaviorNode> children)
     {
@@ -88,7 +88,8 @@ public sealed partial class BehaviorDocument
         var names = SchemaAt(owner)!.ConstructorParameterNames(Expression(owner));
         return names.Select((name, index) => (name, index)).Where(p => p.name.Split('[')[0] == Slot(node).Name).Select(p => p.index).ToArray();
     }
-    IEnumerable<SyntaxNode> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => node.Kind != "ArgumentGroup" ? CallArguments(expression).Arguments.Select(a => a.Expression) : node.ArgumentFromCall ? CallSlotIndices(node).Select(i => CallArguments(expression).Arguments[i].Expression) : ListItems(expression) ?? throw new ArgumentException("Select an editable native child list.");
+    IEnumerable<SyntaxNode> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => expression is InitializerExpressionSyntax entry&&node.Kind=="InitializerEntry"?EntryIndices(node).Select(i=>entry.Expressions[i]):node.Kind != "ArgumentGroup" ? CallArguments(expression).Arguments.Select(a => a.Expression) : node.ArgumentFromCall ? CallSlotIndices(node).Select(i => CallArguments(expression).Arguments[i].Expression) : ListItems(expression) ?? throw new ArgumentException("Select an editable native child list.");
+    int[] EntryIndices(BehaviorNode node)=>SchemaAt(node)!.ConstructorParameterNames(Expression(node)).Select((name,i)=>(name,i)).Where(p=>p.name==Slot(node).Name).Select(p=>p.i).ToArray();
     ExpressionSyntax WithSeparator(ExpressionSyntax expression, SeparatedSyntaxList<ExpressionSyntax> list, int index)
     {
         if (index >= list.SeparatorCount) return expression;
@@ -101,6 +102,10 @@ public sealed partial class BehaviorDocument
         foreach (var parent in AllNodes.Where(n => CanEditChildren(n.Id) && ChildContainer(n.Id).Id == n.Id))
         {
             var expression = NodeExpression(tree, parent);
+            if(parent.Kind=="InitializerEntry"&&expression is InitializerExpressionSyntax entry)
+            {
+                foreach(var child in parent.Children){var index=entry.Expressions.IndexOf(entry.Expressions.Single(e=>e.SpanStart==child.Start));result[child.Id]=WithSeparator(entry.Expressions[index],entry.Expressions,index);}continue;
+            }
             if (parent.Kind == "ArgumentGroup" && !parent.ArgumentFromCall)
             {
                 if (expression is CollectionExpressionSyntax collection)
@@ -144,6 +149,7 @@ public sealed partial class BehaviorDocument
             var element = SchemaAt(parent)?.ArrayElementType(Expression(parent)) ?? throw new ArgumentException("Cannot infer the empty array's native element type.");
             return SyntaxFactory.ArrayCreationExpression(SyntaxFactory.ArrayType(SyntaxFactory.ParseTypeName("global::" + element), SyntaxFactory.SingletonList(SyntaxFactory.ArrayRankSpecifier(SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(SyntaxFactory.OmittedArraySizeExpression())))), initializer).WithNewKeyword(SyntaxFactory.Token(SyntaxKind.NewKeyword).WithTrailingTrivia(SyntaxFactory.Space)).WithTriviaFrom(current);
         }
+        if(parent.Kind=="InitializerEntry")return RewriteCallSlots(current,original,[(parent,children)]);
         var arguments = CallArguments(current); var source = CallArguments(original);
         var slot = Slot(parent);
         if (!slot.IsCollection)
@@ -153,6 +159,14 @@ public sealed partial class BehaviorDocument
     }
     ExpressionSyntax RewriteCallSlots(ExpressionSyntax current, ExpressionSyntax original, IReadOnlyList<(BehaviorNode Node, IReadOnlyList<ExpressionSyntax> Children)> edits)
     {
+        if(original is InitializerExpressionSyntax entry&&current is InitializerExpressionSyntax updated)
+        {
+            var expressions=updated.Expressions.ToArray();foreach(var edit in edits)
+            {
+                var indices=EntryIndices(edit.Node);if(indices.Length!=1||edit.Children.Count!=1)throw new ArgumentException("A native Add entry requires its one typed child input.");expressions[indices[0]]=edit.Children[0];
+            }
+            return updated.WithExpressions(SyntaxFactory.SeparatedList(expressions));
+        }
         var source = CallArguments(original); var arguments = CallArguments(current).Arguments;
         var replacements = edits.Select(e => (e.Node, e.Children, Indices: CallSlotIndices(e.Node))).ToArray();
         var owner = edits[0].Node.ArgumentFromCall ? Parent(edits[0].Node.Id)! : edits[0].Node;

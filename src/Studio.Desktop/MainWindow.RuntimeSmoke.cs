@@ -33,6 +33,7 @@ public partial class MainWindow
         RunTypedCollectionUiSmoke(source, root, helpers, output, check);
         await RunInitializerUiSmoke(source, root, helpers, output, check);
         await RunMemberInitializerUiSmoke(output,check);
+        await RunKeyedInitializerUiSmoke(output,check);
         await RunAttackUiSmoke(source, root, helpers, output, check);
         await RunProjectileUiSmoke(output, check);
         await RunMovementUiSmoke(source, root, helpers, output, check);

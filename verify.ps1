@@ -78,6 +78,9 @@ try {
     & dotnet run --project tests/MemberInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/member-initializer-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/member-initializer-checks.log' -Tail 25; throw 'Native State member initializer checks failed.' }
     Get-Content '.artifacts/member-initializer-checks.log' -Tail 1
+    & dotnet run --project tests/KeyedInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/keyed-initializer-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/keyed-initializer-checks.log' -Tail 25; throw 'Native keyed Add initializer checks failed.' }
+    Get-Content '.artifacts/keyed-initializer-checks.log' -Tail 1
     & dotnet run --project tests/CloneWorkspace.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/clone-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/clone-checks.log' -Tail 25; throw 'Independent definition clone checks failed.' }
     Get-Content '.artifacts/clone-checks.log' -Tail 1

@@ -99,6 +99,7 @@ public sealed partial class BehaviorDocument
     }
     public Guid DuplicateNode(Guid id, Func<BehaviorDocument, IEnumerable<DocumentDiagnostic>>? validate = null)
     {
+        if(Find(id).Kind=="InitializerEntry")return DuplicateInitializerEntry(id,validate);
         var parent = StructuralParent(Find(id)); var index = parent.Children.ToList().FindIndex(n => n.Id == id);
         return PasteNodes(parent.Id, index + 1, CopyNodes([id]), validate).Single();
     }

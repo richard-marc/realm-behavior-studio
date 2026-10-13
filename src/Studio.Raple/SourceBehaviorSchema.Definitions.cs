@@ -196,6 +196,7 @@ internal sealed partial class SourceBehaviorSchema
     public bool AcceptsDefinitionElement(string text,string element,bool spread=false)
     {
         var expression=Expression(text);if(expression==null)return false;
+        if(element.TrimStart().StartsWith('{'))return !spread&&AcceptEntry(expression,null,element);
         var type=Model.GetTypeInfo(expression).Type??Model.GetTypeInfo(expression).ConvertedType;if(type==null||!Collection(type)||!Child(Element(type)))return false;
         return spread?Model.ClassifyConversion(expression.SpanStart,SyntaxFactory.ParseExpression("["+element+"]"),type).IsImplicit:
             Model.GetSpeculativeTypeInfo(expression.SpanStart,SyntaxFactory.ParseExpression(element),SpeculativeBindingOption.BindAsExpression).Type is {} actual&&context.Binding.Value.Compilation.ClassifyConversion(actual,Element(type)).IsImplicit;

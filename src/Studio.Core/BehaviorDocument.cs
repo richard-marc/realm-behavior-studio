@@ -153,6 +153,15 @@ public sealed partial class BehaviorDocument
                 var scoped = schema?.At(c.SpanStart);
                 var description = scoped?.DescribeExpression(c.ToString());
                 if (c is not ObjectCreationExpressionSyntax && description == null) return Opaque(c, path, legacyPath);
+                if(c is InitializerExpressionSyntax entry&&description?.Kind=="InitializerEntry")
+                {
+                    var inputs=entry.Expressions;var entryParameters=new List<Parameter>();var values=new List<BehaviorNode>();
+                    for(var i=0;i<inputs.Count;i++)
+                        if(scoped!.IsChildArgument(c.ToString(),i))values.Add(Read(inputs[i],path+"/"+values.Count));
+                        else entryParameters.Add(new(description.ArgumentNames[i],inputs[i].ToString(),inputs[i].SpanStart,inputs[i].Span.Length));
+                    var oldEntry=identities.FirstOrDefault(n=>n.Kind=="InitializerEntry"&&n.Signature==entry.ToString()&&!usedIdentities.Contains(n.Id)&&n.Path.StartsWith(entityId+"/",StringComparison.Ordinal))??identities.FirstOrDefault(n=>n.Kind=="InitializerEntry"&&n.Path==path&&!usedIdentities.Contains(n.Id));if(oldEntry!=null)usedIdentities.Add(oldEntry.Id);
+                    return new(oldEntry?.Id??Guid.NewGuid(),path,"InitializerEntry",description.Label,entry.SpanStart,entry.Span.Length,entryParameters,values);
+                }
                 var kind = description?.Kind ?? (c is ObjectCreationExpressionSyntax constructor ? constructor.Type.GetLastToken().ValueText : "Opaque");
                 var pars = scoped?.ConstructorParameterNames(c.ToString()) ?? names(kind);
                 var args = c switch { BaseObjectCreationExpressionSyntax constructorCall => constructorCall.ArgumentList?.Arguments ?? default,

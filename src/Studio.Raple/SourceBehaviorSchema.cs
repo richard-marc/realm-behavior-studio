@@ -147,7 +147,9 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     SourceExpression? Describe(string text)
     {
         var expression = Expression(text); if (expression == null) return null;
-        var model = Model; var type = model.GetTypeInfo(expression).Type;
+        var model = Model;
+        if(expression is InitializerExpressionSyntax entry&&entry.IsKind(SyntaxKind.ComplexElementInitializerExpression))return DescribeEntry(entry);
+        var type = model.GetTypeInfo(expression).Type;
         if (!Child(type)) return null;
         var symbol = model.GetSymbolInfo(expression).Symbol;
         if (expression is not (InvocationExpressionSyntax or BaseObjectCreationExpressionSyntax))
@@ -185,6 +187,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     public bool? TargetsPhaseOf(string text, string parameter, string ownerEntity, string targetEntity)
     {
         var expression = Expression(text);
+        if(expression is InitializerExpressionSyntax)return false;
         if(expression!=null&&Model.GetSymbolInfo(expression).Symbol is IMethodSymbol choice&&choice.ContainingType.ToDisplayString()==RapleAdapter.NativeTypeName("TimedRandomTransition")&&parameter.Split('[')[0]=="states")return RapleAdapter.SameEntity(ownerEntity,targetEntity);
         if (expression == null || Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || !RapleAdapter.NativeOrderType(method.ContainingType.ToDisplayString()))
             return parameter.StartsWith("targetState", StringComparison.Ordinal) && RapleAdapter.SameEntity(ownerEntity, targetEntity);
@@ -217,7 +220,13 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     {
         var expression = Expression(text);
         if (expression == null) return adapter.AcceptsChild(text, parameter, childExpression, arrayExpression);
+        if(childExpression.TrimStart().StartsWith('{'))return AcceptEntry(expression,arrayExpression,childExpression);
         var model = Model;
+        if (expression is InitializerExpressionSyntax entry&&model.GetCollectionInitializerSymbolInfo(entry).Symbol is IMethodSymbol add)
+        {
+            var parameterSymbol=add.Parameters.SingleOrDefault(p=>p.Name==parameter);if(parameterSymbol==null)return false;
+            return model.GetSpeculativeTypeInfo(entry.SpanStart,SyntaxFactory.ParseExpression(childExpression),SpeculativeBindingOption.BindAsExpression).Type is {} childType&&context.Binding.Value.Compilation.ClassifyConversion(childType,parameterSymbol.Type).IsImplicit;
+        }
         if (model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method) return false;
         var slot = method.Parameters.FirstOrDefault(p => p.Name == parameter);var member=MemberElement(expression,parameter,arrayExpression);if (slot == null&&member==null) return false;
         var child = SyntaxFactory.ParseExpression(childExpression);

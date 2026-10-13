@@ -88,6 +88,7 @@ public partial class MainWindow
     void DuplicateSelectedNode(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (selectedNode == null) return;
+        if(selectedNode.Kind=="InitializerEntry"){var copied=document.DuplicateInitializerEntry(selectedNode.Id,ValidateAuthoring);Changed(copied);return;}
         if(adapter.HasAdditionalSources||definitionViewKey!=null)
         {
             var parent=document.Parent(selectedNode.Id)??throw new ArgumentException("Select a child node to duplicate.");
