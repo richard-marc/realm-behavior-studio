@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
+        "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -74,7 +74,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         }
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
-                typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
+                typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name is "ScaleHP" or "ScaleHP2" or "ScaleDefense" or "ConditionEffectBehavior" or "RemoveConditionalEffect" or "GiveTemporaryDefense" or "HealSelf" ? "Defense" : t.Name == "State" ? "Phases" :
                 t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
                 t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
@@ -87,6 +87,18 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "effect" when kind=="RemoveConditionalEffect"=>"Removes the selected native host condition on state entry. It has no ongoing refresh and no exit restoration. OnDeathBehavior invokes this entry action at death.",
+        "amountPerPlayer" when kind=="ScaleHP"=>"HP per newly counted player name beyond scaleAfter. Names are retained for the entry; leaving range does not remove them. Current HP fraction is converted to an integer before the native maximum cap.",
+        "maxAdditional" when kind=="ScaleHP"=>"Additional maximum HP above the entry baseline, with per-batch increment clamping and a final total maximum clamp. Zero means no cap. The original order can change current HP fraction when a batch reaches the cap.",
+        "healAfterMax" when kind=="ScaleHP"=>"After reaching the cap, new names can still update current HP when true. False consumes those names without updating HP/max. Entry resets counting state; it does not undo an earlier maximum-HP change.",
+        "scaleAfter" when kind=="ScaleHP"=>"Number of counted names before scaling begins; native default is one. Counting is by Name, not player ID, and does not filter Hidden, Invisible or dead player entries.",
+        "dist" when kind=="ScaleHP"=>"Strict distance when positive. Zero or negative values count every player entry in the world. Names remain counted after leaving range.",
+        "amount" when kind=="ScaleHP2"=>"Integer percent of original XML maximum HP per newly counted name beyond scaleStart. Integer multiplication/division and current-plus-maximum increments use the original source order; this does not preserve the HP fraction.",
+        "scaleStart" when kind=="ScaleHP2"=>"Initial player-name threshold. Native default is zero. Entry resets counters without restoring earlier HP/max changes.",
+        "range" when kind is "ScaleHP2" or "ScaleDefense"=>"Strict native player query with seeInvis true, so Hidden and Invisible players count. Names persist after leaving range. Zero/negative range still runs the nearest-player query and does not mean the whole world.",
+        "perPerson" when kind=="ScaleDefense"=>"Defense becomes original XML defense plus ceiling(counted names * perPerson). The native behavior periodically writes an absolute defense value; it does not add to temporary defense or restore on exit.",
+        "target" when kind=="TransferDamageOnDeath"=>"Exact XML object type of the nearest Enemy recipient. Native typed queries can select a matching dying host itself. Unknown IDs use the original Pirate fallback. No parent/owned filter is applied.",
+        "radius" when kind=="TransferDamageOnDeath"=>"Float tiles with strict native nearest-entity distance. Death copies LastHitter and TotalDamage, then adds contributor records to the recipient; recorded total is replaced rather than summed. It does not transfer health damage or create a parent link.",
         "dist" when kind is "AnyEntityWithinTransition" or "NoEntityWithinTransition"=>"Integer tiles with strict distance < dist. Queries other enemies and players that are not Hidden; Invisible players still count. This host and static objects are excluded. This is proximity, not minion ownership.",
         "dist" when kind=="NoPlayerWithinTransition"=>"Strict native nearest-player distance. Hidden and Invisible players are excluded by IsVisibleToEnemy. This uses a different visibility rule from AnyEntityWithinTransition.",
         "entity" when kind=="EntityWithinTransition"=>"Case-insensitive XML IdName substring in the enemy/static collision index. A matching host counts. Display-name overrides are ignored; null matches any descriptor name.",
@@ -214,6 +226,9 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "ScaleHP" when name is "amountPerPlayer" or "maxAdditional"=>"HP",
+        "ScaleHP2" when name=="amount"=>"percent of XML max HP",
+        "ScaleDefense" when name=="perPerson"=>"defense per name",
         "NotMovingTransition" when name=="delay"=>"ms",
         "EntitiesNotExistsTransition" when name=="targets"=>"XML IDs",
         "OnGroundTransition" when name=="ground"=>"ground XML ID",

@@ -127,6 +127,10 @@ public partial class MainWindow
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
         if(kind=="Charge")return "";
+        if(kind is "ConditionEffectBehavior" or "RemoveConditionalEffect"&&parameter.Name=="effect")return "global::TKR.Shared.resources.ConditionEffectIndex.Invulnerable";
+        if(kind=="ScaleHP")return parameter.Name switch{"amountPerPlayer"=>"100","maxAdditional"=>"0",_=>""};
+        if(kind=="ScaleHP2"&&parameter.Name=="amount")return "10";
+        if(kind=="ScaleDefense"&&parameter.Name=="perPerson")return "5";
         if(kind=="OnGroundTransition"&&parameter.Name=="ground")return PhaseLiteral(arenaPreset.GroundId);
         if(kind=="EntityWithinTransition"&&parameter.Name=="entity")return PhaseLiteral(EntityResources.Catalog(EntityResourceScope.Queryable).First(e=>e.Id==selectedEntity!.Id).SpriteId);
         if(kind=="EntitiesNotExistsTransition"&&parameter.Name=="targets")return "new string[] {}";

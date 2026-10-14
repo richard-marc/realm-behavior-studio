@@ -59,6 +59,7 @@ public sealed partial class RapleAdapter
         "StayBack"=>new("entity","Retreat target name",EntityResourceScope.Enemy,true,NameFragment:true),
         "EntityNotExistsTransition" => new("target", "Absent entity", EntityResourceScope.Queryable, true),
         "Transform" or "TransformOnDeath" => new("target", "Transform into", EntityResourceScope.Resolvable, false),
+        "TransferDamageOnDeath"=>new("target","Damage-record recipient",EntityResourceScope.Enemy,false),
         _ => null
     };
     public EntityParameter? EntityParameterFor(BehaviorDocument document, BehaviorNode node)
