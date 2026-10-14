@@ -93,6 +93,9 @@ try {
     & dotnet run --project tests/DefinitionRemoval.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/definition-removal-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/definition-removal-checks.log' -Tail 25; throw 'Unused definition removal checks failed.' }
     Get-Content '.artifacts/definition-removal-checks.log' -Tail 1
+    & dotnet run --project tests/SweepGeometry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/sweep-geometry-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/sweep-geometry-checks.log' -Tail 25; throw 'Native shared sweep geometry checks failed.' }
+    Get-Content '.artifacts/sweep-geometry-checks.log' -Tail 1
     & dotnet run --project tests/CrossCut.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/crosscut-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/crosscut-checks.log' -Tail 25; throw 'Native crosscut origin checks failed.' }
     Get-Content '.artifacts/crosscut-checks.log' -Tail 1

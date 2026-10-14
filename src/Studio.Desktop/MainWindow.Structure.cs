@@ -41,6 +41,7 @@ public partial class MainWindow
         UpdateCompletionControls();
         UpdateEntityControls();
         UpdateGroupControls();
+        UpdateSweepGeometryControls();
         if(ownedLaneAxes!=null)ownedLaneAxes.IsEnabled=editable;
         UpdatePhaseChoiceControls();
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;

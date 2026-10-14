@@ -42,7 +42,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     }
     static readonly Assembly EngineAssembly = typeof(State).Assembly;
     static readonly Lazy<NativeConstructorSchema> ConstructorSchema = new(() => new(EngineAssembly));
-    static Type RuntimeType(string name) => EngineAssembly.GetTypes().Single(t => t.Name == name && (typeof(IStateChildren).IsAssignableFrom(t) || t.FullName == "TKR.WorldServer.logic.Cooldown"));
+    static Type RuntimeType(string name) => EngineAssembly.GetTypes().Single(t => t.Name == name && (typeof(IStateChildren).IsAssignableFrom(t) || t.FullName is "TKR.WorldServer.logic.Cooldown" or "TKR.WorldServer.logic.behaviors.BossSweepGeometry"));
     internal static string? NativeTypeName(string name) => EngineAssembly.GetTypes().Where(t => t.Name == name && typeof(IStateChildren).IsAssignableFrom(t)).Select(t => t.FullName?.Replace('+', '.')).SingleOrDefault();
     public string CreationTypeName(string name) => "global::" + string.Join(".", RuntimeType(name).FullName!.Replace('+', '.').Split('.').Select(part => SyntaxFacts.GetKeywordKind(part) == SyntaxKind.None ? part : "@" + part));
     // Explicit scope, independent of the reflection catalog. Constructors outside this list remain opaque.
@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -76,7 +76,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
                 t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,11 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "sweep" when kind is "ClockSweep" or "CorridorPulse" or "OrientationEcho"=>"Shared native BossSweepGeometry constructor. Compatible XML bands supply the radius, angular rate and lifetime. Edit arms, opening angle and timing in Shared sweep geometry.",
+        "delayMs" when kind=="OrientationEcho"=>"Positive history delay in milliseconds. Echoes use the sweep heading at age minus delay, with stationary XML bands. Projectile clears suppress history from before the clear.",
+        "projectileIndexes" when kind=="OrientationEcho"=>"Distinct stationary radial XML indexes in band order, with the same count, radii and lifetime as the shared sweep. Their angular rate must be zero.",
+        "intervalMs" when kind is "CorridorPulse" or "OrientationEcho"=>"At least 100 ms between native attempts. One attempt per tick; stun consumes the interval. Sweep rotation continues to follow elapsed state age.",
+        "startupMs" when kind=="CorridorPulse"=>"Nonnegative age from state entry before the first pulse attempt. Pulses use the position captured on entry and a half-arm angular offset.",
         "radius" when kind=="EdgeCrossCut"=>"Positive distance from the position captured at state entry to each edge center. Requested origins must fit within 14 tiles of that anchor; live host distance and map passability can suppress packets.",
         "spacing" when kind=="EdgeCrossCut"=>"Positive tiles between centered parallel origins. sqrt(radius² + ((count - 1) * spacing / 2)²) must not exceed 14.",
         "count" when kind=="EdgeCrossCut"=>"One to eight single-projectile origins. The native sequence alternates opposing horizontal edges, opposing vertical edges, then four diagonals. Suppressed origins still advance the attempt's edge step.",
@@ -186,6 +191,9 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "CorridorPulse" or "OrientationEcho" when name is "intervalMs" or "startupMs" or "delayMs"=>"ms",
+        "CorridorPulse" when name=="projectileIndex"=>"XML index",
+        "OrientationEcho" when name=="projectileIndexes"=>"XML indexes",
         "Reproduce" or "ReproduceGroup" when name is "densityRadius" or "regionRange"=>"tiles",
         "EdgeCrossCut" when name=="spacing"=>"tiles",
         "EdgeCrossCut" when name is "intervalMs" or "startupMs"=>"ms",
@@ -255,6 +263,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateDelayedHazards(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateNativeGroups(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateCrossCuts(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateSweepControllers(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();
@@ -369,7 +378,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         if (expr is ObjectCreationExpressionSyntax creation)
         {
             var name = creation.Type.GetLastToken().ValueText;
-            if (!Supported.Contains(name)) throw new NotSupportedException(name + " is preserved, but not yet supported in the Studio runtime adapter.");
+            if (!Supported.Contains(name)&&name!="BossSweepGeometry") throw new NotSupportedException(name + " is preserved, but not yet supported in the Studio runtime adapter.");
             var result = EvaluateConstructor(creation, RuntimeType(name));
             if (!expected.IsInstanceOfType(result) && !type.IsInstanceOfType(result)) throw new ArgumentException("Constructor result does not match " + expected.Name);
             return result;
