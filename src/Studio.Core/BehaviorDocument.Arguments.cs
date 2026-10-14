@@ -48,6 +48,7 @@ public sealed partial class BehaviorDocument
         ImplicitArrayCreationExpressionSyntax array => array.Initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         ObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         ImplicitObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer.Expressions.Cast<SyntaxNode>().ToArray(),
+        BaseObjectCreationExpressionSyntax {Initializer:null} => Array.Empty<SyntaxNode>(),
         InitializerExpressionSyntax initializer when SimpleCollectionInitializer(initializer)=>initializer.Expressions.Cast<SyntaxNode>().ToArray(),
         _ => null
     };
@@ -65,6 +66,7 @@ public sealed partial class BehaviorDocument
         ImplicitArrayCreationExpressionSyntax implicitArray => implicitArray.Initializer,
         ObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer,
         ImplicitObjectCreationExpressionSyntax { Initializer: { } initializer } when SimpleCollectionInitializer(initializer) => initializer,
+        BaseObjectCreationExpressionSyntax {Initializer:null} => SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression),
         InitializerExpressionSyntax initializer when SimpleCollectionInitializer(initializer)=>initializer,
         _ => throw new ArgumentException("This collection requires source editing.")
     };

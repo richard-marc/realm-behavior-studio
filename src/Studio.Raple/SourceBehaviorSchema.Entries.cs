@@ -10,8 +10,9 @@ internal sealed partial class SourceBehaviorSchema
     (IMethodSymbol Method,SourceExpression Metadata)? ProbeEntry(BaseObjectCreationExpressionSyntax collection,string text)
     {
         var parsed=SyntaxFactory.ParseExpression("new EntryProbe(){"+text+"}") as ObjectCreationExpressionSyntax;
-        if(parsed?.Initializer?.Expressions is not {Count:1} values||parsed.ContainsDiagnostics||values[0] is not InitializerExpressionSyntax entry||!entry.IsKind(SyntaxKind.ComplexElementInitializerExpression)||collection.Initializer==null)return null;
-        var annotation=new SyntaxAnnotation();var replacement=collection.WithInitializer(SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression,collection.Initializer.OpenBraceToken,SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(entry.WithAdditionalAnnotations(annotation)),collection.Initializer.CloseBraceToken));
+        if(parsed?.Initializer?.Expressions is not {Count:1} values||parsed.ContainsDiagnostics||values[0] is not InitializerExpressionSyntax entry||!entry.IsKind(SyntaxKind.ComplexElementInitializerExpression))return null;
+        var initializer=collection.Initializer??SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression);
+        var annotation=new SyntaxAnnotation();var replacement=collection.WithInitializer(SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression,initializer.OpenBraceToken,SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(entry.WithAdditionalAnnotations(annotation)),initializer.CloseBraceToken));
         var tree=Model.SyntaxTree.WithRootAndOptions(Model.SyntaxTree.GetRoot().ReplaceNode(collection,replacement),Model.SyntaxTree.Options);var compiler=context.Binding.Value.Compilation.ReplaceSyntaxTree(Model.SyntaxTree,tree);var model=compiler.GetSemanticModel(tree);var actual=(InitializerExpressionSyntax)tree.GetRoot().GetAnnotatedNodes(annotation).Single();
         if(model.GetCollectionInitializerSymbolInfo(actual).Symbol is not IMethodSymbol add||model.GetDiagnostics(actual.Span).Any(d=>d.Severity==DiagnosticSeverity.Error))return null;
         var metadata=new SourceBehaviorSchema(adapter,compiler,tree.FilePath).DescribeEntry(actual);
@@ -20,7 +21,7 @@ internal sealed partial class SourceBehaviorSchema
     public string? InitializerEntryBinding(string text,string entry)=>Expression(text) is BaseObjectCreationExpressionSyntax collection&&ProbeEntry(collection,entry) is{} probe?EntrySignature(probe.Method):null;
     public IReadOnlyList<InitializerEntryOverload> InitializerEntryOverloads(string text)
     {
-        if(Expression(text) is not BaseObjectCreationExpressionSyntax {Initializer:{} initializer} collection||initializer.Expressions.Any(e=>e is AssignmentExpressionSyntax)||Model.GetTypeInfo(collection).Type is not INamedTypeSymbol type)return [];
+        if(Expression(text) is not BaseObjectCreationExpressionSyntax collection||collection.Initializer?.Expressions.Any(e=>e is AssignmentExpressionSyntax)==true||Model.GetTypeInfo(collection).Type is not INamedTypeSymbol type||!Collection(type)||!Child(Element(type)))return [];
         var result=new List<InitializerEntryOverload>();
         foreach(var method in Model.LookupSymbols(collection.SpanStart,type,"Add").OfType<IMethodSymbol>().Where(m=>!m.IsStatic&&!m.IsGenericMethod&&m.Parameters.Length>0&&!m.Parameters.Any(p=>p.RefKind!=RefKind.None)&&m.Parameters.Any(p=>Child(Element(p.Type)))))
         {
@@ -35,8 +36,9 @@ internal sealed partial class SourceBehaviorSchema
     {
         var parsed=SyntaxFactory.ParseExpression("new EntryProbe(){"+text+"}") as ObjectCreationExpressionSyntax;
         if(parsed?.Initializer?.Expressions is not {Count:1} expressions||parsed.ContainsDiagnostics||expressions[0] is not InitializerExpressionSyntax entry||!entry.IsKind(SyntaxKind.ComplexElementInitializerExpression))return false;
-        var collection=owner.DescendantNodesAndSelf().OfType<BaseObjectCreationExpressionSyntax>().SingleOrDefault(e=>e.ToString()==(collectionText??owner.ToString()));if(collection?.Initializer==null)return false;
-        var annotation=new SyntaxAnnotation();var replacement=collection.WithInitializer(SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression,collection.Initializer.OpenBraceToken,SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(entry.WithAdditionalAnnotations(annotation)),collection.Initializer.CloseBraceToken));
+        var collection=owner.DescendantNodesAndSelf().OfType<BaseObjectCreationExpressionSyntax>().SingleOrDefault(e=>e.ToString()==(collectionText??owner.ToString()));if(collection==null)return false;
+        var initializer=collection.Initializer??SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression);
+        var annotation=new SyntaxAnnotation();var replacement=collection.WithInitializer(SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression,initializer.OpenBraceToken,SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(entry.WithAdditionalAnnotations(annotation)),initializer.CloseBraceToken));
         var tree=Model.SyntaxTree.WithRootAndOptions(Model.SyntaxTree.GetRoot().ReplaceNode(collection,replacement),Model.SyntaxTree.Options);var compiler=context.Binding.Value.Compilation.ReplaceSyntaxTree(Model.SyntaxTree,tree);var model=compiler.GetSemanticModel(tree);var actual=(InitializerExpressionSyntax)tree.GetRoot().GetAnnotatedNodes(annotation).Single();
         return model.GetCollectionInitializerSymbolInfo(actual).Symbol is IMethodSymbol add&&add.Parameters.Any(p=>Child(Element(p.Type)))&&!add.Parameters.Any(p=>p.IsParams&&!Child(Element(p.Type)))&&!model.GetDiagnostics(actual.Span).Any(d=>d.Severity==DiagnosticSeverity.Error);
     }
