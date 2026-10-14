@@ -7,6 +7,10 @@ public record ChildArgument(string Name, string ElementType, bool IsArray, bool 
     public bool IsCollection => IsArray || CollectionType != null;
 }
 public record SourceParameter(string Name, string Type, string Default);
+public record InitializerEntryOverload(string Signature,string Label,SourceExpression Metadata,IReadOnlyDictionary<string,string> Seeds)
+{
+    public override string ToString()=>Label;
+}
 // Candidate source projections, not proof that native global initialization
 // registered an entity. The actual loader decides range/definition precedence.
 public record EncounterSource(string EntityId,int CallStart,int RootStart,int RootLength,bool Shared,string Boundary)
@@ -31,6 +35,8 @@ public record SourceDefinition(string Key,string Label,int Start,int Length,Chil
 
 public interface IBehaviorSchema
 {
+    IReadOnlyList<InitializerEntryOverload> InitializerEntryOverloads(string collection)=>[];
+    string? InitializerEntryBinding(string collection,string entry)=>null;
     IReadOnlyList<SourceMemberCollection> InitializerCollections(string expression)=>[];
     IReadOnlyList<ClipboardSymbol> ClipboardSymbols(string expression)=>[];
     IReadOnlyList<SourceDefinitionReference> ExternalDefinitions(int start,int length)=>[];

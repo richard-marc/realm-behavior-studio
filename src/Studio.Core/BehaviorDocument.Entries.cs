@@ -5,6 +5,32 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Studio.Core;
 public sealed partial class BehaviorDocument
 {
+    public IReadOnlyList<InitializerEntryOverload> EntryOverloads(Guid collectionId)
+    {
+        var collection=Find(collectionId);
+        return collection.Kind=="ArgumentGroup"&&!collection.ArgumentFromCall&&!collection.ArgumentRequiresSource&&collection.Argument?.IsMember!=true?SchemaAt(collection)?.InitializerEntryOverloads(Expression(collection))??[]:[];
+    }
+    public Guid CreateCollectionEntry(Guid collectionId,string signature,IReadOnlyDictionary<string,string> scalarInputs,IReadOnlyDictionary<string,string> childInputs,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate=null)
+    {
+        var collection=Find(collectionId);EditableContainer(collection);
+        var contract=EntryOverloads(collectionId).SingleOrDefault(o=>o.Signature==signature)??throw new ArgumentException("Choose an available native Add overload for this collection.");
+        var children=contract.Metadata.Children.Select(c=>c.Name).ToHashSet();
+        if(scalarInputs.Keys.Any(k=>children.Contains(k)||contract.Metadata.Parameters.All(p=>p.Name!=k))||childInputs.Keys.Any(k=>!children.Contains(k)))throw new ArgumentException("Unknown native Add input.");
+        var values=new List<string>();
+        foreach(var parameter in contract.Metadata.Parameters)
+        {
+            var text=(children.Contains(parameter.Name)?childInputs:scalarInputs).GetValueOrDefault(parameter.Name,"");
+            if(string.IsNullOrWhiteSpace(text))
+            {
+                if(parameter.Default=="required")throw new ArgumentException("Provide the required Add input: "+parameter.Name);
+                text=parameter.Default=="empty array"?contract.Seeds[parameter.Name]:parameter.Default;
+            }
+            values.Add(text);
+        }
+        var entry="{"+string.Join(", ",values)+"}";
+        if(SchemaAt(collection)!.InitializerEntryBinding(Expression(collection),entry)!=signature)throw new ArgumentException("These inputs do not bind to the selected native Add overload.");
+        return PasteNodes(collectionId,collection.Children.Count,new(1,[entry]),validate).Single();
+    }
     IReadOnlyList<Guid> PasteInitializerEntries(BehaviorNode parent,int index,BehaviorClipboard clipboard,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate)
     {
         if(schema?.HasSourceContext!=true||parent.Kind!="ArgumentGroup"||parent.ArgumentFromCall||parent.Argument?.IsMember==true)throw new ArgumentException("Paste keyed entries into an explicit source collection initializer.");
