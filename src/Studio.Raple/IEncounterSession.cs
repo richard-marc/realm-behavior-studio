@@ -13,6 +13,7 @@ public interface IEncounterSession : IDisposable
     int Seed { get; }
     double StartMs { get; }
     IReadOnlyList<EncounterEvent> Events { get; }
+    IReadOnlyList<NativeCallbackRecord> Callbacks => [];
     IReadOnlyList<Emission> Shots { get; }
     IReadOnlyList<Emission> PlayerShots { get; }
     IReadOnlyList<NativeEffect> Effects { get; }

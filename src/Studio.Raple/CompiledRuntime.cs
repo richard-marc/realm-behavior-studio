@@ -35,6 +35,8 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     public IReadOnlyList<ReplayInput> Inputs => inputs;
     public ReplayJournal? Recording { get; set; }
     public PreparedRuntime? Prepared { get; private set; }
+    volatile ImmutableList<NativeCallbackRecord> callbacks = ImmutableList<NativeCallbackRecord>.Empty;
+    public IReadOnlyList<NativeCallbackRecord> Callbacks => callbacks;
     volatile ImmutableList<MovementSample> movements = ImmutableList<MovementSample>.Empty;
     public IReadOnlyList<MovementSample> Movements => movements;
     volatile ArenaSceneView arena = null!;
@@ -220,6 +222,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
             if(frame.ArenaDelta is {} map)arena=map;
             else if(arena==null)throw new InvalidOperationException("Runtime omitted its initial native arena snapshot.");
             movements=movements.AddRange(frame.MovementDelta ?? throw new InvalidOperationException("Runtime omitted native movement samples."));
+            callbacks=callbacks.AddRange(frame.CallbackDelta??throw new InvalidOperationException("Runtime omitted its native callback transcript."));
             effects=effects.AddRange(frame.EffectDelta ?? throw new InvalidOperationException("Runtime omitted native effect packets."));
             events = events.AddRange(frame.Events); shots = shots.AddRange(frame.Shots); playerShots = playerShots.AddRange(frame.PlayerShots); currentFrame = frame;
             if (request.Command is "advance" or "boss-hp" or "remove-minions") Recording?.Record(this, new(previousMs, request.Command, request.Command == "advance" ? request.DurationMs : 0, request.Input, request.Fraction));
@@ -258,5 +261,5 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     }
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
     public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { runtime = Stamp, seed = Frame.Seed,
-        entity = Project.EntityId, player = Project.Player, tickMs = 100, sampleMs = EncounterSession.SampleMs, durationMs = Frame.Ms, coverage = Frame.Coverage, actors = Entities, events = Events, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
+        entity = Project.EntityId, player = Project.Player, tickMs = 100, sampleMs = EncounterSession.SampleMs, durationMs = Frame.Ms, coverage = Frame.Coverage, actors = Entities, events = Events, callbacks=Callbacks, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
 }

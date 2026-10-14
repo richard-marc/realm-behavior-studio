@@ -5,7 +5,7 @@ using Studio.Core;
 
 namespace Studio.Raple;
 
-public record ReplayPoint(long Ms, string Signature, int Events, int Shots, int PlayerShots, int Movements = 0,int Effects=0);
+public record ReplayPoint(long Ms, string Signature, int Events, int Shots, int PlayerShots, int Movements = 0,int Effects=0,int Callbacks=0);
 public record ReplayCommand(long Ms, string Kind, int DurationMs = 0, EncounterInput? Input = null, double Fraction = 0, ReplayPoint? Result = null);
 public record ReplayIdentity(string SourceHash, string NativeSourcesHash, string ResourceHash, string RuntimeHash, string CompiledBuildId);
 
@@ -15,8 +15,8 @@ public sealed class ReplayJournal
 {
     readonly object gate = new();
     readonly List<ReplayCommand> commands = [];
-    string eventsHash = "", shotsHash = "", playerShotsHash = "", movementHash = "",effectsHash="";
-    int events, shots, playerShots, movements,effects;
+    string eventsHash = "", shotsHash = "", playerShotsHash = "", movementHash = "",effectsHash="",callbacksHash="";
+    int events, shots, playerShots, movements,effects,callbacks;
     ArenaSceneView? observedArena;
     string arenaHash="";
     public ReplayPoint Initial { get; }
@@ -33,6 +33,7 @@ public sealed class ReplayJournal
         Append(session.Events, ref events, ref eventsHash); Append(session.Shots, ref shots, ref shotsHash); Append(session.PlayerShots, ref playerShots, ref playerShotsHash);
         Append(session.Movements,ref movements,ref movementHash);
         Append(session.Effects,ref effects,ref effectsHash);
+        Append(session.Callbacks,ref callbacks,ref callbacksHash);
         if(!ReferenceEquals(observedArena,session.Arena)){observedArena=session.Arena;arenaHash=Hash(JsonSerializer.Serialize(observedArena with { Revision=0 }));}
         var signature = Hash(JsonSerializer.Serialize(new {
             session.Ms, session.PlayerHp, session.PlayerX, session.PlayerY, session.BossHp, session.BossMaxHp, session.Seed,
@@ -40,7 +41,8 @@ public sealed class ReplayJournal
             session.PlayerStats, session.Coverage, actors = session.Entities.OrderBy(e => e.Id), objects=session.WorldObjects.OrderBy(e=>e.Id),projectiles = session.Projectiles,
             timers = session.InspectTimers(), eventsHash, shotsHash, playerShotsHash, movementHash,arenaHash,effectsHash
         }));
-        return new(session.Ms, signature, events, shots, playerShots,movements,effects);
+        if(callbacks>0)signature=Hash(signature+"|callbacks:"+callbacksHash);
+        return new(session.Ms, signature, events, shots, playerShots,movements,effects,callbacks);
     }
     public ReplayPoint ObserveCurrent(IEncounterSession session) { lock (gate) return Observe(session); }
     internal void Record(IEncounterSession session, ReplayCommand command)
@@ -52,6 +54,7 @@ public sealed class ReplayJournal
 public sealed record EncounterReplay(int Version, StudioProject Project, string? Phase, ReplayIdentity Identity,
     ReplayPoint Initial, ReplayCommand[] Commands, EncounterEvent[] Events, Emission[] Shots, Emission[] PlayerShots,MovementSample[] Movements,NativeEffect[] Effects)
 {
+    public NativeCallbackRecord[] Callbacks {get;init;}=[];
     public long DurationMs => Commands.LastOrDefault()?.Result?.Ms ?? 0;
     static string ProjectHash(StudioProject project)
     {
@@ -87,13 +90,13 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
     {
         var recording = session.Recording ?? throw new InvalidOperationException("This encounter was not recorded.");
         var commands = recording.Commands; var point = commands.LastOrDefault()?.Result ?? recording.Initial;
-        var replay = new EncounterReplay(2, project with{SourceDrafts=[],SelectedSourceFile=null}, phase, identity, recording.Initial, commands, session.Events.Take(point.Events).ToArray(),session.Shots.Take(point.Shots).ToArray(),session.PlayerShots.Take(point.PlayerShots).ToArray(),session.Movements.Take(point.Movements).ToArray(),session.Effects.Take(point.Effects).ToArray());
+        var replay = new EncounterReplay(2, project with{SourceDrafts=[],SelectedSourceFile=null}, phase, identity, recording.Initial, commands, session.Events.Take(point.Events).ToArray(),session.Shots.Take(point.Shots).ToArray(),session.PlayerShots.Take(point.PlayerShots).ToArray(),session.Movements.Take(point.Movements).ToArray(),session.Effects.Take(point.Effects).ToArray()){Callbacks=session.Callbacks.Take(point.Callbacks).ToArray()};
         replay.Validate(); return replay;
     }
     public void Validate()
     {
         static bool Hash(string? value) => value?.Length == 64 && value.All(Uri.IsHexDigit);
-        if (Version != 2 || Project == null || Identity == null || Initial == null || Commands == null || Events == null || Shots == null || PlayerShots == null || Movements==null || Movements.Length>500_000 || Effects==null || Effects.Length>30000 ||
+        if (Version != 2 || Project == null || Identity == null || Initial == null || Commands == null || Events == null || Shots == null || PlayerShots == null || Movements==null || Movements.Length>500_000 || Effects==null || Effects.Length>30000 || Callbacks==null || Callbacks.Length>100000 ||
             Project.Version != 1 || Project.Player == null || Project.Arena==null || Project.Identities == null || Project.LockedNodes == null || Project.CollapsedNodes == null || Project.Layout == null ||
             string.IsNullOrEmpty(Project.SourceFile) || string.IsNullOrEmpty(Project.EntityId) || Project.Source == null || Project.Source.Length > 4_000_000 ||
             Commands.Length > 100_000 || Events.Length > 30_000 || Shots.Length > 200_000 || PlayerShots.Length > 200_000 ||
@@ -101,7 +104,7 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
             Identity.CompiledBuildId != "" && !Hash(Identity.CompiledBuildId) || Identity.SourceHash != ProjectHash(Project))
             throw new ArgumentException("Unsupported, modified or oversized encounter recording.");
         Project.ValidateSourceSet();Project.Arena.Validate();long ms = 0; var previous = Initial;
-        if (Initial.Ms != 0 || !Hash(Initial.Signature) || Initial.Events < 0 || Initial.Shots < 0 || Initial.PlayerShots < 0 || Initial.Movements<0 || Initial.Effects<0) throw new ArgumentException("Invalid initial replay witness.");
+        if (Initial.Ms != 0 || !Hash(Initial.Signature) || Initial.Events < 0 || Initial.Shots < 0 || Initial.PlayerShots < 0 || Initial.Movements<0 || Initial.Effects<0||Initial.Callbacks<0) throw new ArgumentException("Invalid initial replay witness.");
         foreach (var command in Commands)
         {
             if (command == null || command.Ms != ms || command.Result == null || !Hash(command.Result.Signature) ||
@@ -115,10 +118,10 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
                 ms += command.DurationMs;
             }
             else if (command.DurationMs != 0 || command.Kind == "boss-hp" && (!double.IsFinite(command.Fraction) || command.Fraction < 0 || command.Fraction > 1)) throw new ArgumentException("Invalid recorded test override.");
-            if (ms > 300_000 || command.Result.Ms != ms || command.Result.Events < previous.Events || command.Result.Shots < previous.Shots || command.Result.PlayerShots < previous.PlayerShots || command.Result.Movements<previous.Movements || command.Result.Effects<previous.Effects) throw new ArgumentException("Invalid replay witness.");
+            if (ms > 300_000 || command.Result.Ms != ms || command.Result.Events < previous.Events || command.Result.Shots < previous.Shots || command.Result.PlayerShots < previous.PlayerShots || command.Result.Movements<previous.Movements || command.Result.Effects<previous.Effects||command.Result.Callbacks<previous.Callbacks) throw new ArgumentException("Invalid replay witness.");
             previous = command.Result;
         }
-        if (Events.Any(e => e == null || e.Ms < 0 || e.Ms > ms) || previous.Events != Events.Length || previous.Shots != Shots.Length || previous.PlayerShots != PlayerShots.Length || previous.Movements!=Movements.Length || previous.Effects!=Effects.Length || Effects.Any(e=>e==null||e.Ms<0||e.Ms>ms||!float.IsFinite(e.X)||!float.IsFinite(e.Y)||!float.IsFinite(e.X2)||!float.IsFinite(e.Y2)) ||
+        if (Events.Any(e => e == null || e.Ms < 0 || e.Ms > ms) || previous.Events != Events.Length || previous.Shots != Shots.Length || previous.PlayerShots != PlayerShots.Length || previous.Movements!=Movements.Length || previous.Effects!=Effects.Length || previous.Callbacks!=Callbacks.Length || Callbacks.Select((c,i)=>(c,i)).Any(p=>p.c==null||p.c.Sequence!=p.i+1L||p.c.Ms<0||p.c.Ms>ms||p.c.ParentSequence is{} parent&&(parent<=0||parent>=p.c.Sequence)||p.c.Outcome is not ("completed" or "faulted")) || Effects.Any(e=>e==null||e.Ms<0||e.Ms>ms||!float.IsFinite(e.X)||!float.IsFinite(e.Y)||!float.IsFinite(e.X2)||!float.IsFinite(e.Y2)) ||
             Movements.Any(m=>m==null || m.Ms<0 || m.Ms>ms || m.DurationMs is not (5 or 100) || !float.IsFinite(m.FromX) || !float.IsFinite(m.FromY) || !float.IsFinite(m.ToX) || !float.IsFinite(m.ToY)) ||
             Shots.Concat(PlayerShots).Any(s=>s==null || s.Ms<0 || s.Ms>ms || !float.IsFinite(s.X) || !float.IsFinite(s.Y) || !float.IsFinite(s.Angle) || !float.IsFinite(s.AngleIncrement)))
             throw new ArgumentException("Recorded events and emissions do not match their witnesses.");
@@ -220,7 +223,8 @@ public sealed class ReplayCursor
            !Session.Shots.Take(completed.Shots).SequenceEqual(replay.Shots.Take(completed.Shots))||
            !Session.PlayerShots.Take(completed.PlayerShots).SequenceEqual(replay.PlayerShots.Take(completed.PlayerShots))||
            !Session.Movements.Take(completed.Movements).SequenceEqual(replay.Movements.Take(completed.Movements))||
-           !Session.Effects.Take(completed.Effects).SequenceEqual(replay.Effects.Take(completed.Effects)))
+           !Session.Effects.Take(completed.Effects).SequenceEqual(replay.Effects.Take(completed.Effects))||
+           !Session.Callbacks.Take(completed.Callbacks).SequenceEqual(replay.Callbacks.Take(completed.Callbacks)))
             throw new InvalidOperationException("Native replay completed event/emission prefix diverged at "+Session.Ms+" ms.");
         if(commandIndex<replay.Commands.Length && replay.Commands[commandIndex].Kind=="advance" && Session.Ms>replay.Commands[commandIndex].Ms)
         {
@@ -231,7 +235,8 @@ public sealed class ReplayCursor
                !Session.Shots.SequenceEqual(Prefix(replay.Shots,completed.Shots,next.Shots,Session.Ms,s=>s.Ms)) ||
                !Session.PlayerShots.SequenceEqual(Prefix(replay.PlayerShots,completed.PlayerShots,next.PlayerShots,Session.Ms,s=>s.Ms)) ||
                !Session.Movements.SequenceEqual(Prefix(replay.Movements,completed.Movements,next.Movements,Session.Ms,m=>m.Ms)) ||
-               !Session.Effects.SequenceEqual(Prefix(replay.Effects,completed.Effects,next.Effects,Session.Ms,e=>e.Ms)))
+               !Session.Effects.SequenceEqual(Prefix(replay.Effects,completed.Effects,next.Effects,Session.Ms,e=>e.Ms))||
+               !Session.Callbacks.SequenceEqual(Prefix(replay.Callbacks,completed.Callbacks,next.Callbacks,Session.Ms,c=>c.Ms)))
                 throw new InvalidOperationException("Native replay event/emission prefix diverged at "+Session.Ms+" ms.");
         }
         progress?.Report(Session.Ms);

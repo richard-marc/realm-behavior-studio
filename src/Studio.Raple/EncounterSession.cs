@@ -60,6 +60,9 @@ public sealed class EncounterSession : IEncounterSession
     public int Seed => seed;
     public double StartMs { get; }
     public List<EncounterEvent> Events { get; } = [];
+    public List<NativeCallbackRecord> Callbacks { get; } = [];
+    IReadOnlyList<NativeCallbackRecord> IEncounterSession.Callbacks => Callbacks;
+    internal void CaptureCallbacks()=>Callbacks.AddRange(NativeCallbacks.Drain());
     public List<ReplayInput> Inputs { get; } = [];
     public ReplayJournal? Recording { get; set; }
     public List<MovementSample> Movements { get; } = [];
@@ -113,6 +116,7 @@ public sealed class EncounterSession : IEncounterSession
         // Resize with the observer at the native arena center. The offline
         // harness lacks the network state needed by a resize-triggered teleport.
         // The requested start is applied before any encounter entry callbacks.
+        NativeCallbacks.Reset();
         engine = new SimEngine(new SimConfig { Boss = entity, Seed = seed, PlayerX = BossLabWorld.Center, PlayerY = BossLabWorld.Center });
         // The upstream harness copies base fields from an enemy. Replace its effect manager so
         // a boss's immunity flags never become the test player's immunity flags.
@@ -187,14 +191,14 @@ public sealed class EncounterSession : IEncounterSession
         if(!BossActive)throw new InvalidOperationException("The original encounter actor is no longer active. Its health override is unavailable.");
         if (!double.IsFinite(fraction) || fraction < 0 || fraction > 1) throw new ArgumentOutOfRangeException(nameof(fraction));
         boss.HP = Math.Max(1, (int)(boss.MaximumHP * fraction)); Add("override", "Boss HP forced to " + (fraction * 100).ToString("0") + "%");
-        Recording?.Record(this, new(Ms, "boss-hp", Fraction: fraction));
+        CaptureCallbacks(); Recording?.Record(this, new(Ms, "boss-hp", Fraction: fraction));
     }
     public void RemoveMinionsForTest()
     {
         foreach (var e in engine.World.Enemies.Values.Where(e => e != boss).ToArray()) e.Expunge();
         CaptureEffects();
         Add("override", "Minions removed for transition test; death callbacks bypassed.");
-        Recording?.Record(this, new(Ms, "remove-minions"));
+        CaptureCallbacks(); Recording?.Record(this, new(Ms, "remove-minions"));
     }
     public void Step(EncounterInput input) => Advance(input, SimEngine.TickMs);
     public void Advance(EncounterInput input, int durationMs)
@@ -307,7 +311,7 @@ public sealed class EncounterSession : IEncounterSession
                     if (Dead) {SimEngine.Set(engine.Actor,"Dead",true);Add("death", "Test player died. Restart to respawn.");}
                 }
             }
-            CaptureEffects(); ObserveActorRemovals(); Ms += SampleMs;
+            CaptureEffects(); ObserveActorRemovals(); CaptureCallbacks(); Ms += SampleMs;
         }
         foreach (var removed in bullets.Where(b => b.Friendly && b.Removed)) weapon.Forget(removed.Id);
         bullets.RemoveAll(b => b.Removed);
@@ -351,7 +355,7 @@ public sealed class EncounterSession : IEncounterSession
         var matches = phase.StateChildren.Where(n => n.Kind is "Shoot" or "SequentialAimedSweep" or "GordoSpiral" or "GapRing" && (n.Parameters.FirstOrDefault(p => p.Name == (n.Kind=="Shoot"?"projectileIndex":"projectile"))?.Expression ?? "0") == index.ToString()).ToArray();
         return matches.Length == 1 && matches[0].Kind=="Shoot" ? matches[0].Id : null; // The shared packet does not identify its controller callback.
     }
-    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities,objects=WorldObjects, events = Events, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
+    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities,objects=WorldObjects, events = Events, callbacks=Callbacks, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
     public string InspectTimers() => BossActive?string.Join("\n", boss.StateStorage.Select(p => p.Key.GetType().Name + ": " + (p.Value is int n ? n + " ms / scalar" : p.Value?.GetType().Name ?? "null"))):"Original encounter actor is no longer active. Live replacements appear in Actors.";
     public void Dispose() => packetCapture.Dispose();
 }

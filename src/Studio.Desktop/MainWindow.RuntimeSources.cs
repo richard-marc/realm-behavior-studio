@@ -13,10 +13,10 @@ public partial class MainWindow
             return false;
         }
         var project=Snapshot();
-        if(!origin.TryResolve(project,out var accepted)){Status.Text="Recorded phase source has changed or is unavailable.";return false;}
+        if(!origin.TryResolve(project,out var accepted)){Status.Text="Recorded source has changed or is unavailable.";return false;}
         RememberSourceDraft();
         if(sourceDrafts.TryGetValue(origin.SourceFile,out var draft)&&draft!=accepted)
-        {Status.Text="Apply or discard this file's draft before navigating its recorded phase source.";return false;}
+        {Status.Text="Apply or discard this file's draft before navigating its recorded source.";return false;}
         var primary=origin.SourceFile.Equals(project.SourceFile,StringComparison.OrdinalIgnoreCase);
         BehaviorDocument target;
         if(primary)target=PrimaryDocument;
@@ -26,7 +26,8 @@ public partial class MainWindow
             target=new(record.Source,adapter,record.Identities,record.SourceFile);target.LockedNodes.UnionWith(record.LockedNodes);
             dependencyDocuments[record.SourceFile]=target;collapsedByDocument[target]=record.CollapsedNodes.ToHashSet();
         }
-        var node=target.AllNodes.FirstOrDefault(n=>n.Kind=="State"&&n.Start==origin.Start&&n.Length==origin.Length);
+        var candidates=target.AllNodes.Where(n=>n.Kind is not ("ArgumentGroup" or "Factory" or "Reference" or "Spread" or "Opaque")&&n.Start==origin.Start&&n.Length==origin.Length).ToArray();
+        var node=candidates.FirstOrDefault(n=>n.Id==origin.NodeId)??(candidates.Length==1?candidates[0]:null);
         var owner=node==null?null:target.AllRoots.First(r=>r.Root.Descendants().Any(n=>n.Id==node.Id));
         if(node!=null&&owner!=null&&(owner.EntityId==selectedEntity!.Id||owner.Definition?.Encounters.Contains(selectedEntity.Id)==true))
         {

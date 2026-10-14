@@ -78,6 +78,9 @@ try {
     & dotnet run --project tests/MemberInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/member-initializer-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/member-initializer-checks.log' -Tail 25; throw 'Native State member initializer checks failed.' }
     Get-Content '.artifacts/member-initializer-checks.log' -Tail 1
+    & dotnet run --project tests/Callback.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/callback-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/callback-checks.log' -Tail 25; throw 'Native callback provenance checks failed.' }
+    Get-Content '.artifacts/callback-checks.log' -Tail 1
     & dotnet run --project tests/FirstEntry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/first-entry-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/first-entry-checks.log' -Tail 25; throw 'Native first Add entry checks failed.' }
     Get-Content '.artifacts/first-entry-checks.log' -Tail 1
