@@ -27,8 +27,8 @@ internal sealed partial class SourceBehaviorSchema
         var result=new List<ClipboardSymbol>();
         foreach(var node in expression.DescendantNodesAndSelf())
         {
-            if(node is not (SimpleNameSyntax or BaseObjectCreationExpressionSyntax or InvocationExpressionSyntax)&&node is not InitializerExpressionSyntax {RawKind:(int)SyntaxKind.ComplexElementInitializerExpression}||node.Parent is NameColonSyntax)continue;
-            var symbol=node is InitializerExpressionSyntax initializer?EntryMethod(Model,initializer):Model.GetSymbolInfo(node).Symbol;
+            if(node is not (SimpleNameSyntax or BaseObjectCreationExpressionSyntax or InvocationExpressionSyntax)&&node is not InitializerExpressionSyntax {RawKind:(int)SyntaxKind.ComplexElementInitializerExpression}&&!(node is ExpressionSyntax indexed&&IsIndexedEntry(indexed))||node.Parent is NameColonSyntax)continue;
+            var symbol=node is ExpressionSyntax value&&(value is InitializerExpressionSyntax||IsIndexedEntry(value))?EntryMethod(Model,value):Model.GetSymbolInfo(node).Symbol;
             if(symbol==null)continue;
             var key=symbol.OriginalDefinition.GetDocumentationCommentId();
             if(key==null&&symbol is IParameterSymbol parameter)key=ClipboardScope(parameter.ContainingSymbol)+"/parameter/"+parameter.Ordinal;

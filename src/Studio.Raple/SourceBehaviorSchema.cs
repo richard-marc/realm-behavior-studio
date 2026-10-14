@@ -67,7 +67,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     public IReadOnlyList<EncounterSource> AdditionalEncounters()=>context.Encounters;
     public string FragmentRoot(IReadOnlyList<string> expressions) => adapter.FragmentRoot(expressions);
     public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => adapter.CollectionFragmentRoot(expressions);
-    IMethodSymbol? SourceMethod(ExpressionSyntax expression)=>expression is InitializerExpressionSyntax initializer?EntryMethod(Model,initializer):Model.GetSymbolInfo(expression).Symbol as IMethodSymbol;
+    IMethodSymbol? SourceMethod(ExpressionSyntax expression)=>expression is InitializerExpressionSyntax||IsIndexedEntry(expression)?EntryMethod(Model,expression):Model.GetSymbolInfo(expression).Symbol as IMethodSymbol;
     public string ChildList(string expression, string parameter, IReadOnlyList<string> children)
     {
         var source = Expression(expression);
@@ -114,6 +114,8 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     {
         if (type is IArrayTypeSymbol array) return array.ElementType;
         if (Child(type) || type is not INamedTypeSymbol named) return type;
+        var values=named.AllInterfaces.Prepend(named).Where(t=>t.OriginalDefinition.MetadataName is "IDictionary`2" or "IReadOnlyDictionary`2"&&t.ContainingNamespace.ToDisplayString()=="System.Collections.Generic").Select(t=>t.TypeArguments[1]).Where(Child).Distinct<ITypeSymbol>(SymbolEqualityComparer.Default).ToArray();
+        if(values.Length==1)return values[0];
         var elements = named.AllInterfaces.Prepend(named).Where(t => t.OriginalDefinition.MetadataName == "IEnumerable`1" && t.ContainingNamespace.ToDisplayString() == "System.Collections.Generic")
             .Select(t => t.TypeArguments[0]).Distinct<ITypeSymbol>(SymbolEqualityComparer.Default).ToArray();
         return elements.Length == 1 ? elements[0] : type;
@@ -150,6 +152,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
         var expression = Expression(text); if (expression == null) return null;
         var model = Model;
         if(expression is InitializerExpressionSyntax entry&&entry.IsKind(SyntaxKind.ComplexElementInitializerExpression))return DescribeEntry(entry);
+        if(expression is AssignmentExpressionSyntax indexed&&IsIndexedEntry(indexed))return DescribeIndexedEntry(indexed);
         var type = model.GetTypeInfo(expression).Type;
         if (!Child(type)) return null;
         var symbol = model.GetSymbolInfo(expression).Symbol;
@@ -188,7 +191,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     public bool? TargetsPhaseOf(string text, string parameter, string ownerEntity, string targetEntity)
     {
         var expression = Expression(text);
-        if(expression is InitializerExpressionSyntax)return false;
+        if(expression is InitializerExpressionSyntax||IsIndexedEntry(expression))return false;
         if(expression!=null&&Model.GetSymbolInfo(expression).Symbol is IMethodSymbol choice&&choice.ContainingType.ToDisplayString()==RapleAdapter.NativeTypeName("TimedRandomTransition")&&parameter.Split('[')[0]=="states")return RapleAdapter.SameEntity(ownerEntity,targetEntity);
         if (expression == null || Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || !RapleAdapter.NativeOrderType(method.ContainingType.ToDisplayString()))
             return parameter.StartsWith("targetState", StringComparison.Ordinal) && RapleAdapter.SameEntity(ownerEntity, targetEntity);
@@ -222,13 +225,14 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
         var expression = Expression(text);
         if (expression == null) return adapter.AcceptsChild(text, parameter, childExpression, arrayExpression);
         if(childExpression.TrimStart().StartsWith('{'))return AcceptEntry(expression,arrayExpression,childExpression);
+        if(childExpression.TrimStart().StartsWith('[')&&TryIndexedEntry(childExpression)!=null)return AcceptIndexedEntry(expression,arrayExpression,childExpression);
         var model = Model;
-        if (expression is InitializerExpressionSyntax entry&&EntryMethod(model,entry) is IMethodSymbol add)
+        if ((expression is InitializerExpressionSyntax||IsIndexedEntry(expression))&&EntryMethod(model,expression) is IMethodSymbol add)
         {
             var parameterSymbol=add.Parameters.SingleOrDefault(p=>p.Name==parameter);if(parameterSymbol==null)return false;
             var targetType=Element(parameterSymbol.Type);
-            if(arrayExpression!=null&&model.GetSpeculativeTypeInfo(entry.SpanStart,SyntaxFactory.ParseExpression(arrayExpression),SpeculativeBindingOption.BindAsExpression).Type is {} entryCollectionType&&Collection(entryCollectionType))targetType=Element(entryCollectionType);
-            return model.GetSpeculativeTypeInfo(entry.SpanStart,SyntaxFactory.ParseExpression(childExpression),SpeculativeBindingOption.BindAsExpression).Type is {} childType&&context.Binding.Value.Compilation.ClassifyConversion(childType,targetType).IsImplicit;
+            if(arrayExpression!=null&&model.GetSpeculativeTypeInfo(expression.SpanStart,SyntaxFactory.ParseExpression(arrayExpression),SpeculativeBindingOption.BindAsExpression).Type is {} entryCollectionType&&Collection(entryCollectionType))targetType=Element(entryCollectionType);
+            return model.GetSpeculativeTypeInfo(expression.SpanStart,SyntaxFactory.ParseExpression(childExpression),SpeculativeBindingOption.BindAsExpression).Type is {} childType&&context.Binding.Value.Compilation.ClassifyConversion(childType,targetType).IsImplicit;
         }
         if (model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method) return false;
         var slot = method.Parameters.FirstOrDefault(p => p.Name == parameter);var member=MemberElement(expression,parameter,arrayExpression);if (slot == null&&member==null) return false;

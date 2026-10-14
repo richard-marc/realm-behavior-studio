@@ -153,9 +153,9 @@ public sealed partial class BehaviorDocument
                 var scoped = schema?.At(c.SpanStart);
                 var description = scoped?.DescribeExpression(c.ToString());
                 if (c is not ObjectCreationExpressionSyntax && description == null) return Opaque(c, path, legacyPath);
-                if(c is InitializerExpressionSyntax entry&&description?.Kind=="InitializerEntry")
+                if(IsEntry(c)&&description?.Kind=="InitializerEntry")
                 {
-                    var inputs=entry.Expressions;var entryParameters=new List<Parameter>();var values=new List<BehaviorNode>();
+                    var entry=c;var inputs=EntryInputs(entry);var entryParameters=new List<Parameter>();var values=new List<BehaviorNode>();
                     for(var i=0;i<inputs.Count;i++)
                         if(!scoped!.IsChildArgument(c.ToString(),i))entryParameters.Add(new(description.ArgumentNames[i],inputs[i].ToString(),inputs[i].SpanStart,inputs[i].Span.Length));
                     foreach(var slot in description.Children)

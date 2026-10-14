@@ -46,6 +46,7 @@ public partial class MainWindow
         await RunPacketOriginUiSmoke(output,check);
         await RunConstructedCollectionUiSmoke(output,check);
         await RunExtensionEntryUiSmoke(output,check);
+        await RunIndexedEntryUiSmoke(output,check);
         await RunSharedEntryUiSmoke(output,check);
         await RunSequentialSweepUiSmoke(output,check);
         await RunCycleUiSmoke(output,check);

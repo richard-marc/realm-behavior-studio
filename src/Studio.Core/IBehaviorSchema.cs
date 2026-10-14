@@ -9,6 +9,7 @@ public record ChildArgument(string Name, string ElementType, bool IsArray, bool 
 public record SourceParameter(string Name, string Type, string Default);
 public record InitializerEntryOverload(string Signature,string Label,SourceExpression Metadata,IReadOnlyDictionary<string,string> Seeds)
 {
+    public bool IsIndexer {get;init;}
     public override string ToString()=>Label;
 }
 // Candidate source projections, not proof that native global initialization

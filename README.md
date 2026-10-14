@@ -22,6 +22,8 @@ Native OrderedBehavior has a collapsed **Ordered dispatch** panel. Select a chil
 
 Native collection constructors can also receive their first entry without pre-existing initializer braces. Adding retains explicit or target-typed constructor syntax, arguments and comments. The inspector counts authored entries; content produced by the original constructor still runs during Play.
 
+Indexed initializers such as `[key] = action` now expose their actual keys and native setter value. Edit, create, reorder, duplicate or copy complete entries without changing their syntax. Multi-key and named indices, native value arrays and native-value dictionaries follow the original property setter and enumeration order.
+
 Collection entries also support Add extension methods visible in the current source. The form edits the actual key/native child inputs and follows C# instance-method precedence, imports, params and optional defaults. Generic extension contracts are available when the receiver resolves their native child type.
 
 Select an explicit native collection, including an empty one, and expand **New entry** to choose an actual Add overload. The form prepares scalar values and required/optional native children together. Creation checks the selected overload, preserves comments and identities, and supports one-step Undo/Redo. Inherited constructed-generic contracts and params arrays are supported; generated collections and entry-owned phases retain their source ownership gates.

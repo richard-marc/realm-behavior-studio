@@ -11,7 +11,7 @@ public partial class MainWindow
     void AddCollectionEntryCreationControls(BehaviorNode node)
     {
         entryOverloadChoices=null;var contracts=document.EntryOverloads(node.Id);if(contracts.Count==0)return;
-        var form=new StackPanel();form.Children.Add(new TextBlock{Text="Choose this collection's Add overload and prepare its complete inputs.",TextWrapping=System.Windows.TextWrapping.Wrap,FontSize=11,Foreground=EncounterViewport.Brush("#92969F")});
+        var form=new StackPanel();form.Children.Add(new TextBlock{Text="Choose this collection's native entry contract and prepare its complete inputs.",TextWrapping=System.Windows.TextWrapping.Wrap,FontSize=11,Foreground=EncounterViewport.Brush("#92969F")});
         entryOverloadChoices=new(){ItemsSource=contracts,DisplayMemberPath="Label",Margin=new(0,8,0,8)};form.Children.Add(entryOverloadChoices);var inputs=new StackPanel();form.Children.Add(inputs);
         entryOverloadChoices.SelectionChanged+=(_,_)=>
         {
@@ -34,7 +34,7 @@ public partial class MainWindow
     void AddEntryCreationControls(BehaviorNode node)
     {
         entryCreationInputs.Clear();entryCreationChildren.Clear();entryCreationChild=null;entryCreationButton=null;
-        var form=new StackPanel();form.Children.Add(new TextBlock{Text="Create an entry using this Add overload. The collection controls key constraints and runtime order.",TextWrapping=System.Windows.TextWrapping.Wrap,Foreground=EncounterViewport.Brush("#92969F"),FontSize=11});
+        var form=new StackPanel();form.Children.Add(new TextBlock{Text="Create an entry using this native initializer contract. The collection controls key constraints and runtime order.",TextWrapping=System.Windows.TextWrapping.Wrap,Foreground=EncounterViewport.Brush("#92969F"),FontSize=11});
         foreach(var parameter in node.Parameters)
         {
             form.Children.Add(new TextBlock{Text=parameter.Name,Margin=new(0,8,0,4)});var input=new TextBox{Text=parameter.Expression};entryCreationInputs[parameter.Name]=input;form.Children.Add(input);

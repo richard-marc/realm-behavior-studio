@@ -27,7 +27,7 @@ public sealed partial class BehaviorDocument
             }
             values.Add(text);
         }
-        var entry="{"+string.Join(", ",values)+"}";
+        var entry=contract.IsIndexer?"["+string.Join(", ",values.Take(values.Count-1))+"] = "+values[^1]:"{"+string.Join(", ",values)+"}";
         if(SchemaAt(collection)!.InitializerEntryBinding(Expression(collection),entry)!=signature)throw new ArgumentException("These inputs do not bind to the selected native Add overload.");
         return PasteNodes(collectionId,collection.Children.Count,new(1,[entry]),validate).Single();
     }
@@ -40,9 +40,11 @@ public sealed partial class BehaviorDocument
         var entries=clipboard.Expressions.Select(text=>
         {
             var parsed=SyntaxFactory.ParseExpression("new EntryProbe(){"+text+"}") as ObjectCreationExpressionSyntax;
-            if(parsed?.Initializer?.Expressions is not {Count:1} values||parsed.ContainsDiagnostics||values[0] is not InitializerExpressionSyntax entry||!entry.IsKind(SyntaxKind.ComplexElementInitializerExpression))throw new ArgumentException("Enter a complete native Add entry.");return (ExpressionSyntax)entry;
+            if(parsed?.Initializer?.Expressions is not {Count:1} values||parsed.ContainsDiagnostics||!IsEntry(values[0]))throw new ArgumentException("Enter a complete native initializer entry.");return values[0];
         }).ToArray();
-        var probeSource=tree.ReplaceNode(collection,collection.WithInitializer(Initializer(collection).WithExpressions(SyntaxFactory.SeparatedList(entries)))).ToFullString();
+        var indexed=entries.Any(e=>e is AssignmentExpressionSyntax);if(indexed&&entries.Any(e=>e is not AssignmentExpressionSyntax))throw new ArgumentException("Keep index assignments and Add entries in their native initializer forms.");
+        var initializer=Initializer(collection);var form=SyntaxFactory.InitializerExpression(indexed?SyntaxKind.ObjectInitializerExpression:SyntaxKind.CollectionInitializerExpression,initializer.OpenBraceToken,SyntaxFactory.SeparatedList(entries),initializer.CloseBraceToken);
+        var probeSource=tree.ReplaceNode(collection,collection.WithInitializer(form)).ToFullString();
         var probe=new BehaviorDocument(probeSource,names,schema:baseSchema,sourceFile:SourceFile);var target=probe.AllNodes.Single(n=>n.Path==parent.Path&&n.Kind=="ArgumentGroup");
         if(target.Children.Count!=entries.Length||target.Children.Any(n=>n.Kind!="InitializerEntry"||n.Descendants().Any(c=>c.Kind=="State")))throw new ArgumentException("Resolve entry-owned phases or unsupported Add contracts before clipboard import.");
         var errors=probe.SourceDiagnostics().Where(d=>d.IsError).ToArray();if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
@@ -52,7 +54,7 @@ public sealed partial class BehaviorDocument
             if(!bindings.SequenceEqual(clipboard.Symbols))throw new ArgumentException("Copied Add entries bind differently in this destination. Keep or qualify their original source context.");
         }
         var order=parent.Children.ToList();var additions=target.Children.ToArray();order.InsertRange(index,additions);
-        var inputs=additions.ToDictionary(n=>n.Id,n=>SyntaxFactory.Argument((ExpressionSyntax)CSharpSyntaxTree.ParseText(probeSource).GetRoot().DescendantNodes().OfType<InitializerExpressionSyntax>().Single(e=>e.SpanStart==n.Start&&e.Span.Length==n.Length)));
+        var probeTree=CSharpSyntaxTree.ParseText(probeSource).GetRoot();var inputs=additions.ToDictionary(n=>n.Id,n=>SyntaxFactory.Argument(NodeExpression(probeTree,n)));
         RewriteChildren(new(){[parent.Id]=order},inputs,validate);return additions.Select(n=>n.Id).ToArray();
     }
     public Guid CreateInitializerEntry(Guid prototype,IReadOnlyDictionary<string,string> scalarInputs,string childExpression,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate=null)
@@ -89,14 +91,14 @@ public sealed partial class BehaviorDocument
         if(string.IsNullOrWhiteSpace(text))text=metadata.Parameters.Single(p=>p.Name==parameter).Default is "required" or "empty array"?ownerSchema.ChildList(Expression(node),parameter,[]):metadata.Parameters.Single(p=>p.Name==parameter).Default;
         var input=SyntaxFactory.ParseExpression(text);
         if(input.ContainsDiagnostics||input.FullSpan.Length!=text.Length||!input.IsKind(SyntaxKind.NullLiteralExpression)&&ListItems(input)==null)throw new ArgumentException("Provide an explicit native collection or null default; generated lists retain source ownership.");
-        var tree=CSharpSyntaxTree.ParseText(Source).GetRoot();var entry=(InitializerExpressionSyntax)NodeExpression(tree,node);var inputs=entry.Expressions.ToList();var position=metadata.Parameters.ToList().FindIndex(p=>p.Name==parameter);
+        var tree=CSharpSyntaxTree.ParseText(Source).GetRoot();var entry=NodeExpression(tree,node);var inputs=EntryInputs(entry).ToList();var position=metadata.Parameters.ToList().FindIndex(p=>p.Name==parameter);
         while(inputs.Count<position)
         {
             var value=metadata.Parameters[inputs.Count];if(value.Default=="required")throw new ArgumentException("Cannot skip a required native Add input.");inputs.Add(SyntaxFactory.ParseExpression(value.Default));
         }
         if(container.Argument?.IsParams==true&&metadata.ArgumentNames.Any(name=>name.Split('[')[0]==parameter&&name.Contains('[')))inputs.RemoveRange(position,inputs.Count-position);
         if(inputs.Count==position)inputs.Add(input);else inputs[position]=input.WithTriviaFrom(inputs[position]);
-        var changed=tree.ReplaceNode(entry,entry.WithExpressions(SyntaxFactory.SeparatedList(inputs))).ToFullString();
+        var changed=tree.ReplaceNode(entry,WithEntryInputs(entry,inputs)).ToFullString();
         var replaced=container.Children.SelectMany(n=>n.Descendants()).Select(n=>n.Id).ToHashSet();var probe=new BehaviorDocument(changed,names,Identities.Where(n=>!replaced.Contains(n.Id)).ToList(),baseSchema,SourceFile);
         var errors=probe.SourceDiagnostics().Where(d=>d.IsError).ToArray();if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
         var actual=probe.AllNodes.SingleOrDefault(n=>n.Path==node.Path&&n.Kind=="InitializerEntry")??throw new ArgumentException("This collection expression does not preserve a supported native Add contract.");
@@ -110,7 +112,7 @@ public sealed partial class BehaviorDocument
         var node=Find(id);if(node.Kind!="InitializerEntry")throw new ArgumentException("Select a bound native Add entry.");var parent=StructuralParent(node);Editable(node);EditableContainer(parent);
         if(node.Descendants().Any(n=>n.Kind=="State"))throw new ArgumentException("Entry-owned phases need source reference reconciliation before independent duplication.");
         BehaviorNode Clone(BehaviorNode current)=>current with{Id=Guid.NewGuid(),Children=current.Children.Select(Clone).ToArray()};var cloned=Clone(node);var order=parent.Children.ToList();order.Insert(order.FindIndex(n=>n.Id==id)+1,cloned);
-        var entry=CSharpSyntaxTree.ParseText(Source).GetRoot().DescendantNodes().OfType<InitializerExpressionSyntax>().Single(e=>e.SpanStart==node.Start&&e.Span.Length==node.Length);
+        var entry=NodeExpression(CSharpSyntaxTree.ParseText(Source).GetRoot(),node);
         RewriteChildren(new(){[parent.Id]=order},new(){[cloned.Id]=SyntaxFactory.Argument(entry)},validate);return cloned.Id;
     }
 }
