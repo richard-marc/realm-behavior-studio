@@ -143,7 +143,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
         { this.serverRoot = serverRoot; this.directory = directory; this.project = project; this.bindings = bindings;this.registrations=registrations;this.definitions=definitions; Stamp = stamp; this.limits = limits; this.files = files; }
         // Reuse compilation, never executing native objects or RNG state. Every
         // scenario gets a fresh process and the same verified immutable bundle.
-        public async Task<CompiledRuntime> StartAsync(PlayerPreset? player = null, string? phase = null, CancellationToken cancellation = default)
+        public async Task<CompiledRuntime> StartAsync(PlayerPreset? player = null, string? phase = null, CancellationToken cancellation = default, int? seed = null)
         {
             cancellation.ThrowIfCancellationRequested();
             await Task.Run(() =>
@@ -154,7 +154,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
                     if (!File.Exists(path) || !File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes)) throw new InvalidOperationException("Prepared runtime files changed. Prepare the encounter again.");
                 }
             }, cancellation).ConfigureAwait(false);
-            var scenario = project with { Player = player ?? project.Player };
+            var scenario = project with { Player = player ?? project.Player, Seed = seed ?? project.Seed };
             var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
             { WorkingDirectory = directory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
             start.ArgumentList.Add(Path.Combine(directory, "Studio.RuntimeHost.dll"));
@@ -217,7 +217,19 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
                 var sample = response.Preview ?? throw new InvalidOperationException("The runtime omitted its combat preview result.");
                 if (sample.DensitySampled != request.Density || sample.PeakIncoming < 0 || !double.IsFinite(sample.MeanIncoming) || sample.MeanIncoming < 0) throw new InvalidOperationException("Invalid combat density response.");
                 if (sample.ActualMs < 0 || sample.ActualMs > request.Preview!.DurationMs || sample.ActualMs % EncounterSession.SampleMs != 0 || frame.Ms != Frame.Ms + sample.ActualMs || sample.ExposureSamples.Length != request.Preview.Columns * request.Preview.Columns || sample.ExposureSamples.Any(n => n < 0)) throw new InvalidOperationException("Invalid combat sample response.");
-                inputs = inputs.AddRange(Enumerable.Range(0, sample.ActualMs / EncounterSession.SampleMs).Select(i => new ReplayInput(Frame.Ms + i * EncounterSession.SampleMs, new(), EncounterSession.SampleMs)));
+                var elapsed = 0;
+                var captured = new List<ReplayInput>();
+                foreach (var step in request.Preview.Inputs)
+                {
+                    var duration = Math.Min(step.DurationMs, sample.ActualMs - elapsed);
+                    if (duration <= 0) break;
+                    for (var ms = 0; ms < duration; ms += EncounterSession.SampleMs)
+                        captured.Add(new(Frame.Ms + elapsed + ms, step.Input, EncounterSession.SampleMs));
+                    elapsed += duration;
+                }
+                for (; elapsed < sample.ActualMs; elapsed += EncounterSession.SampleMs)
+                    captured.Add(new(Frame.Ms + elapsed, new(), EncounterSession.SampleMs));
+                inputs = inputs.AddRange(captured);
             }
             var previousMs = currentFrame?.Ms ?? 0;
             if(frame.ArenaDelta is {} map)arena=map;

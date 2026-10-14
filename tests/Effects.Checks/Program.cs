@@ -19,7 +19,7 @@ using(var native=new EncounterSession(adapter,Doc(lanes),owner,7,new(Invulnerabl
     Check(native.Effects.All(e=>native.Shots.Any(s=>s.Ms==e.Ms&&s.OwnerId==e.TargetObjectId&&s.X==e.X&&s.Y==e.Y)),"Native warnings retain actual helper ownership, emission times and remote shot origins");
     var marks=TelegraphGeometry.Sample(native.Effects,native.Ms);Check(marks.Length>0&&marks.All(m=>m.Shape==TelegraphShape.Circle&&m.Color==0xffffff&&Math.Abs(m.Radius-.45)<.0001),"Sanctuary warning projection follows client holy-circle color and native ground radius");
     var e=0;var s=0;var p=0;var m=0;var fx=0;var cb=0;long arena=-1;var first=RuntimeProtocol.Capture(native,ref e,ref s,ref p,ref m,ref arena,ref fx,ref cb);var second=RuntimeProtocol.Capture(native,ref e,ref s,ref p,ref m,ref arena,ref fx,ref cb);
-    Check(first.EffectDelta.SequenceEqual(native.Effects)&&second.EffectDelta.Length==0&&RuntimeProtocol.Version==17,"Versioned frames transport actual effect deltas exactly once");
+    Check(first.EffectDelta.SequenceEqual(native.Effects)&&second.EffectDelta.Length==0&&RuntimeProtocol.Version==18,"Versioned frames transport actual effect deltas exactly once");
     var path=Path.GetFullPath(".artifacts/effects/literal-trace.json");Directory.CreateDirectory(Path.GetDirectoryName(path)!);native.ExportTrace(path);using var trace=JsonDocument.Parse(File.ReadAllText(path));Check(trace.RootElement.GetProperty("effects").GetArrayLength()==native.Effects.Count,"Literal trace exports every raw native effect packet");
 }
 using(var native=new EncounterSession(adapter,Doc("new State()"),owner,7,new(Invulnerable:true)))

@@ -213,6 +213,9 @@ try {
     & dotnet run --project tests/Coverage.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/coverage-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/coverage-checks.log' -Tail 25; throw 'Native attack preview checks failed.' }
     Get-Content '.artifacts/coverage-checks.log' -Tail 1
+    & dotnet run --project tests/CombatPath.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/combat-path-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/combat-path-checks.log' -Tail 25; throw 'Moving/firing scenario checks failed.' }
+    Get-Content '.artifacts/combat-path-checks.log' -Tail 1
     & dotnet run --project tests/Fragment.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/fragment-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/fragment-checks.log' -Tail 25; throw 'Reusable fragment checks failed.' }
     Get-Content '.artifacts/fragment-checks.log' -Tail 1

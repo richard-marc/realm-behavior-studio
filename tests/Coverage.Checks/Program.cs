@@ -37,7 +37,7 @@ Check(near.Sample is { HealthLoss: > 0, ActualMs: 3000 } && offLine.Sample is { 
 Check(far.Sample?.HealthLoss > 0 && report.Reference.ExposureSamples[5] == 0, "Area damage reruns targeting and collision at each point instead of treating the reference player's consumed projectile as safety elsewhere");
 Check(report.Points.All(p => p.Sample != null && p.Sample.StartX == p.X && p.Sample.StartY == p.Y && !p.Sample.PlayerMoved) && report.SourceSha256.Length == 64 && report.ResourceHash.Length == 64 && report.Runtime == "Native constructors", "Native reports retain actual starts, stationary input, source/resource fingerprints and execution path");
 var repeated = await CombatPreview.RunAsync(adapter, project, options: options);
-Check(report.Reference == repeated.Reference with { ExposureSamples = report.Reference.ExposureSamples } && report.Points.Select(p => p.Sample!.HealthLoss).SequenceEqual(repeated.Points.Select(p => p.Sample!.HealthLoss)), "Native area damage and density repeat the same seed and inputs");
+Check(JsonSerializer.Serialize(report.Reference) == JsonSerializer.Serialize(repeated.Reference) && report.Points.Select(p => p.Sample!.HealthLoss).SequenceEqual(repeated.Points.Select(p => p.Sample!.HealthLoss)), "Native area damage and density repeat the same seed and inputs");
 using (var defended = new EncounterSession(adapter, document, project.EntityId, 7, new(StartX: 68.5)))
 {
     var sample = NativeCombatSampling.Run(defended, options, true);
