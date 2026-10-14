@@ -126,6 +126,7 @@ public partial class MainWindow
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
         if(kind=="Charge")return "";
+        if(kind is "ConvergingSnare" or "EchoSnare"&&parameter.Name=="projectileIndex")return adapter.SnareProjectiles(selectedEntity!.Id,kind=="EchoSnare"?5.5:6).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";
         if(kind is "ClockSweep" or "CorridorPulse" or "OrientationEcho"&&parameter.Name=="sweep")return adapter.SweepGeometrySeed(selectedEntity!.Id)??"";
         if(kind=="CorridorPulse"&&parameter.Name=="projectileIndex")return EnemyProjectiles.ForEntity(selectedEntity!.Id).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";
         if(kind=="EdgeCrossCut"&&parameter.Name=="projectileIndex")return EnemyProjectiles.ForEntity(selectedEntity!.Id).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";

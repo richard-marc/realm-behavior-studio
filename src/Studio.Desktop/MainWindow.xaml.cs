@@ -89,7 +89,7 @@ public partial class MainWindow : Window
         Status.Text = $"Ready · cold runtime initialization {cold.StartMs:0} ms";
         autosaveTimer.Start();
         Status.Text = $"{catalog.Count} source entities · {adapter.Primitives.Count} runtime constructors · all editing works offline";
-        if (arguments.Contains("--smoke")) Dispatcher.BeginInvoke(new Action(()=>{if(arguments.Contains("--replacement-smoke"))ReplacementSmoke();else if(arguments.Contains("--transformation-smoke"))TransformationSmoke();else if(arguments.Contains("--reference-clone-smoke"))ReferenceCloneSmoke();else if(arguments.Contains("--definition-clone-smoke"))DefinitionCloneSmoke();else if(arguments.Contains("--sweep-geometry-smoke"))SweepGeometrySmoke();else if(arguments.Contains("--crosscut-smoke"))CrossCutSmoke();else if(arguments.Contains("--group-smoke"))GroupSmoke();else if(arguments.Contains("--completion-smoke"))CompletionSmoke();else if(arguments.Contains("--hazard-smoke"))HazardSmoke();else if(arguments.Contains("--bounded-follow-smoke"))BoundedFollowSmoke();else if(arguments.Contains("--movement-family-smoke"))MovementFamilySmoke();else if(arguments.Contains("--definition-removal-smoke"))DefinitionRemovalSmoke();else if(arguments.Contains("--ring-pattern-smoke"))RingPatternSmoke();else if(arguments.Contains("--cycle-smoke"))CycleSmoke();else if(arguments.Contains("--viewport-editors-smoke"))ViewportEditorsSmoke();else if(arguments.Contains("--sequential-sweep-smoke"))SequentialSweepSmoke();else if(arguments.Contains("--shared-entry-smoke"))SharedEntrySmoke();else if(arguments.Contains("--keyed-initializer-smoke"))KeyedInitializerSmoke();else if(arguments.Contains("--member-initializer-smoke"))MemberInitializerSmoke();else if(arguments.Contains("--selection-extraction-smoke"))SelectionExtractionSmoke();else if(arguments.Contains("--scoped-extraction-smoke"))ScopedExtractionSmoke();else if(arguments.Contains("--collection-extraction-smoke"))CollectionExtractionSmoke();else if(arguments.Contains("--extraction-smoke"))ExtractionSmoke();else if(arguments.Contains("--workspace-copy-smoke"))WorkspaceCopySmoke();else if(arguments.Contains("--workspace-group-smoke"))WorkspaceGroupSmoke();else if(arguments.Contains("--workspace-delete-smoke"))WorkspaceDeleteSmoke();else if(arguments.Contains("--single-source-phase-smoke"))SingleSourcePhaseSmoke();else if(arguments.Contains("--workspace-phase-smoke"))WorkspacePhaseSmoke();else if(arguments.Contains("--external-definition-smoke"))ExternalDefinitionSmoke();else if(arguments.Contains("--source-set-smoke"))SourceSetSmoke();else Smoke();}), DispatcherPriority.ApplicationIdle);
+        if (arguments.Contains("--smoke")) Dispatcher.BeginInvoke(new Action(()=>{if(arguments.Contains("--replacement-smoke"))ReplacementSmoke();else if(arguments.Contains("--transformation-smoke"))TransformationSmoke();else if(arguments.Contains("--reference-clone-smoke"))ReferenceCloneSmoke();else if(arguments.Contains("--definition-clone-smoke"))DefinitionCloneSmoke();else if(arguments.Contains("--snare-smoke"))SnareSmoke();else if(arguments.Contains("--sweep-geometry-smoke"))SweepGeometrySmoke();else if(arguments.Contains("--crosscut-smoke"))CrossCutSmoke();else if(arguments.Contains("--group-smoke"))GroupSmoke();else if(arguments.Contains("--completion-smoke"))CompletionSmoke();else if(arguments.Contains("--hazard-smoke"))HazardSmoke();else if(arguments.Contains("--bounded-follow-smoke"))BoundedFollowSmoke();else if(arguments.Contains("--movement-family-smoke"))MovementFamilySmoke();else if(arguments.Contains("--definition-removal-smoke"))DefinitionRemovalSmoke();else if(arguments.Contains("--ring-pattern-smoke"))RingPatternSmoke();else if(arguments.Contains("--cycle-smoke"))CycleSmoke();else if(arguments.Contains("--viewport-editors-smoke"))ViewportEditorsSmoke();else if(arguments.Contains("--sequential-sweep-smoke"))SequentialSweepSmoke();else if(arguments.Contains("--shared-entry-smoke"))SharedEntrySmoke();else if(arguments.Contains("--keyed-initializer-smoke"))KeyedInitializerSmoke();else if(arguments.Contains("--member-initializer-smoke"))MemberInitializerSmoke();else if(arguments.Contains("--selection-extraction-smoke"))SelectionExtractionSmoke();else if(arguments.Contains("--scoped-extraction-smoke"))ScopedExtractionSmoke();else if(arguments.Contains("--collection-extraction-smoke"))CollectionExtractionSmoke();else if(arguments.Contains("--extraction-smoke"))ExtractionSmoke();else if(arguments.Contains("--workspace-copy-smoke"))WorkspaceCopySmoke();else if(arguments.Contains("--workspace-group-smoke"))WorkspaceGroupSmoke();else if(arguments.Contains("--workspace-delete-smoke"))WorkspaceDeleteSmoke();else if(arguments.Contains("--single-source-phase-smoke"))SingleSourcePhaseSmoke();else if(arguments.Contains("--workspace-phase-smoke"))WorkspacePhaseSmoke();else if(arguments.Contains("--external-definition-smoke"))ExternalDefinitionSmoke();else if(arguments.Contains("--source-set-smoke"))SourceSetSmoke();else Smoke();}), DispatcherPriority.ApplicationIdle);
     }
     void Try(Action action)
     {
@@ -107,9 +107,20 @@ public partial class MainWindow : Window
         selectedWeaponId, int.Parse(PlayerAttack.Text), int.Parse(PlayerDexterity.Text), double.Parse(PlayerStartX.Text, System.Globalization.CultureInfo.InvariantCulture), double.Parse(PlayerStartY.Text, System.Globalization.CultureInfo.InvariantCulture));
     void SearchChanged(object sender, TextChangedEventArgs e) { if (adapter != null) { var results = catalog.Where(e => e.Id.Contains(Search.Text, StringComparison.OrdinalIgnoreCase)).ToArray(); Library.ItemsSource = results; LibraryCount.Text = results.Length + " entities"; } }
     void PrimitiveSearchChanged(object sender, TextChangedEventArgs e) { if (adapter != null) Primitives.ItemsSource = adapter.Primitives.Where(p => p.Name.Contains(PrimitiveSearch.Text, StringComparison.OrdinalIgnoreCase)).ToArray(); }
+    bool synchronizingLibrary;
+    void SynchronizeLibrarySelection(CatalogEntry entry)
+    {
+        synchronizingLibrary=true;
+        try
+        {
+            if(Library.ItemsSource is not IEnumerable<CatalogEntry> visible||!visible.Any(c=>c.Id==entry.Id))Search.Text="";
+            Library.SelectedItem=entry;Library.ScrollIntoView(entry);
+        }
+        finally{synchronizingLibrary=false;}
+    }
     void EntitySelected(object sender, SelectionChangedEventArgs e)
     {
-        if (Library.SelectedItem is not CatalogEntry entry) return;
+        if (synchronizingLibrary||Library.SelectedItem is not CatalogEntry entry) return;
         Try(() =>
         {
             if (selectedEntity != null && document != null && !arguments.Contains("--smoke")) BehaviorDocument.Save(RecoveryPath(), Snapshot());
@@ -214,6 +225,7 @@ public partial class MainWindow : Window
             AddRingPatternControls(selectedNode);
             AddCrossCutControls(selectedNode);
             AddSweepGeometryControls(selectedNode);
+            AddSnareControls(selectedNode);
             AddHazardControls(selectedNode);
             AddCompletionControls(selectedNode);
             AddEntityControls(selectedNode);
@@ -226,7 +238,7 @@ public partial class MainWindow : Window
             AddDefinitionRemovalControls(selectedNode);
             AddLifecycleControls(selectedNode);
             var inputs = new List<(Parameter Parameter, TextBox Input)>();
-            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State" && (p.Name != "orbitClockwise" || movementDirection == null) && (p.Name!="axes"||ownedLaneAxes==null||adapter.ReadLaneAxis(document,selectedNode)==null) && (p.Name.Split('[')[0]!="states"||phaseChoiceRows==null)))
+            foreach (var parameter in selectedNode.Parameters.Where(p => selectedNode.Kind != "State" && !SnareOptionVisible(p.Name) && (p.Name != "orbitClockwise" || movementDirection == null) && (p.Name!="axes"||ownedLaneAxes==null||adapter.ReadLaneAxis(document,selectedNode)==null) && (p.Name.Split('[')[0]!="states"||phaseChoiceRows==null)))
             {
                 var meta = adapter.ParameterFor(document, selectedNode, parameter);
                 Inspector.Children.Add(new TextBlock { Text = parameter.Name + (string.IsNullOrEmpty(meta?.Unit) ? "" : " · " + meta.Unit), Margin = new(0, 10, 0, 0) });
@@ -235,7 +247,7 @@ public partial class MainWindow : Window
             if (primitive != null || selectedNode.Kind == "Factory")
             {
                 var optional = new StackPanel();
-                foreach (var meta in adapter.ParametersFor(document, selectedNode).Where(p => p.Default != "required" && !p.Type.EndsWith("[]") && (p.Name != "orbitClockwise" || movementDirection == null) && selectedNode.Parameters.All(a => a.Name != p.Name)))
+                foreach (var meta in adapter.ParametersFor(document, selectedNode).Where(p => p.Default != "required" && !SnareOptionVisible(p.Name) && !p.Type.EndsWith("[]") && (p.Name != "orbitClockwise" || movementDirection == null) && selectedNode.Parameters.All(a => a.Name != p.Name)))
                 {
                     optional.Children.Add(new TextBlock { Text = meta.Name + " · " + meta.Unit, Margin = new(0, 8, 0, 0) });
                     var input = new TextBox { ToolTip = meta.Explanation }; inputs.Add((new(meta.Name, "", 0, 0), input)); optional.Children.Add(input);
@@ -353,7 +365,7 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() != true) return;
         var d = new BehaviorDocument(File.ReadAllText(dialog.FileName), adapter, sourceFile: dialog.FileName); var id = d.Entities.FirstOrDefault()?.EntityId ?? throw new ArgumentException("No .Init entity definition found.");
         var known = catalog.FirstOrDefault(c => c.Id == id) ?? throw new ArgumentException("This entity has no resource definition in the supplied server.");
-        encounterDocument=null;selectedEntity = known with { SourceFile = dialog.FileName }; document = d; documents[dialog.FileName] = d; projectPath = null; Changed();
+        encounterDocument=null;selectedEntity = known with { SourceFile = dialog.FileName }; document = d; documents[dialog.FileName] = d; projectPath = null;SynchronizeLibrarySelection(known); Changed();
     });
     void SaveProject(object sender, RoutedEventArgs e) => Try(() =>
     {
@@ -389,7 +401,7 @@ public partial class MainWindow : Window
         selectedWeaponId = p.Player.WeaponId; WeaponSearch.Text = ""; Weapons.ItemsSource = weaponCatalog; Weapons.SelectedItem = weaponCatalog.FirstOrDefault(w => w.Id == selectedWeaponId);
         if (Weapons.SelectedItem == null) WeaponInfo.Text = "Missing weapon XML: " + selectedWeaponId;
         CollapsedNodes.UnionWith(p.CollapsedNodes.Where(id => d.Identities.Any(n => n.Id == id)));
-        Changed(); RestoreLayout(p.Layout);
+        SynchronizeLibrarySelection(known);Changed(); RestoreLayout(p.Layout);
         if(p.SelectedSourceFile!=null)SourceFiles.SelectedItem=((SourceFileChoice[])SourceFiles.ItemsSource).Single(s=>s.Path.Equals(p.SelectedSourceFile,StringComparison.OrdinalIgnoreCase));
     }
     async void Export(object sender, RoutedEventArgs e) => await TryRuntime(async () =>

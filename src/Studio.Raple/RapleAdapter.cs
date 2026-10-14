@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho"];
+        "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -76,7 +76,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name == "State" ? "Phases" :
                 t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,22 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "projectileIndex" when kind is "ConvergingSnare" or "EchoSnare"=>"Owned straight constant-speed XML projectile. Its lifetime must reach the ring anchor; radius / (XML speed / 10000) gives travel time in milliseconds.",
+        "radius" when kind is "ConvergingSnare" or "EchoSnare"=>"Ring radius in tiles. Each visible, passable origin fires inward. Target/clamped anchor distance plus radius must fit the native 14-tile envelope.",
+        "count" when kind is "ConvergingSnare" or "EchoSnare"=>"Three to thirty-two evenly spaced slots. Each surviving origin emits one independent shot; gapSlots removes a contiguous run.",
+        "gapSlots" when kind is "ConvergingSnare" or "EchoSnare"=>"Zero to count minus two omitted slots centered on the gap. Even gap counts offset the ring by half a slot. This is an opening in emitted rays, not a guaranteed safe area.",
+        "anchor" when kind=="ConvergingSnare"=>"Target clamps the current target to targetRange. Host follows the actor's live position; Spawn uses its original spawn position.",
+        "gap" when kind=="ConvergingSnare"=>"AwayFromHost or TowardHost use the anchor bearing when at least 0.5 tiles apart. Fixed uses gapAngle. Rotating adds gapStep per unstunned attempt, including empty attempts.",
+        "gapAngle" when kind is "ConvergingSnare" or "EchoSnare"=>"Degrees. Converging uses this for Fixed, the first Rotating opening or an undefined host bearing. Echo uses it only when both travel and host bearing are too small.",
+        "gapStep" when kind=="ConvergingSnare"=>"Degrees added per unstunned Rotating attempt, including attempts without a target or emitted ray. Other opening modes ignore this value.",
+        "markerRadius" when kind=="ConvergingSnare"=>"Nonnegative radius of the native SanctuaryWarning visual cue at the meeting point. It does not change projectile collision or the inward ring radius.",
+        "targetRange" or "clampRange" when kind is "ConvergingSnare" or "EchoSnare"=>"Maximum anchor distance toward the target or its recorded past position. Combined with ring radius it must fit within 14 tiles.",
+        "acquireRange" when kind is "ConvergingSnare" or "EchoSnare"=>"At least the anchor clamp range. Native target selection and world presence determine emission. Echo requires observed history rather than inventing a past position.",
+        "lagMs" when kind=="EchoSnare"=>"At least 100 ms of player history. Native per-actor tracks interpolate recorded samples. Exit/death/removal releases history; projectile clears clear marks but retain tracks.",
+        "telegraph" when kind=="ConvergingSnare"=>"Native SanctuaryWarning at the meeting point for the XML travel time. The marker radius is a visual cue rather than a hitbox.",
+        "markRadius" or "markColor" when kind=="EchoSnare"=>"Native clearable LedgerMark ring at the history anchor. Radius is positive; color is a C# uint ARGB value. Native cleanup clears owned marks.",
+        "intervalMs" when kind is "ConvergingSnare" or "EchoSnare"=>"At least 100 ms between attempts. One attempt per native tick; stunned attempts consume the interval without advancing the volley sequence. Echo still observes history while stunned.",
+        "startupMs" when kind is "ConvergingSnare" or "EchoSnare"=>"Nonnegative age from state entry before the first attempt, rounded up by 100 ms native ticks. Echo also needs enough recorded history to satisfy lagMs.",
         "sweep" when kind is "ClockSweep" or "CorridorPulse" or "OrientationEcho"=>"Shared native BossSweepGeometry constructor. Compatible XML bands supply the radius, angular rate and lifetime. Edit arms, opening angle and timing in Shared sweep geometry.",
         "delayMs" when kind=="OrientationEcho"=>"Positive history delay in milliseconds. Echoes use the sweep heading at age minus delay, with stationary XML bands. Projectile clears suppress history from before the clear.",
         "projectileIndexes" when kind=="OrientationEcho"=>"Distinct stationary radial XML indexes in band order, with the same count, radii and lifetime as the shared sweep. Their angular rate must be zero.",
@@ -191,6 +207,10 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "ConvergingSnare" or "EchoSnare" when name is "intervalMs" or "startupMs" or "lagMs"=>"ms",
+        "ConvergingSnare" or "EchoSnare" when name=="projectileIndex"=>"XML index",
+        "ConvergingSnare" or "EchoSnare" when name is "radius" or "targetRange" or "clampRange" or "acquireRange" or "markerRadius" or "markRadius"=>"tiles",
+        "ConvergingSnare" or "EchoSnare" when name is "gapAngle" or "gapStep"=>"degrees",
         "CorridorPulse" or "OrientationEcho" when name is "intervalMs" or "startupMs" or "delayMs"=>"ms",
         "CorridorPulse" when name=="projectileIndex"=>"XML index",
         "OrientationEcho" when name=="projectileIndexes"=>"XML indexes",
@@ -264,6 +284,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateNativeGroups(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateCrossCuts(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSweepControllers(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateSnares(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

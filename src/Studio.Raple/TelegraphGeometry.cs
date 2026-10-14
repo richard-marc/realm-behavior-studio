@@ -46,7 +46,8 @@ public static class TelegraphGeometry
                 case 22:
                     var style=(int)e.Y2;style=style is >=0 and <=2?style:0;
                     var radiusFactor=style==1?251/256d:59/64d;
-                    marks.Add(new(e.X,e.Y,Math.Clamp(e.X2,.1,16)*radiusFactor,fuse,e.Color&0xffffff,style==0?TelegraphShape.Diamond:style==1?TelegraphShape.Boundary:TelegraphShape.Circle));break;
+                    var ledgerFuse=Math.Round(progress*24,MidpointRounding.AwayFromZero)/24;
+                    marks.Add(new(e.X,e.Y,Math.Clamp(e.X2,.1,16)*radiusFactor,ledgerFuse,e.Color&0xffffff,style==0?TelegraphShape.Diamond:style==1?TelegraphShape.Boundary:TelegraphShape.Circle));break;
             }
         }
         return marks.ToArray();

@@ -28,7 +28,8 @@ public partial class MainWindow
         }
         var choices = EnemyProjectiles.ForEntity(selectedEntity.Id);
         if(adapter.IsDelayedHazard(document,node))choices=choices.Where(p=>adapter.HazardProjectiles(selectedEntity.Id).Any(h=>h.Index==p.Index)).ToArray();
-        var emptyMessage=adapter.IsDelayedHazard(document,node)?"This enemy has no compatible dormant hazard projectiles.":"This enemy has no XML projectiles.";
+        if(adapter.IsSnare(document,node))choices=choices.Where(p=>adapter.SnareProjectiles(selectedEntity.Id,adapter.ReadSnareRadius(document,node)??1).Any(s=>s.Index==p.Index)).ToArray();
+        var emptyMessage=adapter.IsSnare(document,node)?"This enemy has no compatible straight XML projectiles for this radius.":adapter.IsDelayedHazard(document,node)?"This enemy has no compatible dormant hazard projectiles.":"This enemy has no XML projectiles.";
         var index = adapter.ReadProjectileIndex(document, node); var revision = document.Revision;
         var panel = new StackPanel();
         projectileSearch = new TextBox { Tag = "Search projectiles", ToolTip = "Search projectile names, effects or values", Margin = new(0, 8, 0, 6) }; panel.Children.Add(projectileSearch);
