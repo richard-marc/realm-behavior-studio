@@ -157,19 +157,20 @@ public sealed partial class BehaviorDocument
                 {
                     var inputs=entry.Expressions;var entryParameters=new List<Parameter>();var values=new List<BehaviorNode>();
                     for(var i=0;i<inputs.Count;i++)
-                        if(scoped!.IsChildArgument(c.ToString(),i))
+                        if(!scoped!.IsChildArgument(c.ToString(),i))entryParameters.Add(new(description.ArgumentNames[i],inputs[i].ToString(),inputs[i].SpanStart,inputs[i].Span.Length));
+                    foreach(var slot in description.Children)
+                    {
+                        var inputIndex=Array.IndexOf(description.ArgumentNames,slot.Name);
+                        var input=inputIndex<0?null:inputs[inputIndex];var childPath=path+"/"+values.Count;
+                        if(description.Children.Count==1&&slot.Minimum>0)values.Add(Read(input!,childPath));
+                        else
                         {
-                            var childPath=path+"/"+values.Count;
-                            if(description.Children.Count==1)values.Add(Read(inputs[i],childPath));
-                            else
-                            {
-                                var slot=description.Children.Single(s=>s.Name==description.ArgumentNames[i]);
-                                var oldSlot=identities.FirstOrDefault(n=>n.Kind=="ArgumentGroup"&&n.Path==childPath&&!usedIdentities.Contains(n.Id)&&n.Signature?.StartsWith("$slot:"+slot.Name+"|",StringComparison.Ordinal)==true);
-                                if(oldSlot!=null)usedIdentities.Add(oldSlot.Id);
-                                values.Add(new(oldSlot?.Id??Guid.NewGuid(),childPath,"ArgumentGroup",slot.Name+" · 1",entry.SpanStart,entry.Span.Length,[],[Read(inputs[i],childPath+"/0")]){Argument=slot,ArgumentFromCall=true});
-                            }
+                            var oldSlot=identities.FirstOrDefault(n=>n.Kind=="ArgumentGroup"&&n.Path==childPath&&!usedIdentities.Contains(n.Id)&&n.Signature?.StartsWith("$slot:"+slot.Name+"|",StringComparison.Ordinal)==true);
+                            if(oldSlot!=null)usedIdentities.Add(oldSlot.Id);
+                            var elements=input==null||slot.Minimum==0&&input.IsKind(SyntaxKind.NullLiteralExpression)?Array.Empty<BehaviorNode>():[Read(input,childPath+"/0")];
+                            values.Add(new(oldSlot?.Id??Guid.NewGuid(),childPath,"ArgumentGroup",slot.Name+" \u00b7 "+elements.Length,entry.SpanStart,entry.Span.Length,[],elements){Argument=slot,ArgumentFromCall=true});
                         }
-                        else entryParameters.Add(new(description.ArgumentNames[i],inputs[i].ToString(),inputs[i].SpanStart,inputs[i].Span.Length));
+                    }
                     var oldEntry=identities.FirstOrDefault(n=>n.Kind=="InitializerEntry"&&n.Signature==entry.ToString()&&!usedIdentities.Contains(n.Id)&&n.Path.StartsWith(entityId+"/",StringComparison.Ordinal))??identities.FirstOrDefault(n=>n.Kind=="InitializerEntry"&&n.Path==path&&!usedIdentities.Contains(n.Id));if(oldEntry!=null)usedIdentities.Add(oldEntry.Id);
                     return new(oldEntry?.Id??Guid.NewGuid(),path,"InitializerEntry",description.Label,entry.SpanStart,entry.Span.Length,entryParameters,values);
                 }

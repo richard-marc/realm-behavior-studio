@@ -18,9 +18,9 @@ public partial class MainWindow
         var slots=document.SchemaAt(node)!.ChildArguments(document.Expression(node));
         foreach(var slot in slots)
         {
-            var child=slots.Count==1?node.Children.Single():node.Children.Single(n=>n.Argument?.Name==slot.Name).Children.Single();
-            form.Children.Add(new TextBlock{Text=slot.Name+" · "+slot.ElementType,Margin=new(0,8,0,4)});
-            var input=new TextBox{Text=document.Expression(child),TextWrapping=System.Windows.TextWrapping.Wrap,AcceptsReturn=true};entryCreationChildren[slot.Name]=input;form.Children.Add(input);
+            var container=node.Children.FirstOrDefault(n=>n.Argument?.Name==slot.Name)??node;var child=container.Children.SingleOrDefault();
+            form.Children.Add(new TextBlock{Text=slot.Name+" · "+slot.ElementType+(slot.Minimum==0?" (optional)":""),Margin=new(0,8,0,4)});
+            var input=new TextBox{Text=child==null?"":document.Expression(child),ToolTip=slot.Minimum==0?"Leave blank to use the native default.":"Required native expression.",TextWrapping=System.Windows.TextWrapping.Wrap,AcceptsReturn=true};entryCreationChildren[slot.Name]=input;form.Children.Add(input);
         }
         entryCreationChild=entryCreationChildren.Values.First();
         entryCreationButton=new Button{Content="Create entry",Margin=new(0,8,0,0),IsEnabled=RegionEditable(node)};entryCreationButton.Click+=(_,_)=>Try(()=>

@@ -138,6 +138,12 @@ public sealed partial class BehaviorDocument
         }
         foreach (var entity in AllRoots) Walk(entity.Root, entity.EntityId + "/root");
         var probe = new BehaviorDocument(changed, names, schema: baseSchema, sourceFile: SourceFile);
+        foreach(var entry in orders.Keys.Select(id=>ChildOwner(Find(id))).Where(n=>n.Kind=="InitializerEntry").DistinctBy(n=>n.Id))
+        {
+            var actual=probe.AllNodes.SingleOrDefault(n=>n.Path==entry.Path&&n.Kind=="InitializerEntry");
+            string? AddBinding(BehaviorDocument document,BehaviorNode node)=>document.SchemaAt(node)!.ClipboardSymbols(document.Expression(node)).FirstOrDefault(s=>s.Start==0&&s.Length==node.Length)?.Signature;
+            if(actual==null||AddBinding(this,entry)!=AddBinding(probe,actual))throw new ArgumentException("This child edit changes the selected native Add overload. Keep its original source binding.");
+        }
         var definitionPaths=probe.Definitions.Select(d=>d.EntityId+"/root").ToArray();
         var ids = probe.Identities.Select(identity => identity with { Id = layout.TryGetValue(identity.Path,out var existing)?existing:
             definitionPaths.Any(path=>identity.Path==path||identity.Path.StartsWith(path+"/",StringComparison.Ordinal))?identity.Id:

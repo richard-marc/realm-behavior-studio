@@ -78,6 +78,9 @@ try {
     & dotnet run --project tests/MemberInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/member-initializer-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/member-initializer-checks.log' -Tail 25; throw 'Native State member initializer checks failed.' }
     Get-Content '.artifacts/member-initializer-checks.log' -Tail 1
+    & dotnet run --project tests/OptionalInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/optional-initializer-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/optional-initializer-checks.log' -Tail 25; throw 'Native optional Add initializer checks failed.' }
+    Get-Content '.artifacts/optional-initializer-checks.log' -Tail 1
     & dotnet run --project tests/KeyedInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/keyed-initializer-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/keyed-initializer-checks.log' -Tail 25; throw 'Native keyed Add initializer checks failed.' }
     Get-Content '.artifacts/keyed-initializer-checks.log' -Tail 1

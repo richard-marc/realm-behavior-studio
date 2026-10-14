@@ -40,11 +40,16 @@ public sealed partial class BehaviorDocument
         var prepared=new BehaviorDocument(Source,names,Identities,baseSchema,SourceFile);prepared.LockedNodes.UnionWith(LockedNodes);
         var created=prepared.DuplicateInitializerEntry(prototype);prepared.Apply(new(prepared.Revision,"Set new Add inputs",scalarInputs.Select(p=>new EditOperation(created,p.Key,p.Value)).ToArray()));
         var slots=prepared.SchemaAt(prepared.Find(created))!.ChildArguments(prepared.Expression(prepared.Find(created)));
-        if(childInputs.Count!=slots.Count||slots.Any(s=>!childInputs.ContainsKey(s.Name)))throw new ArgumentException("Provide every required behavior input of this Add overload.");
+        if(childInputs.Keys.Any(k=>slots.All(s=>s.Name!=k))||slots.Any(s=>s.Minimum>0&&!childInputs.ContainsKey(s.Name)))throw new ArgumentException("Provide every required behavior input of this Add overload.");
         foreach(var slot in slots)
         {
-            var node=prepared.Find(created);var container=slots.Count==1?node:node.Children.Single(n=>n.Argument?.Name==slot.Name);
-            prepared.ReplaceChild(container.Id,childInputs[slot.Name]);
+            var node=prepared.Find(created);var container=node.Children.FirstOrDefault(n=>n.Argument?.Name==slot.Name)??node;
+            var expression=childInputs.GetValueOrDefault(slot.Name,"");
+            if(string.IsNullOrWhiteSpace(expression)&&slot.Minimum==0)
+            {
+                if(container.Children.Count>0)prepared.DeleteNode(container.Children.Single().Id);
+            }
+            else prepared.ReplaceChild(container.Id,expression);
         }
         var errors=prepared.SourceDiagnostics().Concat(validate?.Invoke(prepared)??[]).Where(d=>d.IsError).ToArray();
         if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
