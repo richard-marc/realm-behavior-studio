@@ -6,6 +6,14 @@ using Studio.Core;
 namespace Studio.Raple;
 internal sealed partial class SourceBehaviorSchema
 {
+    static IMethodSymbol? EntryMethod(SemanticModel model,InitializerExpressionSyntax entry)
+    {
+        if(model.GetCollectionInitializerSymbolInfo(entry).Symbol is not IMethodSymbol method)return null;
+        if(!method.IsExtensionMethod||method.ReducedFrom!=null)return method;
+        var collection=entry.Ancestors().OfType<BaseObjectCreationExpressionSyntax>().FirstOrDefault();
+        return collection==null?null:ModelType(model,collection) is{} type?method.ReduceExtensionMethod(type):null;
+    }
+    static ITypeSymbol? ModelType(SemanticModel model,ExpressionSyntax expression)=>model.GetTypeInfo(expression).Type??model.GetTypeInfo(expression).ConvertedType;
     static string EntrySignature(IMethodSymbol method)=>ClipboardScope(method)+"|"+method.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
     (IMethodSymbol Method,SourceExpression Metadata)? ProbeEntry(BaseObjectCreationExpressionSyntax collection,string text)
     {
@@ -14,7 +22,7 @@ internal sealed partial class SourceBehaviorSchema
         var initializer=collection.Initializer??SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression);
         var annotation=new SyntaxAnnotation();var replacement=collection.WithInitializer(SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression,initializer.OpenBraceToken,SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(entry.WithAdditionalAnnotations(annotation)),initializer.CloseBraceToken));
         var tree=Model.SyntaxTree.WithRootAndOptions(Model.SyntaxTree.GetRoot().ReplaceNode(collection,replacement),Model.SyntaxTree.Options);var compiler=context.Binding.Value.Compilation.ReplaceSyntaxTree(Model.SyntaxTree,tree);var model=compiler.GetSemanticModel(tree);var actual=(InitializerExpressionSyntax)tree.GetRoot().GetAnnotatedNodes(annotation).Single();
-        if(model.GetCollectionInitializerSymbolInfo(actual).Symbol is not IMethodSymbol add||model.GetDiagnostics(actual.Span).Any(d=>d.Severity==DiagnosticSeverity.Error))return null;
+        if(EntryMethod(model,actual) is not IMethodSymbol add||model.GetDiagnostics(actual.Span).Any(d=>d.Severity==DiagnosticSeverity.Error))return null;
         var metadata=new SourceBehaviorSchema(adapter,compiler,tree.FilePath).DescribeEntry(actual);
         return metadata==null?null:(add,metadata);
     }
@@ -23,7 +31,7 @@ internal sealed partial class SourceBehaviorSchema
     {
         if(Expression(text) is not BaseObjectCreationExpressionSyntax collection||collection.Initializer?.Expressions.Any(e=>e is AssignmentExpressionSyntax)==true||Model.GetTypeInfo(collection).Type is not INamedTypeSymbol type||!Collection(type)||!Child(Element(type)))return [];
         var result=new List<InitializerEntryOverload>();
-        foreach(var method in Model.LookupSymbols(collection.SpanStart,type,"Add").OfType<IMethodSymbol>().Where(m=>!m.IsStatic&&!m.IsGenericMethod&&m.Parameters.Length>0&&!m.Parameters.Any(p=>p.RefKind!=RefKind.None)&&m.Parameters.Any(p=>Child(Element(p.Type)))))
+        foreach(var method in Model.LookupSymbols(collection.SpanStart,type,"Add",includeReducedExtensionMethods:true).OfType<IMethodSymbol>().Where(m=>!m.IsStatic&&(!m.IsGenericMethod||m.TypeArguments.All(t=>t.TypeKind!=TypeKind.TypeParameter))&&m.Parameters.Length>0&&!m.Parameters.Any(p=>p.RefKind!=RefKind.None)&&m.Parameters.Any(p=>Child(Element(p.Type)))))
         {
             var seeds=method.Parameters.ToDictionary(p=>p.Name,p=>p.IsParams&&p.Type is IArrayTypeSymbol array?"new "+array.ElementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)+"[] { }":p.HasExplicitDefaultValue?"("+p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)+")("+(Default(p)=="default"?"default("+p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)+")":Default(p))+")":"default("+p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)+")");
             var entry="{"+string.Join(", ",method.Parameters.Select(p=>seeds[p.Name]))+"}";
@@ -40,11 +48,11 @@ internal sealed partial class SourceBehaviorSchema
         var initializer=collection.Initializer??SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression);
         var annotation=new SyntaxAnnotation();var replacement=collection.WithInitializer(SyntaxFactory.InitializerExpression(SyntaxKind.CollectionInitializerExpression,initializer.OpenBraceToken,SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(entry.WithAdditionalAnnotations(annotation)),initializer.CloseBraceToken));
         var tree=Model.SyntaxTree.WithRootAndOptions(Model.SyntaxTree.GetRoot().ReplaceNode(collection,replacement),Model.SyntaxTree.Options);var compiler=context.Binding.Value.Compilation.ReplaceSyntaxTree(Model.SyntaxTree,tree);var model=compiler.GetSemanticModel(tree);var actual=(InitializerExpressionSyntax)tree.GetRoot().GetAnnotatedNodes(annotation).Single();
-        return model.GetCollectionInitializerSymbolInfo(actual).Symbol is IMethodSymbol add&&add.Parameters.Any(p=>Child(Element(p.Type)))&&!add.Parameters.Any(p=>p.IsParams&&!Child(Element(p.Type)))&&!model.GetDiagnostics(actual.Span).Any(d=>d.Severity==DiagnosticSeverity.Error);
+        return EntryMethod(model,actual) is IMethodSymbol add&&add.Parameters.Any(p=>Child(Element(p.Type)))&&!add.Parameters.Any(p=>p.IsParams&&!Child(Element(p.Type)))&&!model.GetDiagnostics(actual.Span).Any(d=>d.Severity==DiagnosticSeverity.Error);
     }
     SourceExpression? DescribeEntry(InitializerExpressionSyntax entry)
     {
-        if(Model.GetCollectionInitializerSymbolInfo(entry).Symbol is not IMethodSymbol method)return null;
+        if(EntryMethod(Model,entry) is not IMethodSymbol method)return null;
         var children=method.Parameters.Where(p=>Child(Element(p.Type))).ToArray();
         if(children.Length==0||method.Parameters.Any(p=>p.IsParams&&!Child(Element(p.Type)))||entry.Expressions.Count>method.Parameters.Length&&!method.Parameters.Last().IsParams)return null;
         if(children.Any(p=>!p.IsOptional&&!p.IsParams&&p.Ordinal>=entry.Expressions.Count))return null;

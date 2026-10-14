@@ -78,6 +78,9 @@ try {
     & dotnet run --project tests/MemberInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/member-initializer-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/member-initializer-checks.log' -Tail 25; throw 'Native State member initializer checks failed.' }
     Get-Content '.artifacts/member-initializer-checks.log' -Tail 1
+    & dotnet run --project tests/ExtensionEntry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/extension-entry-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/extension-entry-checks.log' -Tail 25; throw 'Native extension Add entry checks failed.' }
+    Get-Content '.artifacts/extension-entry-checks.log' -Tail 1
     & dotnet run --project tests/ConstructedCollection.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/constructed-collection-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/constructed-collection-checks.log' -Tail 25; throw 'Native constructed collection checks failed.' }
     Get-Content '.artifacts/constructed-collection-checks.log' -Tail 1

@@ -67,7 +67,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     public IReadOnlyList<EncounterSource> AdditionalEncounters()=>context.Encounters;
     public string FragmentRoot(IReadOnlyList<string> expressions) => adapter.FragmentRoot(expressions);
     public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => adapter.CollectionFragmentRoot(expressions);
-    IMethodSymbol? SourceMethod(ExpressionSyntax expression)=>expression is InitializerExpressionSyntax initializer?Model.GetCollectionInitializerSymbolInfo(initializer).Symbol as IMethodSymbol:Model.GetSymbolInfo(expression).Symbol as IMethodSymbol;
+    IMethodSymbol? SourceMethod(ExpressionSyntax expression)=>expression is InitializerExpressionSyntax initializer?EntryMethod(Model,initializer):Model.GetSymbolInfo(expression).Symbol as IMethodSymbol;
     public string ChildList(string expression, string parameter, IReadOnlyList<string> children)
     {
         var source = Expression(expression);
@@ -223,7 +223,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
         if (expression == null) return adapter.AcceptsChild(text, parameter, childExpression, arrayExpression);
         if(childExpression.TrimStart().StartsWith('{'))return AcceptEntry(expression,arrayExpression,childExpression);
         var model = Model;
-        if (expression is InitializerExpressionSyntax entry&&model.GetCollectionInitializerSymbolInfo(entry).Symbol is IMethodSymbol add)
+        if (expression is InitializerExpressionSyntax entry&&EntryMethod(model,entry) is IMethodSymbol add)
         {
             var parameterSymbol=add.Parameters.SingleOrDefault(p=>p.Name==parameter);if(parameterSymbol==null)return false;
             var targetType=Element(parameterSymbol.Type);

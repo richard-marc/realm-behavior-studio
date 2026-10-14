@@ -28,7 +28,7 @@ internal sealed partial class SourceBehaviorSchema
         foreach(var node in expression.DescendantNodesAndSelf())
         {
             if(node is not (SimpleNameSyntax or BaseObjectCreationExpressionSyntax or InvocationExpressionSyntax)&&node is not InitializerExpressionSyntax {RawKind:(int)SyntaxKind.ComplexElementInitializerExpression}||node.Parent is NameColonSyntax)continue;
-            var symbol=node is InitializerExpressionSyntax initializer?Model.GetCollectionInitializerSymbolInfo(initializer).Symbol:Model.GetSymbolInfo(node).Symbol;
+            var symbol=node is InitializerExpressionSyntax initializer?EntryMethod(Model,initializer):Model.GetSymbolInfo(node).Symbol;
             if(symbol==null)continue;
             var key=symbol.OriginalDefinition.GetDocumentationCommentId();
             if(key==null&&symbol is IParameterSymbol parameter)key=ClipboardScope(parameter.ContainingSymbol)+"/parameter/"+parameter.Ordinal;
