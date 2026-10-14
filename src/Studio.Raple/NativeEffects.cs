@@ -19,6 +19,7 @@ sealed class NativePacketCapture : IDisposable
     readonly object? previousHandler;
     readonly ProtocolState previousState;
     bool disposed;
+    public NativePacketOrigin? EffectOrigin {get;private set;}
     static readonly FieldInfo Handler=typeof(Client).GetField("_handler",BindingFlags.Instance|BindingFlags.NonPublic)!;
     static readonly PropertyInfo State=typeof(Client).GetProperty("State")!;
     public NativePacketCapture(Client client)
@@ -38,7 +39,7 @@ sealed class NativePacketCapture : IDisposable
         while(queue.TryDequeue(out var packet))
         {
             if(++count>65536)throw new InvalidOperationException("Native packet capture exceeded its per-tick limit.");
-            if(packet is ShowEffect effect)yield return new(ms,(byte)effect.EffectType,effect.TargetObjectId,effect.Pos1.X,effect.Pos1.Y,effect.Pos2.X,effect.Pos2.Y,((uint)effect.Color.A<<24)|((uint)effect.Color.R<<16)|((uint)effect.Color.G<<8)|effect.Color.B,effect.Duration,effect.ObjectType);
+            if(packet is ShowEffect effect){EffectOrigin=NativePacketOrigins.Take(packet,client);yield return new(ms,(byte)effect.EffectType,effect.TargetObjectId,effect.Pos1.X,effect.Pos1.Y,effect.Pos2.X,effect.Pos2.Y,((uint)effect.Color.A<<24)|((uint)effect.Color.R<<16)|((uint)effect.Color.G<<8)|effect.Color.B,effect.Duration,effect.ObjectType); }
         }
     }
     public void Dispose(){if(disposed)return;disposed=true;State.SetValue(client,previousState);Handler.SetValue(client,previousHandler);send.Dispose();receive.Dispose();while(queue.TryDequeue(out _)){} }

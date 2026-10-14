@@ -43,6 +43,7 @@ public partial class MainWindow
         await RunOrderedControllerUiSmoke(output,check);
         await RunFirstEntryUiSmoke(output,check);
         await RunCallbackUiSmoke(output,check);
+        await RunPacketOriginUiSmoke(output,check);
         await RunSharedEntryUiSmoke(output,check);
         await RunSequentialSweepUiSmoke(output,check);
         await RunCycleUiSmoke(output,check);

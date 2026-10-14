@@ -14,7 +14,7 @@ using TKR.WorldServer.logic;
 namespace Studio.Raple;
 
 public record EncounterInput(double X = 0, double Y = 0, bool Attack = false, double AimX = 64.5, double AimY = 64.5);
-public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null, int? ActorId = null, int? ParentId = null,NativeStateOrigin? PhaseOrigin=null);
+public record EncounterEvent(long Ms, string Kind, string Message, Guid? NodeId = null, int? ActorId = null, int? ParentId = null,NativeStateOrigin? PhaseOrigin=null,NativePacketOrigin? PacketOrigin=null,int? PacketIndex=null);
 public record DamageContribution(int PlayerId,int Damage);
 public record DamageCounterView(int RecordedDamage,int PresentPlayerDamage,int? ParentActorId,ImmutableArray<DamageContribution> Players);
 public record WorldObjectView(int Id,string Name,string Kind,float X,float Y,int Size,int AltTexture,int TextureIndex,string Phase);
@@ -154,7 +154,7 @@ public sealed class EncounterSession : IEncounterSession
         {
             try
             {
-            engine.Tick(0); engine.DrainShots();
+            engine.Tick(0); DrainShotOrigins();engine.DrainShots();
             CaptureEffects();
             if (!BossLabRuntime.TryForceState(engine.Actor, boss, phase, SimEngine.Time(0), out var error)) throw new ArgumentException(error);
             CaptureEffects();
@@ -168,10 +168,15 @@ public sealed class EncounterSession : IEncounterSession
         if(NativeArena.Limitations(arena) is {} limitation){Coverage=limitation;Add("unsupported",limitation);}
         arenaObserver.Capture();
     }
-    void Add(string kind, string message, Guid? node = null, long? at = null, int? actor = null, int? parent = null,NativeStateOrigin? phaseOrigin=null)
+    void Add(string kind, string message, Guid? node = null, long? at = null, int? actor = null, int? parent = null,NativeStateOrigin? phaseOrigin=null,NativePacketOrigin? packetOrigin=null,int? packetIndex=null)
     {
-        if (Events.Count < 30000) Events.Add(new(at ?? Ms, kind, message, node, actor, parent,phaseOrigin));
+        if (Events.Count < 30000) Events.Add(new(at ?? Ms, kind, message, node, actor, parent,phaseOrigin,packetOrigin,packetIndex));
         if (BreakpointKind == kind) PauseRequested = true;
+    }
+    NativePacketOrigin?[] DrainShotOrigins()
+    {
+        var queue=(System.Collections.IEnumerable)typeof(Player).GetField("PendingShootAcknowlegements",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(engine.Actor)!;
+        return queue.Cast<object>().Where(ack=>ack.GetType().GetField("EnemyShoot")!.GetValue(ack)!=null).Select(ack=>NativePacketOrigins.FromData(ack.GetType().GetField("StudioPacketOrigin")?.GetValue(ack) as string[])).ToArray();
     }
     void CaptureEffects()
     {
@@ -179,7 +184,8 @@ public sealed class EncounterSession : IEncounterSession
         {
             if(Effects.Count>=30000)throw new InvalidOperationException("Encounter exceeded the 30,000 native effect limit.");
             Effects.Add(effect);
-            Add("effect",((TKR.WorldServer.networking.packets.outgoing.EffectType)effect.Kind)+" · "+effect.DurationMs+" ms",actor:effect.TargetObjectId);
+            var origin=packetCapture.EffectOrigin;
+            Add("effect",((TKR.WorldServer.networking.packets.outgoing.EffectType)effect.Kind)+" · "+effect.DurationMs+" ms",origin?.Source?.NodeId,actor:effect.TargetObjectId,packetOrigin:origin,packetIndex:Effects.Count-1);
         }
     }
     public IReadOnlyList<EncounterEvent> NewEvents()
@@ -268,13 +274,16 @@ public sealed class EncounterSession : IEncounterSession
                     if (current != previous) Add("transition", $"{e.ObjectDesc.IdName}: {previous ?? "spawn"} → {current}",phaseNode,actor:e.Id,parent:e.ParentEntity?.Id,phaseOrigin:origin);
                     lastStates[e.Id] = current;
                 }
+                var shotOrigins=DrainShotOrigins();var shotCursor=0;
                 foreach (var shot in engine.DrainShots())
                 {
                     Shots.Add(new(Ms, shot.OwnerId, shot.BulletType, shot.NumShots, shot.BulletId, shot.StartingPos.X, shot.StartingPos.Y, shot.Angle, shot.AngleInc, shot.Damage));
-                    if (!SimEngine.Data.ObjectDescs[(ushort)shot.ObjectType].Projectiles.TryGetValue(shot.BulletType, out var desc)) continue;
+                    var callback=shotOrigins[shotCursor++];
                     var owner = engine.World.Enemies.Values.FirstOrDefault(e => e.Id == shot.OwnerId);
-                    var node = !compiledSource && owner?.ObjectType == boss.ObjectType ? FindAttack(owner.CurrentState?.Name ?? "", shot.BulletType) : null;
-                    Add("attack", $"{owner?.ObjectDesc.IdName}: {shot.NumShots} × projectile #{shot.BulletType}", node, actor: shot.OwnerId, parent: owner?.ParentEntity?.Id,phaseOrigin:NativeStateOrigins.Find(owner?.CurrentState));
+                    var node = callback?.Source?.NodeId??(!compiledSource && owner?.ObjectType == boss.ObjectType ? FindAttack(owner.CurrentState?.Name ?? "", shot.BulletType) : null);
+                    Add("attack", $"{owner?.ObjectDesc.IdName}: {shot.NumShots} × projectile #{shot.BulletType}", node, actor: shot.OwnerId, parent: owner?.ParentEntity?.Id,phaseOrigin:NativeStateOrigins.Find(owner?.CurrentState),packetOrigin:callback,packetIndex:Shots.Count-1);
+                    if(!SimEngine.Data.ObjectDescs.TryGetValue((ushort)shot.ObjectType,out var ownerDesc)||!ownerDesc.Projectiles.TryGetValue(shot.BulletType,out var desc))
+                    {Coverage="Unsupported projectile XML present · run is not verified";Add("unsupported","Received projectile has no native XML descriptor.",node);continue;}
                     if (!Player.ValidatedProjectile.CanSampleBossLab(desc) || desc.Homing || desc.Orbit)
                     { Coverage = "Unsupported projectile motion present · run is not verified"; Add("unsupported", "Projectile omitted: client-history-dependent motion.", node); continue; }
                     for (var i = 0; i < shot.NumShots; i++) bullets.Add(new Bullet { Born = Ms, Id = shot.BulletId + i, Owner = shot.OwnerId,

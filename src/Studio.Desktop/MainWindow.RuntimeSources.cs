@@ -6,7 +6,8 @@ public partial class MainWindow
 {
     bool NavigateRuntimeSource(EncounterEvent ev)
     {
-        if(ev.PhaseOrigin is not {} origin)
+        if(ev.PacketOrigin!=null&&ev.PacketOrigin.Source==null){Status.Text="Emitting callback construction source is unavailable.";return false;}
+        if((ev.PacketOrigin?.Source??ev.PhaseOrigin) is not {} origin)
         {
             if(ev.NodeId is not {} id)return false;
             if(document.AllNodes.Any(n=>n.Id==id)||PrimaryDocument.AllNodes.Any(n=>n.Id==id)){SelectNode(id);return true;}

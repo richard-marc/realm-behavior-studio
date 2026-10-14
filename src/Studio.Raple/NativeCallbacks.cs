@@ -63,6 +63,6 @@ namespace TKR.WorldServer.logic {
                 return current.WithBody(SyntaxFactory.Block(prefix,guarded)).WithExpressionBody(null).WithSemicolonToken(default);
             });result=result.ReplaceSyntaxTree(tree,tree.WithRootAndOptions(changed,tree.Options));
         }
-        return result.AddSyntaxTrees(CSharpSyntaxTree.ParseText(Microsoft.CodeAnalysis.Text.SourceText.From(RegistrySource,System.Text.Encoding.UTF8),new CSharpParseOptions(LanguageVersion.CSharp12),"_Studio.NativeCallbacks.g.cs"));
+        return NativePacketOrigins.Instrument(result.AddSyntaxTrees(CSharpSyntaxTree.ParseText(Microsoft.CodeAnalysis.Text.SourceText.From(RegistrySource,System.Text.Encoding.UTF8),new CSharpParseOptions(LanguageVersion.CSharp12),"_Studio.NativeCallbacks.g.cs")));
     }
 }
