@@ -127,6 +127,7 @@ public partial class MainWindow
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
         if(kind=="Charge")return "";
+        if(kind=="Protect"&&parameter.Name=="protectee")return PhaseLiteral(selectedEntity!.Id);
         if(kind is "ConditionEffectBehavior" or "RemoveConditionalEffect"&&parameter.Name=="effect")return "global::TKR.Shared.resources.ConditionEffectIndex.Invulnerable";
         if(kind=="ScaleHP")return parameter.Name switch{"amountPerPlayer"=>"100","maxAdditional"=>"0",_=>""};
         if(kind=="ScaleHP2"&&parameter.Name=="amount")return "10";

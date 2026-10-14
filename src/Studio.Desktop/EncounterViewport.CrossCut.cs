@@ -10,7 +10,7 @@ public sealed partial class EncounterViewport
     CrossCutSelection? crossCut; (CrossCutSelection Original,CrossCutHandle Handle)? crossCutDrag;(double Scale,Vector Pan)? crossCutCamera;
     public CrossCutSelection? CrossCut
     {
-        get=>crossCut;set{if(value!=null){Snare=null;Attack=null;Movement=null;Path=null;Sweep=null;Ring=null;}if(crossCut==null&&value!=null)crossCutCamera=(scale,pan);CancelCrossCutDrag();crossCut=value;if(value==null&&crossCutCamera is{}camera){scale=camera.Scale;pan=camera.Pan;crossCutCamera=null;}InvalidateVisual();}
+        get=>crossCut;set{if(value!=null){CustomMove=null;Snare=null;Attack=null;Movement=null;Path=null;Sweep=null;Ring=null;}if(crossCut==null&&value!=null)crossCutCamera=(scale,pan);CancelCrossCutDrag();crossCut=value;if(value==null&&crossCutCamera is{}camera){scale=camera.Scale;pan=camera.Pan;crossCutCamera=null;}InvalidateVisual();}
     }
     public event Action<CrossCutSelection,IReadOnlyDictionary<string,double>>? CrossCutEdited;
     internal Point CrossCutPoint(CrossCutHandle handle,double value)=>handle==CrossCutHandle.Radius?HitScreen(64.5-value,64.5):HitScreen(64.5-crossCut!.Pattern.Radius,64.5+value*Math.Max(1,(crossCut.Pattern.Count-1)/2d));

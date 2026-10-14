@@ -15,7 +15,7 @@ public sealed partial class EncounterViewport
     {
         get=>ring;set
         {
-            if(value!=null){if(snare!=null)Snare=null;if(crossCut!=null)CrossCut=null;if(attack!=null)Attack=null;if(movement!=null)Movement=null;if(path!=null)Path=null;if(sweep!=null)Sweep=null;}
+            if(value!=null){if(customMove!=null)CustomMove=null;if(snare!=null)Snare=null;if(crossCut!=null)CrossCut=null;if(attack!=null)Attack=null;if(movement!=null)Movement=null;if(path!=null)Path=null;if(sweep!=null)Sweep=null;}
             if(ring==null&&value!=null)ringCamera=(scale,pan);CancelRingDrag();ring=value;
             if(value==null&&ringCamera is {} camera){scale=camera.Scale;pan=camera.Pan;ringCamera=null;}InvalidateVisual();
         }

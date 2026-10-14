@@ -20,6 +20,7 @@ public sealed partial class EncounterViewport
         {
             if(value!=null&&crossCut!=null)CrossCut=null;
             if(value!=null&&snare!=null)Snare=null;
+            if(value!=null&&customMove!=null)CustomMove=null;
             if (value != null && attack != null) Attack = null;
             if (value != null && path != null) Path = null;
             if(value!=null&&ring!=null)Ring=null;

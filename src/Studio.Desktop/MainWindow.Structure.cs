@@ -47,6 +47,7 @@ public partial class MainWindow
         UpdatePhaseChoiceControls();
         UpdatePresenceControls();
         UpdateDefenseControls();
+        UpdateCustomMoveControls();
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;
         if (deleteStructureButton != null) deleteStructureButton.IsEnabled = editable;

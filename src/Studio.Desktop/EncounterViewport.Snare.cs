@@ -12,7 +12,7 @@ public sealed partial class EncounterViewport
     {
         get=>snare;set
         {
-            if(value!=null){Attack=null;Movement=null;Path=null;Sweep=null;Ring=null;CrossCut=null;}
+            if(value!=null){CustomMove=null;Attack=null;Movement=null;Path=null;Sweep=null;Ring=null;CrossCut=null;}
             if(snare==null&&value!=null)snareCamera=(scale,pan);CancelSnareDrag();snare=value;
             if(value==null&&snareCamera is{} camera){scale=camera.Scale;pan=camera.Pan;snareCamera=null;}InvalidateVisual();
         }

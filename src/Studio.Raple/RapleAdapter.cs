@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
-        "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
+        "Protect", "BackAndForth", "PatrolCircle", "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -75,7 +75,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name is "ScaleHP" or "ScaleHP2" or "ScaleDefense" or "ConditionEffectBehavior" or "RemoveConditionalEffect" or "GiveTemporaryDefense" or "HealSelf" ? "Defense" : t.Name == "State" ? "Phases" :
-                t.Name is "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
+                t.Name is "Protect" or "BackAndForth" or "PatrolCircle" or "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
                 t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
@@ -87,6 +87,13 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "protectee" when kind=="Protect"=>"Exact XML type looked up anew each tick in the enemy/static collision index. A matching host can select itself. This movement does not add defense or assign ownership.",
+        "reprotectRange" when kind=="Protect"=>"Arrival distance while approaching: movement continues when distance is greater than this value. The native fixed step can overshoot and is not clamped to the remaining distance.",
+        "protectionRange" when kind=="Protect"=>"Once arrived, movement restarts only when the nearest matching entity is farther than this value. The native constructor does not require it to be greater than reprotectRange.",
+        "acquireRange" when kind=="Protect"=>"Strict nearest-type query. Losing or changing the nearest target changes movement immediately; it does not retain one protectee ID. Constructor values narrow to float.",
+        "distance" when kind=="BackAndForth"=>"Integer signed segment budget. Positive values move right then left, consuming attempted travel even when blocked. Negative values restart negative segments and can continue left rather than alternate. Zero still attempts a movement step.",
+        "radius" when kind=="PatrolCircle"=>"Positive circle radius around original Enemy.SpawnPoint. Off-circle positions steer toward the next point; this is not a teleport onto an exact circular path.",
+        "clockwise" when kind=="PatrolCircle"=>"Positive angle is clockwise on the screen because Y increases downward. Native step length uses GetSpeed and tick DeltaTime; paralysis stops movement.",
         "effect" when kind=="RemoveConditionalEffect"=>"Removes the selected native host condition on state entry. It has no ongoing refresh and no exit restoration. OnDeathBehavior invokes this entry action at death.",
         "amountPerPlayer" when kind=="ScaleHP"=>"HP per newly counted player name beyond scaleAfter. Names are retained for the entry; leaving range does not remove them. Current HP fraction is converted to an integer before the native maximum cap.",
         "maxAdditional" when kind=="ScaleHP"=>"Additional maximum HP above the entry baseline, with per-batch increment clamping and a final total maximum clamp. Zero means no cap. The original order can change current HP fraction when a batch reaches the cap.",
@@ -226,6 +233,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "Protect" when name is "acquireRange" or "protectionRange" or "reprotectRange"=>"tiles",
+        "BackAndForth" when name=="distance"=>"signed tiles",
         "ScaleHP" when name is "amountPerPlayer" or "maxAdditional"=>"HP",
         "ScaleHP2" when name=="amount"=>"percent of XML max HP",
         "ScaleDefense" when name=="perPerson"=>"defense per name",
@@ -311,6 +320,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateSweepControllers(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSnares(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidatePresenceConditions(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateCustomMovement(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

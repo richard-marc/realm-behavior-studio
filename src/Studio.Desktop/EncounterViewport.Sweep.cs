@@ -18,6 +18,7 @@ public sealed partial class EncounterViewport
         {
             if(value!=null&&crossCut!=null)CrossCut=null;
             if(value!=null&&snare!=null)Snare=null;
+            if(value!=null&&customMove!=null)CustomMove=null;
             if(value!=null){if(attack!=null)Attack=null;if(movement!=null)Movement=null;if(path!=null)Path=null;if(ring!=null)Ring=null;}
             if(sweep==null&&value!=null)sweepCamera=(scale,pan);
             CancelSweepDrag();sweep=value;

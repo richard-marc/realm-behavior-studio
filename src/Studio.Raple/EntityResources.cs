@@ -60,6 +60,7 @@ public sealed partial class RapleAdapter
         "EntityNotExistsTransition" => new("target", "Absent entity", EntityResourceScope.Queryable, true),
         "Transform" or "TransformOnDeath" => new("target", "Transform into", EntityResourceScope.Resolvable, false),
         "TransferDamageOnDeath"=>new("target","Damage-record recipient",EntityResourceScope.Enemy,false),
+        "Protect"=>new("protectee","Protected XML type",EntityResourceScope.Queryable,false),
         _ => null
     };
     public EntityParameter? EntityParameterFor(BehaviorDocument document, BehaviorNode node)

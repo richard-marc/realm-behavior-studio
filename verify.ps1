@@ -93,6 +93,9 @@ try {
     & dotnet run --project tests/DefinitionRemoval.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/definition-removal-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/definition-removal-checks.log' -Tail 25; throw 'Unused definition removal checks failed.' }
     Get-Content '.artifacts/definition-removal-checks.log' -Tail 1
+    & dotnet run --project tests/CustomMovement.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/custom-movement-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/custom-movement-checks.log' -Tail 25; throw 'Native custom movement checks failed.' }
+    Get-Content '.artifacts/custom-movement-checks.log' -Tail 1
     & dotnet run --project tests/DefenseActions.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/defense-actions-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/defense-actions-checks.log' -Tail 25; throw 'Native defense action checks failed.' }
     Get-Content '.artifacts/defense-actions-checks.log' -Tail 1
