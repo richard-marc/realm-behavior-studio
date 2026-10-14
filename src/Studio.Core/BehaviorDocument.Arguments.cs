@@ -90,7 +90,7 @@ public sealed partial class BehaviorDocument
         return names.Select((name, index) => (name, index)).Where(p => p.name.Split('[')[0] == Slot(node).Name).Select(p => p.index).ToArray();
     }
     IEnumerable<SyntaxNode> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => expression is InitializerExpressionSyntax entry&&(node.Kind=="InitializerEntry"||node.ArgumentFromCall&&Parent(node.Id)?.Kind=="InitializerEntry")?EntryIndices(node).Select(i=>entry.Expressions[i]):node.Kind != "ArgumentGroup" ? CallArguments(expression).Arguments.Select(a => a.Expression) : node.ArgumentFromCall ? CallSlotIndices(node).Select(i => CallArguments(expression).Arguments[i].Expression) : ListItems(expression) ?? throw new ArgumentException("Select an editable native child list.");
-    int[] EntryIndices(BehaviorNode node)=>SchemaAt(ChildOwner(node))!.ConstructorParameterNames(Expression(ChildOwner(node))).Select((name,i)=>(name,i)).Where(p=>p.name==Slot(node).Name).Select(p=>p.i).ToArray();
+    int[] EntryIndices(BehaviorNode node)=>SchemaAt(ChildOwner(node))!.ConstructorParameterNames(Expression(ChildOwner(node))).Select((name,i)=>(name,i)).Where(p=>p.name.Split('[')[0]==Slot(node).Name).Select(p=>p.i).ToArray();
     ExpressionSyntax WithSeparator(ExpressionSyntax expression, SeparatedSyntaxList<ExpressionSyntax> list, int index)
     {
         if (index >= list.SeparatorCount) return expression;
@@ -168,6 +168,10 @@ public sealed partial class BehaviorDocument
             {
                 var slot=Slot(edit.Node);var position=metadata.Parameters.ToList().FindIndex(p=>p.Name==slot.Name);
                 if(position<0||!slot.IsCollection&&edit.Children.Count>1||edit.Children.Count==0&&slot.Minimum>0)throw new ArgumentException("Provide the required native Add input.");
+                if(slot.IsParams&&metadata.ArgumentNames.Any(name=>name.Split('[')[0]==slot.Name&&name.Contains('[')))
+                {
+                    expressions.RemoveRange(position,expressions.Count-position);expressions.AddRange(edit.Children);continue;
+                }
                 if(!slot.IsCollection&&edit.Children.Count==0&&position>=expressions.Count)continue;
                 var value=slot.IsCollection?SyntaxFactory.ParseExpression(SchemaAt(entryOwner)!.ChildList(Expression(entryOwner),slot.Name,edit.Children.Select(c=>c.ToFullString()).ToArray())):edit.Children.Count==0?SyntaxFactory.ParseExpression(metadata.Parameters[position].Default):edit.Children[0];
                 while(expressions.Count<position)

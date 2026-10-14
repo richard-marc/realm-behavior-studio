@@ -60,7 +60,7 @@ public sealed partial class BehaviorDocument
     {
         var node=Find(id);var ownerSchema=SchemaAt(node)!;var metadata=ownerSchema.DescribeExpression(Expression(node))!;
         var container=node.Children.Single(n=>n.Argument?.Name==parameter);Editable(container);
-        if(string.IsNullOrWhiteSpace(text))text=metadata.Parameters.Single(p=>p.Name==parameter).Default=="required"?ownerSchema.ChildList(Expression(node),parameter,[]):metadata.Parameters.Single(p=>p.Name==parameter).Default;
+        if(string.IsNullOrWhiteSpace(text))text=metadata.Parameters.Single(p=>p.Name==parameter).Default is "required" or "empty array"?ownerSchema.ChildList(Expression(node),parameter,[]):metadata.Parameters.Single(p=>p.Name==parameter).Default;
         var input=SyntaxFactory.ParseExpression(text);
         if(input.ContainsDiagnostics||input.FullSpan.Length!=text.Length||!input.IsKind(SyntaxKind.NullLiteralExpression)&&ListItems(input)==null)throw new ArgumentException("Provide an explicit native collection or null default; generated lists retain source ownership.");
         var tree=CSharpSyntaxTree.ParseText(Source).GetRoot();var entry=(InitializerExpressionSyntax)NodeExpression(tree,node);var inputs=entry.Expressions.ToList();var position=metadata.Parameters.ToList().FindIndex(p=>p.Name==parameter);
@@ -68,6 +68,7 @@ public sealed partial class BehaviorDocument
         {
             var value=metadata.Parameters[inputs.Count];if(value.Default=="required")throw new ArgumentException("Cannot skip a required native Add input.");inputs.Add(SyntaxFactory.ParseExpression(value.Default));
         }
+        if(container.Argument?.IsParams==true&&metadata.ArgumentNames.Any(name=>name.Split('[')[0]==parameter&&name.Contains('[')))inputs.RemoveRange(position,inputs.Count-position);
         if(inputs.Count==position)inputs.Add(input);else inputs[position]=input.WithTriviaFrom(inputs[position]);
         var changed=tree.ReplaceNode(entry,entry.WithExpressions(SyntaxFactory.SeparatedList(inputs))).ToFullString();
         var replaced=container.Children.SelectMany(n=>n.Descendants()).Select(n=>n.Id).ToHashSet();var probe=new BehaviorDocument(changed,names,Identities.Where(n=>!replaced.Contains(n.Id)).ToList(),baseSchema,SourceFile);

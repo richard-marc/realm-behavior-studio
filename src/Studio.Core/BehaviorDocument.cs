@@ -160,16 +160,16 @@ public sealed partial class BehaviorDocument
                         if(!scoped!.IsChildArgument(c.ToString(),i))entryParameters.Add(new(description.ArgumentNames[i],inputs[i].ToString(),inputs[i].SpanStart,inputs[i].Span.Length));
                     foreach(var slot in description.Children)
                     {
-                        var inputIndex=Array.IndexOf(description.ArgumentNames,slot.Name);
+                        var supplied=description.ArgumentNames.Select((name,i)=>(name,i)).Where(p=>p.name.Split('[')[0]==slot.Name).ToArray();var inputIndex=supplied.Length==1?supplied[0].i:-1;var expanded=slot.IsParams&&(supplied.Length==0||supplied.Any(p=>p.name.Contains('[')));
                         var input=inputIndex<0?null:inputs[inputIndex];var childPath=path+"/"+values.Count;
                         if(description.Children.Count==1&&!slot.IsCollection&&slot.Minimum>0)values.Add(Read(input!,childPath));
                         else
                         {
                             var items=input==null||!slot.IsCollection?null:ListItems(input);var fromCall=items==null;
-                            var requiresSource=slot.IsCollection&&input!=null&&!input.IsKind(SyntaxKind.NullLiteralExpression)&&items==null;
+                            var requiresSource=!expanded&&slot.IsCollection&&input!=null&&!input.IsKind(SyntaxKind.NullLiteralExpression)&&items==null;
                             var oldSlot=identities.FirstOrDefault(n=>n.Kind=="ArgumentGroup"&&n.Path==childPath&&!usedIdentities.Contains(n.Id));
                             if(oldSlot!=null)usedIdentities.Add(oldSlot.Id);
-                            var elements=items!=null?items.Select((item,i)=>ReadItem(item,childPath+"/"+i)).ToArray():input==null||input.IsKind(SyntaxKind.NullLiteralExpression)&&(slot.Minimum==0||slot.IsCollection)?Array.Empty<BehaviorNode>():[Read(input,childPath+"/0")];
+                            var elements=expanded?supplied.Select((p,i)=>Read(inputs[p.i],childPath+"/"+i)).ToArray():items!=null?items.Select((item,i)=>ReadItem(item,childPath+"/"+i)).ToArray():input==null||input.IsKind(SyntaxKind.NullLiteralExpression)&&(slot.Minimum==0||slot.IsCollection)?Array.Empty<BehaviorNode>():[Read(input,childPath+"/0")];
                             var backing=fromCall?entry:input!;
                             values.Add(new(oldSlot?.Id??Guid.NewGuid(),childPath,"ArgumentGroup",slot.Name+" \u00b7 "+(requiresSource?"source":ChildListCount(elements)),backing.SpanStart,backing.Span.Length,[],elements){Argument=slot,ArgumentFromCall=fromCall,ArgumentRequiresSource=requiresSource});
                         }
