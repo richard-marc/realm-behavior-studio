@@ -27,6 +27,7 @@ public partial class MainWindow
             Inspector.Children.Add(new TextBlock { Text = "Projectile owner comes from source. Inspect the controller before choosing an index.", TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = EncounterViewport.Brush("#929D96"), Margin = new(0, 8, 0, 0) }); return;
         }
         var choices = EnemyProjectiles.ForEntity(selectedEntity.Id);
+        if(adapter.IsTrailLedger(document,node))choices=adapter.TrailShardProjectiles(selectedEntity.Id);
         if(adapter.IsDelayedHazard(document,node))choices=choices.Where(p=>adapter.HazardProjectiles(selectedEntity.Id).Any(h=>h.Index==p.Index)).ToArray();
         if(adapter.IsSnare(document,node))choices=choices.Where(p=>adapter.SnareProjectiles(selectedEntity.Id,adapter.ReadSnareRadius(document,node)??1).Any(s=>s.Index==p.Index)).ToArray();
         var emptyMessage=adapter.IsSnare(document,node)?"This enemy has no compatible straight XML projectiles for this radius.":adapter.IsDelayedHazard(document,node)?"This enemy has no compatible dormant hazard projectiles.":"This enemy has no XML projectiles.";

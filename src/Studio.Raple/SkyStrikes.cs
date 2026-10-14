@@ -13,22 +13,7 @@ public sealed partial class RapleAdapter
     public bool IsSkyStrike(BehaviorDocument document,BehaviorNode node)=>node.Kind=="SkyStrike"&&NativeKind(document,node)==node.Kind;
     public SkyStrikePattern? ReadSkyStrike(BehaviorDocument document,BehaviorNode node)
     {
-        if(!IsSkyStrike(document,node))return null;var values=new Dictionary<string,double>();var args=new List<object>();var layout="";var lab=false;
-        foreach(var parameter in Constructor(RuntimeType("SkyStrike")).GetParameters())
-        {
-            if(parameter.ParameterType==typeof(bool))
-            {if(!ReadConstantParameter(document,node,parameter.Name!,parameter.DefaultValue,out var value)||value is not bool flag)return null;lab=flag;args.Add(flag);continue;}
-            if(parameter.ParameterType.IsEnum)
-            {
-                if(!ReadConstantParameter(document,node,parameter.Name!,parameter.HasDefaultValue?parameter.DefaultValue:null,out var value)||value==null)return null;
-                try{var number=Convert.ToInt32(value,System.Globalization.CultureInfo.InvariantCulture);var enumValue=Enum.ToObject(parameter.ParameterType,number);if(!Enum.IsDefined(parameter.ParameterType,enumValue))return null;values[parameter.Name!]=number;args.Add(enumValue);if(parameter.Name=="layout")layout=enumValue.ToString()!;}catch(Exception e)when(e is InvalidCastException or FormatException or OverflowException){return null;}continue;
-            }
-            var fallback=parameter.HasDefaultValue?Convert.ToDouble(parameter.DefaultValue,System.Globalization.CultureInfo.InvariantCulture):(double?)null;
-            if(!ReadNumericParameter(document,node,parameter.Name!,fallback,out var numeric)||numeric==null||!double.IsFinite(numeric.Value))return null;
-            try{if(parameter.ParameterType!=typeof(double)&&numeric!=Math.Truncate(numeric.Value))return null;args.Add(Convert.ChangeType(numeric.Value,parameter.ParameterType,System.Globalization.CultureInfo.InvariantCulture));values[parameter.Name!]=numeric.Value;}catch(Exception e)when(e is InvalidCastException or OverflowException){return null;}
-        }
-        try{Constructor(RuntimeType("SkyStrike")).Invoke(args.ToArray());}catch(TargetInvocationException){return null;}
-        return new(layout,values,lab);
+        if(!IsSkyStrike(document,node))return null;var settings=ReadNativeAttackSettings(document,node,"SkyStrike");return settings==null?null:new(settings.Enums["layout"],settings.Values,settings.Flags["bossLabOnly"]);
     }
     public static IReadOnlyList<SkyStrikePoint> SkyStrikeLayout(SkyStrikePattern pattern,double targetX=6,double targetY=0,int volley=0)
     {

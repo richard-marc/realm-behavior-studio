@@ -126,6 +126,7 @@ public partial class MainWindow
     }
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
+        if(kind is "TrailLedger" or "TrailRecount"&&parameter.Name=="shardIndex")return adapter.TrailShardProjectiles(selectedEntity!.Id).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";
         if(kind=="SkyStrike")return parameter.Name switch{"coreIndex"=>"-1","layout"=>"global::TKR.WorldServer.logic.behaviors.StrikeLayout.Targets","aoeRadius"=>"1","aoeDamage"=>"100",_=>""};
         if(kind=="TerrainWave")
         {

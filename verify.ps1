@@ -78,6 +78,9 @@ try {
     & dotnet run --project tests/MemberInitializer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/member-initializer-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/member-initializer-checks.log' -Tail 25; throw 'Native State member initializer checks failed.' }
     Get-Content '.artifacts/member-initializer-checks.log' -Tail 1
+    & dotnet run --project tests/TrailLedger.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/trail-ledger-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/trail-ledger-checks.log' -Tail 25; throw 'Native trail ledger checks failed.' }
+    Get-Content '.artifacts/trail-ledger-checks.log' -Tail 1
     & dotnet run --project tests/SkyStrike.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/sky-strike-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/sky-strike-checks.log' -Tail 25; throw 'Native sky-strike checks failed.' }
     Get-Content '.artifacts/sky-strike-checks.log' -Tail 1

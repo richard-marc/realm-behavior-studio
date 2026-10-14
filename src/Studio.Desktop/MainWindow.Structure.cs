@@ -48,6 +48,7 @@ public partial class MainWindow
         UpdatePresenceControls();
         UpdateTerrainControls();
         UpdateStrikeControls();
+        UpdateTrailControls();
         UpdateDefenseControls();
         UpdateCustomMoveControls();
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
