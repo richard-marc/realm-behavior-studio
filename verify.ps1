@@ -87,6 +87,9 @@ try {
     & dotnet run --project tests/NativeState.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/native-state-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/native-state-checks.log' -Tail 25; throw 'Native stored-state and loop checks failed.' }
     Get-Content '.artifacts/native-state-checks.log' -Tail 1
+    & dotnet run --project tests/SharedEvent.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/shared-event-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/shared-event-checks.log' -Tail 25; throw 'Native shared callback checks failed.' }
+    Get-Content '.artifacts/shared-event-checks.log' -Tail 1
     & dotnet run --project tests/IndexedEntry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/indexed-entry-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/indexed-entry-checks.log' -Tail 25; throw 'Native indexed initializer checks failed.' }
     Get-Content '.artifacts/indexed-entry-checks.log' -Tail 1

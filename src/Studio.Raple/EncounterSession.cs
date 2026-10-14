@@ -117,7 +117,7 @@ public sealed class EncounterSession : IEncounterSession
         // Resize with the observer at the native arena center. The offline
         // harness lacks the network state needed by a resize-triggered teleport.
         // The requested start is applied before any encounter entry callbacks.
-        NativeCallbacks.Reset();
+        NativeCallbacks.Reset();NativeSharedEvents.SetTime(0);
         engine = new SimEngine(new SimConfig { Boss = entity, Seed = seed, PlayerX = BossLabWorld.Center, PlayerY = BossLabWorld.Center });
         // The upstream harness copies base fields from an enemy. Replace its effect manager so
         // a boss's immunity flags never become the test player's immunity flags.
@@ -202,6 +202,7 @@ public sealed class EncounterSession : IEncounterSession
     }
     public void RemoveMinionsForTest()
     {
+        NativeSharedEvents.SetTime(Ms);
         foreach (var e in engine.World.Enemies.Values.Where(e => e != boss).ToArray()) e.Expunge();
         CaptureEffects();
         Add("override", "Minions removed for transition test; death callbacks bypassed.");
@@ -256,7 +257,7 @@ public sealed class EncounterSession : IEncounterSession
             {
                 var beforeTick = engine.World.Enemies.Values.ToDictionary(e => e.Id, e => (e.X, e.Y));
                 var dying = engine.World.Enemies.Values.Where(e => e.HP == 0 && !e.Dead).ToArray();
-                var previousHp=PlayerHp;engine.Actor.HP = PlayerHp;engine.Tick(Ms);
+                var previousHp=PlayerHp;engine.Actor.HP = PlayerHp;NativeSharedEvents.SetTime(Ms);engine.Tick(Ms);
                 PlayerHp=Math.Max(0,engine.Actor.HP);
                 if(PlayerHp<previousHp)Add("hit",$"Player −{previousHp-PlayerHp} HP from native server damage",actor:engine.Actor.Id);
                 if(previousHp>0&&Dead){SimEngine.Set(engine.Actor,"Dead",true);Add("death","Test player died from native server damage. Restart to respawn.",actor:engine.Actor.Id);}

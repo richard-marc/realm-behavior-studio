@@ -5,7 +5,11 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using TKR.WorldServer.logic;
 
 namespace Studio.Raple;
-public sealed record NativePacketOrigin(long CallbackSequence,int CallbackActorId,string Behavior,string Stage,NativeStateOrigin? Source);
+public sealed record NativePacketOrigin(long CallbackSequence,int CallbackActorId,string Behavior,string Stage,NativeStateOrigin? Source)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public NativeSharedEventBinding? SharedEvent {get;init;}
+}
 internal static class NativePacketOrigins
 {
     const string Registry="TKR.WorldServer.logic.StudioNativeStateOrigins";
@@ -16,8 +20,8 @@ internal static class NativePacketOrigins
     }
     internal static NativePacketOrigin? FromData(string[]? data)
     {
-        if(data is not {Length:13})return null;
-        return new(long.Parse(data[0],CultureInfo.InvariantCulture),int.Parse(data[3],CultureInfo.InvariantCulture),data[5],data[6],data[8]==""?null:new(data[8],int.Parse(data[9],CultureInfo.InvariantCulture),int.Parse(data[10],CultureInfo.InvariantCulture),data[11],Guid.TryParse(data[12],out var id)?id:null));
+        if(data is not {Length:>=13})return null;
+        return new NativePacketOrigin(long.Parse(data[0],CultureInfo.InvariantCulture),int.Parse(data[3],CultureInfo.InvariantCulture),data[5],data[6],data[8]==""?null:new(data[8],int.Parse(data[9],CultureInfo.InvariantCulture),int.Parse(data[10],CultureInfo.InvariantCulture),data[11],Guid.TryParse(data[12],out var id)?id:null)){SharedEvent=NativeSharedEvents.FromData(data)};
     }
     internal const string RegistrySource="""
 namespace TKR.WorldServer.logic {

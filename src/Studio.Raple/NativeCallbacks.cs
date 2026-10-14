@@ -5,14 +5,18 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using TKR.WorldServer.logic;
 
 namespace Studio.Raple;
-public sealed record NativeCallbackRecord(long Sequence,long? ParentSequence,long Ms,int ActorId,string Actor,string Behavior,string Stage,string Outcome,NativeStateOrigin? Origin);
+public sealed record NativeCallbackRecord(long Sequence,long? ParentSequence,long Ms,int ActorId,string Actor,string Behavior,string Stage,string Outcome,NativeStateOrigin? Origin)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public NativeSharedEventBinding? SharedEvent {get;init;}
+}
 internal static class NativeCallbacks
 {
     const string Registry="TKR.WorldServer.logic.StudioNativeStateOrigins";
     static readonly Func<string[][]>? drain=typeof(Behavior).Assembly.GetType(Registry)?.GetMethod("DrainCallbacks")?.CreateDelegate<Func<string[][]>>();
     static readonly Action? reset=typeof(Behavior).Assembly.GetType(Registry)?.GetMethod("ResetCallbacks")?.CreateDelegate<Action>();
     internal static void Reset()=>reset?.Invoke();
-    internal static NativeCallbackRecord[] Drain()=>(drain?.Invoke()??[]).Select(d=>new NativeCallbackRecord(long.Parse(d[0],CultureInfo.InvariantCulture),d[1]=="0"?null:long.Parse(d[1],CultureInfo.InvariantCulture),long.Parse(d[2],CultureInfo.InvariantCulture),int.Parse(d[3],CultureInfo.InvariantCulture),d[4],d[5],d[6],d[7],d[8]==""?null:new(d[8],int.Parse(d[9],CultureInfo.InvariantCulture),int.Parse(d[10],CultureInfo.InvariantCulture),d[11],Guid.TryParse(d[12],out var id)?id:null))).ToArray();
+    internal static NativeCallbackRecord[] Drain()=>(drain?.Invoke()??[]).Select(d=>new NativeCallbackRecord(long.Parse(d[0],CultureInfo.InvariantCulture),d[1]=="0"?null:long.Parse(d[1],CultureInfo.InvariantCulture),long.Parse(d[2],CultureInfo.InvariantCulture),int.Parse(d[3],CultureInfo.InvariantCulture),d[4],d[5],d[6],d[7],d[8]==""?null:new(d[8],int.Parse(d[9],CultureInfo.InvariantCulture),int.Parse(d[10],CultureInfo.InvariantCulture),d[11],Guid.TryParse(d[12],out var id)?id:null)){SharedEvent=NativeSharedEvents.FromData(d)}).ToArray();
     internal const string RegistrySource="""
 namespace TKR.WorldServer.logic {
     internal static partial class StudioNativeStateOrigins {
@@ -63,6 +67,6 @@ namespace TKR.WorldServer.logic {
                 return current.WithBody(SyntaxFactory.Block(prefix,guarded)).WithExpressionBody(null).WithSemicolonToken(default);
             });result=result.ReplaceSyntaxTree(tree,tree.WithRootAndOptions(changed,tree.Options));
         }
-        return NativePacketOrigins.Instrument(result.AddSyntaxTrees(CSharpSyntaxTree.ParseText(Microsoft.CodeAnalysis.Text.SourceText.From(RegistrySource,System.Text.Encoding.UTF8),new CSharpParseOptions(LanguageVersion.CSharp12),"_Studio.NativeCallbacks.g.cs")));
+        return NativeSharedEvents.Instrument(NativePacketOrigins.Instrument(result.AddSyntaxTrees(CSharpSyntaxTree.ParseText(Microsoft.CodeAnalysis.Text.SourceText.From(RegistrySource,System.Text.Encoding.UTF8),new CSharpParseOptions(LanguageVersion.CSharp12),"_Studio.NativeCallbacks.g.cs"))));
     }
 }

@@ -96,7 +96,7 @@ public partial class MainWindow
     void SelectTimelineEvent(EncounterEvent ev)
     {
         TimelineVisual.Selected=ev; TimelineVisual.InvalidateVisual();
-        TimelineEventInfo.Text=ev.Message+(ev.ActorId is {} actor ? $" · actor #{actor}" : "")+(ev.PacketOrigin!=null ? " · emitted by "+ev.PacketOrigin.Behavior.Split('.','+').Last()+" · "+ev.PacketOrigin.Stage+" · call #"+ev.PacketOrigin.CallbackSequence+(ev.PacketOrigin.CallbackActorId!=ev.ActorId?" · controller actor #"+ev.PacketOrigin.CallbackActorId:"") : ev.PhaseOrigin!=null ? " · observed phase construction" : ev.NodeId==null ? " · source origin unavailable" : ev.Kind=="movement" ? " · observed phase source" : " · source origin recorded");
+        TimelineEventInfo.Text=ev.Message+(ev.ActorId is {} actor ? $" · actor #{actor}" : "")+(ev.PacketOrigin?.SharedEvent is{} shared?" · "+ev.PacketOrigin.Stage+" · receiver #"+shared.ReceiverActorId+" · registered by "+shared.SubscriberBehavior.Split('.','+').Last()+" on #"+shared.SubscriberActorId+" · registration call #"+shared.SubscriptionCallbackSequence+" · dispatch call #"+ev.PacketOrigin.CallbackSequence:ev.PacketOrigin!=null ? " · emitted by "+ev.PacketOrigin.Behavior.Split('.','+').Last()+" · "+ev.PacketOrigin.Stage+" · call #"+ev.PacketOrigin.CallbackSequence+(ev.PacketOrigin.CallbackActorId!=ev.ActorId?" · controller actor #"+ev.PacketOrigin.CallbackActorId:"") : ev.PhaseOrigin!=null ? " · observed phase construction" : ev.NodeId==null ? " · source origin unavailable" : ev.Kind=="movement" ? " · observed phase source" : " · source origin recorded");
         NavigateRuntimeSource(ev);
     }
     void TimelineEventSelected(object sender, SelectionChangedEventArgs e)
