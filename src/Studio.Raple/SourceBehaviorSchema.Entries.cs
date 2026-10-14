@@ -13,14 +13,14 @@ internal sealed partial class SourceBehaviorSchema
         var collection=owner.DescendantNodesAndSelf().OfType<BaseObjectCreationExpressionSyntax>().SingleOrDefault(e=>e.ToString()==(collectionText??owner.ToString()));if(collection?.Initializer==null)return false;
         var annotation=new SyntaxAnnotation();var replacement=collection.WithInitializer(collection.Initializer.WithExpressions(SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(entry.WithAdditionalAnnotations(annotation))));
         var tree=Model.SyntaxTree.WithRootAndOptions(Model.SyntaxTree.GetRoot().ReplaceNode(collection,replacement),Model.SyntaxTree.Options);var compiler=context.Binding.Value.Compilation.ReplaceSyntaxTree(Model.SyntaxTree,tree);var model=compiler.GetSemanticModel(tree);var actual=(InitializerExpressionSyntax)tree.GetRoot().GetAnnotatedNodes(annotation).Single();
-        return model.GetCollectionInitializerSymbolInfo(actual).Symbol is IMethodSymbol add&&add.Parameters.Count(p=>Child(p.Type)&&!Collection(p.Type))==1&&!add.Parameters.Any(p=>p.IsParams||Child(p.Type)&&p.IsOptional||Collection(p.Type)&&Child(Element(p.Type)))&&!model.GetDiagnostics(actual.Span).Any(d=>d.Severity==DiagnosticSeverity.Error);
+        return model.GetCollectionInitializerSymbolInfo(actual).Symbol is IMethodSymbol add&&add.Parameters.Count(p=>Child(p.Type)&&!Collection(p.Type))>=1&&!add.Parameters.Any(p=>p.IsParams||Child(p.Type)&&p.IsOptional||Collection(p.Type)&&Child(Element(p.Type)))&&!model.GetDiagnostics(actual.Span).Any(d=>d.Severity==DiagnosticSeverity.Error);
     }
     SourceExpression? DescribeEntry(InitializerExpressionSyntax entry)
     {
         if(Model.GetCollectionInitializerSymbolInfo(entry).Symbol is not IMethodSymbol method)return null;
         var children=method.Parameters.Where(p=>Child(p.Type)&&!Collection(p.Type)).ToArray();
-        if(children.Length!=1||children[0].IsOptional||method.Parameters.Any(p=>p.IsParams||Collection(p.Type)&&Child(Element(p.Type)))||entry.Expressions.Count>method.Parameters.Length)return null;
-        var child=children.Single();
-        return new("InitializerEntry","Add · "+method.ContainingType.Name,false,method.Parameters.Take(entry.Expressions.Count).Select(p=>new SourceParameter(p.Name,TypeName(p.Type),Default(p))).ToArray(),method.Parameters.Take(entry.Expressions.Count).Select(p=>p.Name).ToArray(),[new(child.Name,TypeName(child.Type),false,false,1)]){RequiresCompiled=true};
+        if(children.Length==0||children.Any(p=>p.IsOptional)||method.Parameters.Any(p=>p.IsParams||Collection(p.Type)&&Child(Element(p.Type)))||entry.Expressions.Count>method.Parameters.Length)return null;
+        if(children.Any(p=>p.Ordinal>=entry.Expressions.Count))return null;
+        return new("InitializerEntry","Add · "+method.ContainingType.Name,false,method.Parameters.Take(entry.Expressions.Count).Select(p=>new SourceParameter(p.Name,TypeName(p.Type),Default(p))).ToArray(),method.Parameters.Take(entry.Expressions.Count).Select(p=>p.Name).ToArray(),children.Select(child=>new ChildArgument(child.Name,TypeName(child.Type),false,false,1)).ToArray()){RequiresCompiled=true};
     }
 }

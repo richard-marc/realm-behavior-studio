@@ -85,11 +85,12 @@ public sealed partial class BehaviorDocument
     int[] CallSlotIndices(BehaviorNode node)
     {
         var owner = node.ArgumentFromCall ? Parent(node.Id)! : node;
+        if(owner.Kind=="InitializerEntry")return EntryIndices(node);
         var names = SchemaAt(owner)!.ConstructorParameterNames(Expression(owner));
         return names.Select((name, index) => (name, index)).Where(p => p.name.Split('[')[0] == Slot(node).Name).Select(p => p.index).ToArray();
     }
-    IEnumerable<SyntaxNode> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => expression is InitializerExpressionSyntax entry&&node.Kind=="InitializerEntry"?EntryIndices(node).Select(i=>entry.Expressions[i]):node.Kind != "ArgumentGroup" ? CallArguments(expression).Arguments.Select(a => a.Expression) : node.ArgumentFromCall ? CallSlotIndices(node).Select(i => CallArguments(expression).Arguments[i].Expression) : ListItems(expression) ?? throw new ArgumentException("Select an editable native child list.");
-    int[] EntryIndices(BehaviorNode node)=>SchemaAt(node)!.ConstructorParameterNames(Expression(node)).Select((name,i)=>(name,i)).Where(p=>p.name==Slot(node).Name).Select(p=>p.i).ToArray();
+    IEnumerable<SyntaxNode> ContainerExpressions(ExpressionSyntax expression, BehaviorNode node) => expression is InitializerExpressionSyntax entry&&(node.Kind=="InitializerEntry"||node.ArgumentFromCall&&Parent(node.Id)?.Kind=="InitializerEntry")?EntryIndices(node).Select(i=>entry.Expressions[i]):node.Kind != "ArgumentGroup" ? CallArguments(expression).Arguments.Select(a => a.Expression) : node.ArgumentFromCall ? CallSlotIndices(node).Select(i => CallArguments(expression).Arguments[i].Expression) : ListItems(expression) ?? throw new ArgumentException("Select an editable native child list.");
+    int[] EntryIndices(BehaviorNode node)=>SchemaAt(ChildOwner(node))!.ConstructorParameterNames(Expression(ChildOwner(node))).Select((name,i)=>(name,i)).Where(p=>p.name==Slot(node).Name).Select(p=>p.i).ToArray();
     ExpressionSyntax WithSeparator(ExpressionSyntax expression, SeparatedSyntaxList<ExpressionSyntax> list, int index)
     {
         if (index >= list.SeparatorCount) return expression;
@@ -102,7 +103,7 @@ public sealed partial class BehaviorDocument
         foreach (var parent in AllNodes.Where(n => CanEditChildren(n.Id) && ChildContainer(n.Id).Id == n.Id))
         {
             var expression = NodeExpression(tree, parent);
-            if(parent.Kind=="InitializerEntry"&&expression is InitializerExpressionSyntax entry)
+            if(expression is InitializerExpressionSyntax entry&&(parent.Kind=="InitializerEntry"||parent.ArgumentFromCall&&Parent(parent.Id)?.Kind=="InitializerEntry"))
             {
                 foreach(var child in parent.Children){var index=entry.Expressions.IndexOf(entry.Expressions.Single(e=>e.SpanStart==child.Start));result[child.Id]=WithSeparator(entry.Expressions[index],entry.Expressions,index);}continue;
             }

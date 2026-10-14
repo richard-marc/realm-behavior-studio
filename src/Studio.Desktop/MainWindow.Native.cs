@@ -18,7 +18,7 @@ public partial class MainWindow
     void AddArgumentControls(BehaviorNode node)
     {
         chooseChildSlotButton = null;
-        entryCreationButton=null;entryCreationChild=null;entryCreationInputs.Clear();
+        entryCreationButton=null;entryCreationChild=null;entryCreationInputs.Clear();entryCreationChildren.Clear();
         if(node.IsMemberInitializer)
         {
             Inspector.Children.Add(new TextBlock{Text="These member lists initialize after the constructor inputs. Select a list to edit its native actions or transitions.",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.LightSlateGray,Margin=new(0,12,0,8)});
