@@ -47,6 +47,7 @@ public partial class MainWindow
         await RunCrossCutUiSmoke(output,check);
         await RunSweepGeometryUiSmoke(output,check);
         await RunSnareUiSmoke(output,check);
+        await RunSnareViewportUiSmoke(output,check);
         await RunAttackUiSmoke(source, root, helpers, output, check);
         await RunProjectileUiSmoke(output, check);
         await RunMovementUiSmoke(source, root, helpers, output, check);

@@ -46,30 +46,30 @@ public sealed partial class EncounterViewport : FrameworkElement
         MouseWheel += (_, e) =>
         {
             var cursor = e.GetPosition(this); var world = World(cursor);
-            scale = Math.Clamp(scale * (e.Delta > 0 ? 1.12 : 1 / 1.12), Path != null ? 1e-36 : Sweep != null ? double.Epsilon : Ring != null || CrossCut != null ? .001 : Attack == null && Movement == null ? 8 : .001, 100);
+            scale = Math.Clamp(scale * (e.Delta > 0 ? 1.12 : 1 / 1.12), Path != null ? 1e-36 : Sweep != null ? double.Epsilon : Ring != null || CrossCut != null || Snare != null ? .001 : Attack == null && Movement == null ? 8 : .001, 100);
             pan = new Vector(cursor.X - ActualWidth / 2 - (world.X - 64.5) * scale, cursor.Y - ActualHeight / 2 - (world.Y - 64.5) * scale); InvalidateVisual();
         };
-        KeyDown += (_, e) => { if (e.Key == Key.Escape && (attackDrag != null || movementDrag != null || pathDrag != null || sweepDrag != null || ringDrag != null || crossCutDrag != null)) { CancelAttackDrag(); CancelMovementDrag(); CancelPathDrag(); CancelSweepDrag(); CancelRingDrag(); CancelCrossCutDrag(); ReleaseMouseCapture(); e.Handled = true; return; } keys.Add(e.Key); if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right) e.Handled = true; };
+        KeyDown += (_, e) => { if (e.Key == Key.Escape && (attackDrag != null || movementDrag != null || pathDrag != null || sweepDrag != null || ringDrag != null || crossCutDrag != null || snareDrag != null)) { CancelAttackDrag(); CancelMovementDrag(); CancelPathDrag(); CancelSweepDrag(); CancelRingDrag(); CancelCrossCutDrag(); CancelSnareDrag(); ReleaseMouseCapture(); e.Handled = true; return; } keys.Add(e.Key); if (e.Key is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right) e.Handled = true; };
         KeyUp += (_, e) => keys.Remove(e.Key); LostKeyboardFocus += (_, _) => keys.Clear();
         MouseDown += (_, e) =>
         {
             Focus(); if (e.ChangedButton == MouseButton.Middle) { drag = e.GetPosition(this); CaptureMouse(); return; }
             if(e.ChangedButton==MouseButton.Left && BeginArenaStroke(e.GetPosition(this))){CaptureMouse();e.Handled=true;return;}
             if (e.ChangedButton == MouseButton.Left && SelectCombatPoint(e.GetPosition(this))) { e.Handled = true; return; }
-            if (e.ChangedButton == MouseButton.Left && (BeginAttackDrag(e.GetPosition(this)) || BeginMovementDrag(e.GetPosition(this)) || BeginPathDrag(e.GetPosition(this)) || BeginSweepDrag(e.GetPosition(this)) || BeginRingDrag(e.GetPosition(this)) || BeginCrossCutDrag(e.GetPosition(this)))) { CaptureMouse(); e.Handled = true; return; }
+            if (e.ChangedButton == MouseButton.Left && (BeginAttackDrag(e.GetPosition(this)) || BeginMovementDrag(e.GetPosition(this)) || BeginPathDrag(e.GetPosition(this)) || BeginSweepDrag(e.GetPosition(this)) || BeginRingDrag(e.GetPosition(this)) || BeginCrossCutDrag(e.GetPosition(this)) || BeginSnareDrag(e.GetPosition(this)))) { CaptureMouse(); e.Handled = true; return; }
             if (e.ChangedButton == MouseButton.Right && Session != null)
             {
                 var w = HitWorld(e.GetPosition(this)); var bullet = Session.Projectiles.OrderBy(b => Math.Pow(b.X - w.X, 2) + Math.Pow(b.Y - w.Y, 2)).FirstOrDefault();
                 if (bullet?.NodeId is { } id && Math.Abs(bullet.X - w.X) < 1 && Math.Abs(bullet.Y - w.Y) < 1) Selected?.Invoke(id);
             }
         };
-        MouseMove += (_, e) => { if(paintingArena){AddArenaPoint(e.GetPosition(this));e.Handled=true;} else if (attackDrag != null) { MoveAttackDrag(e.GetPosition(this)); e.Handled = true; } else if (movementDrag != null) { MoveMovementDrag(e.GetPosition(this)); e.Handled = true; } else if (pathDrag != null) { MovePathDrag(e.GetPosition(this)); e.Handled = true; } else if (sweepDrag != null) { MoveSweepDrag(e.GetPosition(this)); e.Handled = true; } else if (ringDrag != null) { MoveRingDrag(e.GetPosition(this)); e.Handled = true; } else if(crossCutDrag!=null){MoveCrossCutDrag(e.GetPosition(this));e.Handled=true;} else if (drag is { } previous) { var next = e.GetPosition(this); pan += next - previous; drag = next; InvalidateVisual(); } };
-        MouseUp += (_, e) => { if(e.ChangedButton==MouseButton.Left && paintingArena){FinishArenaStroke();ReleaseMouseCapture();e.Handled=true;} if (e.ChangedButton == MouseButton.Left && (attackDrag != null || movementDrag != null || pathDrag != null || sweepDrag != null || ringDrag != null || crossCutDrag != null)) { EndAttackDrag(); EndMovementDrag(); EndPathDrag(); EndSweepDrag(); EndRingDrag(); EndCrossCutDrag(); ReleaseMouseCapture(); e.Handled = true; } if (e.ChangedButton == MouseButton.Middle) { drag = null; ReleaseMouseCapture(); } };
-        LostMouseCapture += (_, _) => { drag = null; CancelArenaStroke(); CancelAttackDrag(); CancelMovementDrag(); CancelPathDrag(); CancelSweepDrag(); CancelRingDrag(); CancelCrossCutDrag(); };
+        MouseMove += (_, e) => { if(paintingArena){AddArenaPoint(e.GetPosition(this));e.Handled=true;} else if (attackDrag != null) { MoveAttackDrag(e.GetPosition(this)); e.Handled = true; } else if (movementDrag != null) { MoveMovementDrag(e.GetPosition(this)); e.Handled = true; } else if (pathDrag != null) { MovePathDrag(e.GetPosition(this)); e.Handled = true; } else if (sweepDrag != null) { MoveSweepDrag(e.GetPosition(this)); e.Handled = true; } else if (ringDrag != null) { MoveRingDrag(e.GetPosition(this)); e.Handled = true; } else if(crossCutDrag!=null){MoveCrossCutDrag(e.GetPosition(this));e.Handled=true;} else if(snareDrag!=null){MoveSnareDrag(e.GetPosition(this));e.Handled=true;} else if (drag is { } previous) { var next = e.GetPosition(this); pan += next - previous; drag = next; InvalidateVisual(); } };
+        MouseUp += (_, e) => { if(e.ChangedButton==MouseButton.Left && paintingArena){FinishArenaStroke();ReleaseMouseCapture();e.Handled=true;} if (e.ChangedButton == MouseButton.Left && (attackDrag != null || movementDrag != null || pathDrag != null || sweepDrag != null || ringDrag != null || crossCutDrag != null || snareDrag != null)) { EndAttackDrag(); EndMovementDrag(); EndPathDrag(); EndSweepDrag(); EndRingDrag(); EndCrossCutDrag(); EndSnareDrag(); ReleaseMouseCapture(); e.Handled = true; } if (e.ChangedButton == MouseButton.Middle) { drag = null; ReleaseMouseCapture(); } };
+        LostMouseCapture += (_, _) => { drag = null; CancelArenaStroke(); CancelAttackDrag(); CancelMovementDrag(); CancelPathDrag(); CancelSweepDrag(); CancelRingDrag(); CancelCrossCutDrag(); CancelSnareDrag(); };
     }
     public EncounterInput Input()
     {
-        if (ArenaEditing || Attack != null || Movement != null || Path != null || Sweep != null || Ring != null || CrossCut != null || CombatPreviewOpen) return new();
+        if (ArenaEditing || Attack != null || Movement != null || Path != null || Sweep != null || Ring != null || CrossCut != null || Snare != null || CombatPreviewOpen) return new();
         bool Held(params Key[] values) => IsKeyboardFocusWithin && values.Any(keys.Contains);
         var aim = HitWorld(Mouse.GetPosition(this));
         return new((Held(Key.D, Key.Right) ? 1 : 0) - (Held(Key.A, Key.Left) ? 1 : 0), (Held(Key.S, Key.Down) ? 1 : 0) - (Held(Key.W, Key.Up) ? 1 : 0), IsMouseOver && Mouse.LeftButton == MouseButtonState.Pressed, aim.X, aim.Y);
@@ -95,6 +95,7 @@ public sealed partial class EncounterViewport : FrameworkElement
             if (Sweep != null) { DrawSweep(dc); return; }
             if (Ring != null) { DrawRing(dc); return; }
             if(CrossCut!=null){DrawCrossCut(dc);return;}
+            if(Snare!=null){DrawSnare(dc);return;}
             DrawCharacter(dc, PreviewEntity, origin, SpriteAction.Stand, 0, 0);
             if (Attack != null) { DrawAttack(dc); return; }
             Text(dc, "Ready to simulate", new(18, 18), 13, Brush("#A4AAB3"));

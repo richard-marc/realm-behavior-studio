@@ -15,7 +15,7 @@ public partial class MainWindow
         movementEditing = false; Viewport.Movement = null;
         if (movementEditorButton != null) movementEditorButton.Content = "Edit movement bounds";
     }
-    void ClearViewportEditors() { ClearArenaEditor(); ClearAttackEditor(); ClearMovementEditor(); ClearPathEditor(); ClearSweepEditor(); ClearRingEditor(); ClearCrossCutEditor(); ClearCombatPreview(); }
+    void ClearViewportEditors() { ClearArenaEditor(); ClearAttackEditor(); ClearMovementEditor(); ClearPathEditor(); ClearSweepEditor(); ClearRingEditor(); ClearCrossCutEditor(); ClearSnareEditor(); ClearCombatPreview(); }
     void RefreshMovementSelection()
     {
         if (!movementEditing) return;

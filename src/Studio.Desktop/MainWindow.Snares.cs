@@ -8,12 +8,31 @@ using Studio.Raple;
 namespace Studio.Desktop;
 public partial class MainWindow
 {
-    Expander? snarePanel;ComboBox? snareAnchor,snareGap;
+    Expander? snarePanel;ComboBox? snareAnchor,snareGap;Button? snareEditorButton;bool snareEditing;
+    void ClearSnareEditor(){snareEditing=false;Viewport.Snare=null;if(snareEditorButton!=null)snareEditorButton.Content="Edit snare layout";}
+    void RefreshSnareSelection()
+    {
+        if(!snareEditing)return;
+        if(selectedNode==null||adapter.ReadSnare(document,selectedNode) is not{} pattern||!adapter.HasKnownProjectileOwner(document,selectedEntity!.Id,selectedNode)||adapter.SnareProjectiles(selectedEntity.Id,pattern.Radius).SingleOrDefault(p=>p.Index==pattern.Projectile) is not{} projectile){ClearSnareEditor();return;}
+        Viewport.Snare=new(selectedNode.Id,document.Revision,pattern,projectile.LifetimeMs*projectile.Speed/10000,RegionEditable(selectedNode));
+    }
+    void ApplySnareEdit(SnareSelection selection,IReadOnlyDictionary<string,double> values){Try(()=>CommitSnareEdit(selection,values));RefreshSnareSelection();}
+    void CommitSnareEdit(SnareSelection selection,IReadOnlyDictionary<string,double> values)
+    {
+        var node=document.Find(selection.NodeId);var pattern=adapter.ReadSnare(document,node);
+        if(pattern==null||!adapter.HasKnownProjectileOwner(document,selectedEntity!.Id,node)||values.Count==0||values.Keys.Any(k=>k is not("radius" or "count" or "gapSlots")&&k!=(pattern.Echo?"clampRange":"targetRange")&&(k!="gapAngle"||pattern.Echo||pattern.Gap is not("Fixed" or "Rotating")))||values.Values.Any(v=>!double.IsFinite(v)))throw new ArgumentException("Choose the native snare radius, clamp, slots or fixed/rotating opening.");
+        document.Apply(new(selection.Revision,"Adjust snare layout",values.Select(p=>new EditOperation(node.Id,p.Key,p.Value.ToString("R",CultureInfo.InvariantCulture))).ToArray()),ValidateAuthoring);Changed(node.Id);
+    }
     bool SnareOptionVisible(string name)=>name=="anchor"&&snareAnchor!=null||name=="gap"&&snareGap!=null;
     void AddSnareControls(BehaviorNode node)
     {
-        snarePanel=null;snareAnchor=null;snareGap=null;if(!adapter.IsSnare(document,node))return;
+        snarePanel=null;snareAnchor=null;snareGap=null;snareEditorButton=null;if(!adapter.IsSnare(document,node))return;
         var pattern=adapter.ReadSnare(document,node);var revision=document.Revision;var body=new StackPanel();
+        if(pattern!=null&&adapter.HasKnownProjectileOwner(document,selectedEntity!.Id,node)&&adapter.SnareProjectiles(selectedEntity.Id,pattern.Radius).Any(p=>p.Index==pattern.Projectile))
+        {
+            snareEditorButton=new(){Content=snareEditing?"Close snare editor":"Edit snare layout",Style=(Style)FindResource("QuietButton"),IsEnabled=RegionEditable(node),Margin=new(0,10,0,0)};
+            snareEditorButton.Click+=(_,_)=>{if(snareEditing){ClearSnareEditor();return;}ClearViewportEditors();Stop(this,new());snareEditing=true;RefreshSnareSelection();snareEditorButton!.Content="Close snare editor";WorkspaceTabs.SelectedIndex=0;UpdateLayout();Viewport.FitSnare();Viewport.Focus();};Inspector.Children.Add(snareEditorButton);
+        }
         if(pattern is{Echo:false})
         {
             ComboBox Choice(string title,string name,string type,string[] choices,string selected)
@@ -46,5 +65,5 @@ public partial class MainWindow
         var node=document.Find(nodeId);if(!adapter.IsSnare(document,node)||node.Kind!="ConvergingSnare"||name is not("anchor" or "gap"))throw new ArgumentException("Choose a native snare anchor or opening.");
         document.Apply(new(revision,"Adjust snare "+name,[new(nodeId,name,expression)]),ValidateAuthoring);Changed(nodeId);
     }
-    void UpdateSnareControls(){if(selectedNode==null)return;foreach(var option in new[]{snareAnchor,snareGap})if(option!=null)option.IsEnabled=RegionEditable(selectedNode);}
+    void UpdateSnareControls(){if(selectedNode==null)return;foreach(var option in new[]{snareAnchor,snareGap})if(option!=null)option.IsEnabled=RegionEditable(selectedNode);if(snareEditorButton!=null)snareEditorButton.IsEnabled=RegionEditable(selectedNode);RefreshSnareSelection();}
 }
