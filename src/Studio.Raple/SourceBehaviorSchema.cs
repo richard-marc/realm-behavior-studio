@@ -67,17 +67,18 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     public IReadOnlyList<EncounterSource> AdditionalEncounters()=>context.Encounters;
     public string FragmentRoot(IReadOnlyList<string> expressions) => adapter.FragmentRoot(expressions);
     public string CollectionFragmentRoot(IReadOnlyList<string> expressions) => adapter.CollectionFragmentRoot(expressions);
+    IMethodSymbol? SourceMethod(ExpressionSyntax expression)=>expression is InitializerExpressionSyntax initializer?Model.GetCollectionInitializerSymbolInfo(initializer).Symbol as IMethodSymbol:Model.GetSymbolInfo(expression).Symbol as IMethodSymbol;
     public string ChildList(string expression, string parameter, IReadOnlyList<string> children)
     {
         var source = Expression(expression);
-        if (source != null && Model.GetSymbolInfo(source).Symbol is IMethodSymbol method && method.Parameters.Single(p => p.Name == parameter).Type is { } type && type is not IArrayTypeSymbol && Collection(type))
+        if (source != null && SourceMethod(source) is IMethodSymbol method && method.Parameters.Single(p => p.Name == parameter).Type is { } type && type is not IArrayTypeSymbol && Collection(type))
             return "[" + string.Join(",\n", children) + "]";
         return ChildArray(expression, parameter, children);
     }
     public string ChildArray(string expression, string parameter, IReadOnlyList<string> children)
     {
         var source = Expression(expression);
-        if (source != null && Model.GetSymbolInfo(source).Symbol is IMethodSymbol method && method.Parameters.Single(p => p.Name == parameter).Type is IArrayTypeSymbol array)
+        if (source != null && SourceMethod(source) is IMethodSymbol method && method.Parameters.Single(p => p.Name == parameter).Type is IArrayTypeSymbol array)
             return "new " + array.ElementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "[] { " + string.Join(",\n", children) + " }";
         return adapter.ChildArray(expression, parameter, children);
     }
@@ -225,7 +226,9 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
         if (expression is InitializerExpressionSyntax entry&&model.GetCollectionInitializerSymbolInfo(entry).Symbol is IMethodSymbol add)
         {
             var parameterSymbol=add.Parameters.SingleOrDefault(p=>p.Name==parameter);if(parameterSymbol==null)return false;
-            return model.GetSpeculativeTypeInfo(entry.SpanStart,SyntaxFactory.ParseExpression(childExpression),SpeculativeBindingOption.BindAsExpression).Type is {} childType&&context.Binding.Value.Compilation.ClassifyConversion(childType,parameterSymbol.Type).IsImplicit;
+            var targetType=Element(parameterSymbol.Type);
+            if(arrayExpression!=null&&model.GetSpeculativeTypeInfo(entry.SpanStart,SyntaxFactory.ParseExpression(arrayExpression),SpeculativeBindingOption.BindAsExpression).Type is {} entryCollectionType&&Collection(entryCollectionType))targetType=Element(entryCollectionType);
+            return model.GetSpeculativeTypeInfo(entry.SpanStart,SyntaxFactory.ParseExpression(childExpression),SpeculativeBindingOption.BindAsExpression).Type is {} childType&&context.Binding.Value.Compilation.ClassifyConversion(childType,targetType).IsImplicit;
         }
         if (model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method) return false;
         var slot = method.Parameters.FirstOrDefault(p => p.Name == parameter);var member=MemberElement(expression,parameter,arrayExpression);if (slot == null&&member==null) return false;
@@ -238,7 +241,7 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     public bool AcceptsSpread(string text, string parameter, string spreadExpression, string? collectionExpression = null)
     {
         var expression = Expression(text); if (expression == null) return adapter.AcceptsSpread(text, parameter, spreadExpression, collectionExpression);
-        if (Model.GetSymbolInfo(expression).Symbol is not IMethodSymbol method || method.Parameters.FirstOrDefault(p => p.Name == parameter)?.Type is not { } target || !Collection(target)) return false;
+        if (SourceMethod(expression) is not IMethodSymbol method || method.Parameters.FirstOrDefault(p => p.Name == parameter)?.Type is not { } target || !Collection(target)) return false;
         return Model.ClassifyConversion(expression.SpanStart, SyntaxFactory.ParseExpression("[" + spreadExpression + "]"), target).IsImplicit;
     }
 }

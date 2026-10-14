@@ -45,7 +45,8 @@ public sealed partial class BehaviorDocument
         {
             var node=prepared.Find(created);var container=node.Children.FirstOrDefault(n=>n.Argument?.Name==slot.Name)??node;
             var expression=childInputs.GetValueOrDefault(slot.Name,"");
-            if(string.IsNullOrWhiteSpace(expression)&&slot.Minimum==0)
+            if(slot.IsCollection)prepared.SetNewEntryCollection(created,slot.Name,expression);
+            else if(string.IsNullOrWhiteSpace(expression)&&slot.Minimum==0)
             {
                 if(container.Children.Count>0)prepared.DeleteNode(container.Children.Single().Id);
             }
@@ -54,6 +55,28 @@ public sealed partial class BehaviorDocument
         var errors=prepared.SourceDiagnostics().Concat(validate?.Invoke(prepared)??[]).Where(d=>d.IsError).ToArray();
         if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
         ApplySourceRevision(Revision,Source,prepared.Source,prepared.Identities,baseSchema);return created;
+    }
+    void SetNewEntryCollection(Guid id,string parameter,string text)
+    {
+        var node=Find(id);var ownerSchema=SchemaAt(node)!;var metadata=ownerSchema.DescribeExpression(Expression(node))!;
+        var container=node.Children.Single(n=>n.Argument?.Name==parameter);Editable(container);
+        if(string.IsNullOrWhiteSpace(text))text=metadata.Parameters.Single(p=>p.Name==parameter).Default=="required"?ownerSchema.ChildList(Expression(node),parameter,[]):metadata.Parameters.Single(p=>p.Name==parameter).Default;
+        var input=SyntaxFactory.ParseExpression(text);
+        if(input.ContainsDiagnostics||input.FullSpan.Length!=text.Length||!input.IsKind(SyntaxKind.NullLiteralExpression)&&ListItems(input)==null)throw new ArgumentException("Provide an explicit native collection or null default; generated lists retain source ownership.");
+        var tree=CSharpSyntaxTree.ParseText(Source).GetRoot();var entry=(InitializerExpressionSyntax)NodeExpression(tree,node);var inputs=entry.Expressions.ToList();var position=metadata.Parameters.ToList().FindIndex(p=>p.Name==parameter);
+        while(inputs.Count<position)
+        {
+            var value=metadata.Parameters[inputs.Count];if(value.Default=="required")throw new ArgumentException("Cannot skip a required native Add input.");inputs.Add(SyntaxFactory.ParseExpression(value.Default));
+        }
+        if(inputs.Count==position)inputs.Add(input);else inputs[position]=input.WithTriviaFrom(inputs[position]);
+        var changed=tree.ReplaceNode(entry,entry.WithExpressions(SyntaxFactory.SeparatedList(inputs))).ToFullString();
+        var replaced=container.Children.SelectMany(n=>n.Descendants()).Select(n=>n.Id).ToHashSet();var probe=new BehaviorDocument(changed,names,Identities.Where(n=>!replaced.Contains(n.Id)).ToList(),baseSchema,SourceFile);
+        var errors=probe.SourceDiagnostics().Where(d=>d.IsError).ToArray();if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
+        var actual=probe.AllNodes.SingleOrDefault(n=>n.Path==node.Path&&n.Kind=="InitializerEntry")??throw new ArgumentException("This collection expression does not preserve a supported native Add contract.");
+        string? Binding(BehaviorDocument document,BehaviorNode entryNode)=>document.SchemaAt(entryNode)!.ClipboardSymbols(document.Expression(entryNode)).FirstOrDefault(s=>s.Start==0&&s.Length==entryNode.Length)?.Signature;
+        if(Binding(this,node)!=Binding(probe,actual))throw new ArgumentException("This collection input changes the selected native Add overload.");
+        if(actual.Children.Single(n=>n.Argument?.Name==parameter).ArgumentRequiresSource)throw new ArgumentException("This collection input requires source ownership.");
+        Commit(changed,probe.Identities,null);
     }
     public Guid DuplicateInitializerEntry(Guid id,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate=null)
     {

@@ -167,15 +167,16 @@ public sealed partial class BehaviorDocument
             foreach(var edit in edits)
             {
                 var slot=Slot(edit.Node);var position=metadata.Parameters.ToList().FindIndex(p=>p.Name==slot.Name);
-                if(position<0||edit.Children.Count>1||edit.Children.Count==0&&slot.Minimum>0)throw new ArgumentException("Provide the required native Add input.");
-                if(edit.Children.Count==0&&position>=expressions.Count)continue;
-                while(expressions.Count<=position)
+                if(position<0||!slot.IsCollection&&edit.Children.Count>1||edit.Children.Count==0&&slot.Minimum>0)throw new ArgumentException("Provide the required native Add input.");
+                if(!slot.IsCollection&&edit.Children.Count==0&&position>=expressions.Count)continue;
+                var value=slot.IsCollection?SyntaxFactory.ParseExpression(SchemaAt(entryOwner)!.ChildList(Expression(entryOwner),slot.Name,edit.Children.Select(c=>c.ToFullString()).ToArray())):edit.Children.Count==0?SyntaxFactory.ParseExpression(metadata.Parameters[position].Default):edit.Children[0];
+                while(expressions.Count<position)
                 {
                     var parameter=metadata.Parameters[expressions.Count];
                     if(parameter.Default=="required")throw new ArgumentException("Cannot skip a required native Add input.");
                     expressions.Add(SyntaxFactory.ParseExpression(parameter.Default));
                 }
-                expressions[position]=(edit.Children.Count==0?SyntaxFactory.ParseExpression(metadata.Parameters[position].Default):edit.Children[0]).WithTriviaFrom(expressions[position]);
+                if(expressions.Count==position)expressions.Add(value);else expressions[position]=value.WithTriviaFrom(expressions[position]);
             }
             return updated.WithExpressions(SyntaxFactory.SeparatedList(expressions));
         }

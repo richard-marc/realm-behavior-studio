@@ -162,13 +162,16 @@ public sealed partial class BehaviorDocument
                     {
                         var inputIndex=Array.IndexOf(description.ArgumentNames,slot.Name);
                         var input=inputIndex<0?null:inputs[inputIndex];var childPath=path+"/"+values.Count;
-                        if(description.Children.Count==1&&slot.Minimum>0)values.Add(Read(input!,childPath));
+                        if(description.Children.Count==1&&!slot.IsCollection&&slot.Minimum>0)values.Add(Read(input!,childPath));
                         else
                         {
-                            var oldSlot=identities.FirstOrDefault(n=>n.Kind=="ArgumentGroup"&&n.Path==childPath&&!usedIdentities.Contains(n.Id)&&n.Signature?.StartsWith("$slot:"+slot.Name+"|",StringComparison.Ordinal)==true);
+                            var items=input==null||!slot.IsCollection?null:ListItems(input);var fromCall=items==null;
+                            var requiresSource=slot.IsCollection&&input!=null&&!input.IsKind(SyntaxKind.NullLiteralExpression)&&items==null;
+                            var oldSlot=identities.FirstOrDefault(n=>n.Kind=="ArgumentGroup"&&n.Path==childPath&&!usedIdentities.Contains(n.Id));
                             if(oldSlot!=null)usedIdentities.Add(oldSlot.Id);
-                            var elements=input==null||slot.Minimum==0&&input.IsKind(SyntaxKind.NullLiteralExpression)?Array.Empty<BehaviorNode>():[Read(input,childPath+"/0")];
-                            values.Add(new(oldSlot?.Id??Guid.NewGuid(),childPath,"ArgumentGroup",slot.Name+" \u00b7 "+elements.Length,entry.SpanStart,entry.Span.Length,[],elements){Argument=slot,ArgumentFromCall=true});
+                            var elements=items!=null?items.Select((item,i)=>ReadItem(item,childPath+"/"+i)).ToArray():input==null||input.IsKind(SyntaxKind.NullLiteralExpression)&&(slot.Minimum==0||slot.IsCollection)?Array.Empty<BehaviorNode>():[Read(input,childPath+"/0")];
+                            var backing=fromCall?entry:input!;
+                            values.Add(new(oldSlot?.Id??Guid.NewGuid(),childPath,"ArgumentGroup",slot.Name+" \u00b7 "+(requiresSource?"source":ChildListCount(elements)),backing.SpanStart,backing.Span.Length,[],elements){Argument=slot,ArgumentFromCall=fromCall,ArgumentRequiresSource=requiresSource});
                         }
                     }
                     var oldEntry=identities.FirstOrDefault(n=>n.Kind=="InitializerEntry"&&n.Signature==entry.ToString()&&!usedIdentities.Contains(n.Id)&&n.Path.StartsWith(entityId+"/",StringComparison.Ordinal))??identities.FirstOrDefault(n=>n.Kind=="InitializerEntry"&&n.Path==path&&!usedIdentities.Contains(n.Id));if(oldEntry!=null)usedIdentities.Add(oldEntry.Id);

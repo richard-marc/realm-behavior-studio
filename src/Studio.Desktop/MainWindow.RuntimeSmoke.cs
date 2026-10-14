@@ -35,6 +35,7 @@ public partial class MainWindow
         await RunMemberInitializerUiSmoke(output,check);
         await RunKeyedInitializerUiSmoke(output,check);
         await RunOptionalInitializerUiSmoke(output,check);
+        await RunCollectionEntryUiSmoke(output,check);
         await RunSharedEntryUiSmoke(output,check);
         await RunSequentialSweepUiSmoke(output,check);
         await RunCycleUiSmoke(output,check);
