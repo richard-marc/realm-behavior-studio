@@ -224,8 +224,8 @@ internal sealed partial class SourceBehaviorSchema : IBehaviorSchema
     {
         var expression = Expression(text);
         if (expression == null) return adapter.AcceptsChild(text, parameter, childExpression, arrayExpression);
-        if(childExpression.TrimStart().StartsWith('{'))return AcceptEntry(expression,arrayExpression,childExpression);
-        if(childExpression.TrimStart().StartsWith('[')&&TryIndexedEntry(childExpression)!=null)return AcceptIndexedEntry(expression,arrayExpression,childExpression);
+        if(childExpression.TrimStart().StartsWith('{'))return AcceptEntry(expression,arrayExpression,childExpression,parameter);
+        if(childExpression.TrimStart().StartsWith('[')&&TryIndexedEntry(childExpression)!=null)return AcceptIndexedEntry(expression,arrayExpression,childExpression,parameter);
         var model = Model;
         if ((expression is InitializerExpressionSyntax||IsIndexedEntry(expression))&&EntryMethod(model,expression) is IMethodSymbol add)
         {

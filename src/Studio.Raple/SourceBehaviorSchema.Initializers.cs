@@ -10,13 +10,15 @@ internal sealed partial class SourceBehaviorSchema
     static ITypeSymbol? MemberType(ISymbol? symbol)=>symbol switch{IPropertySymbol p=>p.Type,IFieldSymbol f=>f.Type,_=>null};
     static bool MemberValues(ExpressionSyntax expression) => expression switch
     {
-        InitializerExpressionSyntax list => (list.IsKind(SyntaxKind.CollectionInitializerExpression) || list.IsKind(SyntaxKind.ObjectInitializerExpression) && list.Expressions.Count == 0)
-            && !list.Expressions.Any(e => e is AssignmentExpressionSyntax or InitializerExpressionSyntax),
+        InitializerExpressionSyntax list => MemberEntryBody(list),
         CollectionExpressionSyntax or ArrayCreationExpressionSyntax { Initializer: not null } or ImplicitArrayCreationExpressionSyntax => true,
         BaseObjectCreationExpressionSyntax { Initializer: null } => true,
-        BaseObjectCreationExpressionSyntax { Initializer: { } initializer } => !initializer.Expressions.Any(e => e is AssignmentExpressionSyntax or InitializerExpressionSyntax),
+        BaseObjectCreationExpressionSyntax { Initializer: { } initializer } => MemberEntryBody(initializer),
         _ => false
     };
+    static bool MemberEntryBody(InitializerExpressionSyntax list) => list.IsKind(SyntaxKind.CollectionInitializerExpression)
+        && !list.Expressions.Any(e => e is AssignmentExpressionSyntax)
+        || list.IsKind(SyntaxKind.ObjectInitializerExpression) && list.Expressions.All(IsIndexedEntry);
     public IReadOnlyList<SourceMemberCollection> InitializerCollections(string text)
     {
         if(Expression(text) is not BaseObjectCreationExpressionSyntax {Initializer:{} initializer})return [];

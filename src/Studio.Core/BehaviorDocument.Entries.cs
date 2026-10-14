@@ -8,7 +8,7 @@ public sealed partial class BehaviorDocument
     public IReadOnlyList<InitializerEntryOverload> EntryOverloads(Guid collectionId)
     {
         var collection=Find(collectionId);
-        return collection.Kind=="ArgumentGroup"&&!collection.ArgumentFromCall&&!collection.ArgumentRequiresSource&&collection.Argument?.IsMember!=true?SchemaAt(collection)?.InitializerEntryOverloads(Expression(collection))??[]:[];
+        return collection.Kind=="ArgumentGroup"&&!collection.ArgumentFromCall&&!collection.ArgumentRequiresSource&&collection.Argument?.IsCollection==true?SchemaAt(collection)?.InitializerEntryOverloads(Expression(collection))??[]:[];
     }
     public Guid CreateCollectionEntry(Guid collectionId,string signature,IReadOnlyDictionary<string,string> scalarInputs,IReadOnlyDictionary<string,string> childInputs,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate=null)
     {
@@ -33,9 +33,9 @@ public sealed partial class BehaviorDocument
     }
     IReadOnlyList<Guid> PasteInitializerEntries(BehaviorNode parent,int index,BehaviorClipboard clipboard,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate)
     {
-        if(schema?.HasSourceContext!=true||parent.Kind!="ArgumentGroup"||parent.ArgumentFromCall||parent.Argument?.IsMember==true)throw new ArgumentException("Paste keyed entries into an explicit source collection initializer.");
+        if(schema?.HasSourceContext!=true||parent.Kind!="ArgumentGroup"||parent.ArgumentFromCall||parent.Argument?.IsCollection!=true)throw new ArgumentException("Paste keyed entries into an explicit source collection initializer.");
         if(clipboard.Symbols==null||clipboard.Symbols.Count>10_000||clipboard.Symbols.Any(s=>s==null||s.ExpressionIndex<0||s.ExpressionIndex>=clipboard.Expressions.Count||s.Start<0||s.Length<=0||s.Start>clipboard.Expressions[s.ExpressionIndex].Length-s.Length||string.IsNullOrEmpty(s.Signature)||s.Signature.Length>4096)||clipboard.Symbols.Sum(s=>(long)s.Signature.Length)>2_000_000)throw new ArgumentException("Invalid entry clipboard bindings.");
-        var tree=CSharpSyntaxTree.ParseText(Source).GetRoot();var collection=tree.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>().SingleOrDefault(e=>e.SpanStart==parent.Start&&e.Span.Length==parent.Length);
+        var tree=CSharpSyntaxTree.ParseText(Source).GetRoot();var collection=tree.DescendantNodes().OfType<ExpressionSyntax>().SingleOrDefault(e=>e.SpanStart==parent.Start&&e.Span.Length==parent.Length&&e is BaseObjectCreationExpressionSyntax or InitializerExpressionSyntax);
         if(collection==null)throw new ArgumentException("The destination has no actual collection constructor.");
         var entries=clipboard.Expressions.Select(text=>
         {
@@ -44,7 +44,8 @@ public sealed partial class BehaviorDocument
         }).ToArray();
         var indexed=entries.Any(e=>e is AssignmentExpressionSyntax);if(indexed&&entries.Any(e=>e is not AssignmentExpressionSyntax))throw new ArgumentException("Keep index assignments and Add entries in their native initializer forms.");
         var initializer=Initializer(collection);var form=SyntaxFactory.InitializerExpression(indexed?SyntaxKind.ObjectInitializerExpression:SyntaxKind.CollectionInitializerExpression,initializer.OpenBraceToken,SyntaxFactory.SeparatedList(entries),initializer.CloseBraceToken);
-        var probeSource=tree.ReplaceNode(collection,collection.WithInitializer(form)).ToFullString();
+        var replacement=collection is ObjectCreationExpressionSyntax creation?creation.WithInitializer(form):collection is ImplicitObjectCreationExpressionSyntax implicitCreation?implicitCreation.WithInitializer(form):(ExpressionSyntax)form;
+        var probeSource=tree.ReplaceNode(collection,replacement).ToFullString();
         var probe=new BehaviorDocument(probeSource,names,schema:baseSchema,sourceFile:SourceFile);var target=probe.AllNodes.Single(n=>n.Path==parent.Path&&n.Kind=="ArgumentGroup");
         if(target.Children.Count!=entries.Length||target.Children.Any(n=>n.Kind!="InitializerEntry"||n.Descendants().Any(c=>c.Kind=="State")))throw new ArgumentException("Resolve entry-owned phases or unsupported Add contracts before clipboard import.");
         var errors=probe.SourceDiagnostics().Where(d=>d.IsError).ToArray();if(errors.Length>0)throw new ArgumentException(string.Join("\n",errors.Select(d=>d.Message)));
