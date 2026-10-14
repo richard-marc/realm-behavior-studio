@@ -46,7 +46,7 @@ public partial class MainWindow
         foreach(var state in rows.Take(64))
         {
             var body=new StackPanel();body.Children.Add(new TextBlock{Text=$"#{state.ActorId} · {state.Owner.Split('.','+').Last()}",TextWrapping=TextWrapping.Wrap,FontWeight=FontWeights.SemiBold});
-            if(state.Fields.Length==0)body.Children.Add(new TextBlock{Text=state.Owner=="TKR.WorldServer.logic.behaviors.Timed"?"Remaining: "+state.Value+" ms":state.Owner=="TKR.WorldServer.logic.behaviors.Prioritize"?"Selected child: "+state.Value:state.Value,TextWrapping=TextWrapping.Wrap,Margin=new(0,3,0,0)});
+            if(state.Fields.Length==0)body.Children.Add(new TextBlock{Text=state.Owner is "TKR.WorldServer.logic.behaviors.Timed" or "TKR.WorldServer.logic.transitions.TimedTransition" or "TKR.WorldServer.logic.transitions.TimedRandomTransition"?"Remaining: "+state.Value+" ms":state.Owner=="TKR.WorldServer.logic.behaviors.Prioritize"?"Selected child: "+state.Value:state.Value,TextWrapping=TextWrapping.Wrap,Margin=new(0,3,0,0)});
             if(state.CycleStatus!=null)body.Children.Add(new TextBlock{Text="Cycle: "+state.CycleStatus,TextWrapping=TextWrapping.Wrap,FontSize=11});
             foreach(var field in state.Fields)body.Children.Add(new TextBlock{Text=field.Name+": "+field.Value,TextWrapping=TextWrapping.Wrap,FontSize=11,Margin=new(8,2,0,0)});
             if(state.Truncated)body.Children.Add(new TextBlock{Text="Additional fields are outside this bounded observation.",FontSize=11,TextWrapping=TextWrapping.Wrap});

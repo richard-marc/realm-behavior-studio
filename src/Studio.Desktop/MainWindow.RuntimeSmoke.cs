@@ -47,6 +47,7 @@ public partial class MainWindow
         await RunCallbackUiSmoke(output,check);
         await RunNativeStateUiSmoke(output,check);
         await RunSharedEventUiSmoke(output,check);
+        await RunTransitionCallbackUiSmoke(output,check);
         await RunPacketOriginUiSmoke(output,check);
         await RunConstructedCollectionUiSmoke(output,check);
         await RunExtensionEntryUiSmoke(output,check);

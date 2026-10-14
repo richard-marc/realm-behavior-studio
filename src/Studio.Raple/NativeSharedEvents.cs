@@ -10,7 +10,7 @@ internal static class NativeSharedEvents
     const string Registry="TKR.WorldServer.logic.StudioNativeStateOrigins";
     static readonly Action<long>? setTime=typeof(Behavior).Assembly.GetType(Registry)?.GetMethod("SetSharedEventTime")?.CreateDelegate<Action<long>>();
     internal static void SetTime(long ms)=>setTime?.Invoke(ms);
-    internal static NativeSharedEventBinding? FromData(string[] data)=>data.Length<18?null:new(int.Parse(data[3],CultureInfo.InvariantCulture),int.TryParse(data[13],out var actor)?actor:null,long.TryParse(data[14],out var sequence)?sequence:null,data[15],data[16],data[17]);
+    internal static NativeSharedEventBinding? FromData(string[] data)=>data.Length<18||data[6]!="Encounter removed"?null:new(int.Parse(data[3],CultureInfo.InvariantCulture),int.TryParse(data[13],out var actor)?actor:null,long.TryParse(data[14],out var sequence)?sequence:null,data[15],data[16],data[17]);
     internal const string RegistrySource="""
 namespace TKR.WorldServer.logic {
     internal static partial class StudioNativeStateOrigins {

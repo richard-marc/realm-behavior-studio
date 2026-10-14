@@ -54,6 +54,7 @@ internal static class NativeRuntimeState
                 {
                     "TKR.WorldServer.logic.behaviors.Timed" when value is int=>"Remaining loop counter · milliseconds",
                     "TKR.WorldServer.logic.behaviors.Prioritize" when value is int=>"Selected child index · -1 selects again",
+                    "TKR.WorldServer.logic.transitions.TimedTransition" or "TKR.WorldServer.logic.transitions.TimedRandomTransition" when value is int=>"Remaining transition counter · milliseconds",
                     _=>"Native stored value · units depend on its source"
                 };
                 result.Add(new NativeStateSlot(actor.Id,actor.ObjectDesc.IdName,slot++,TypeName(owner),TypeName(type),scalar??"Stored object · fields only",meaning,entries.ToArray(),NativeStateOrigins.Find(pair.Key),truncated){CycleStatus=cycleStatus?.DeclaringType?.IsInstanceOfType(pair.Key)==true?Scalar(cycleStatus.GetValue(pair.Key)):null});

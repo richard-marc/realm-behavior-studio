@@ -47,8 +47,14 @@ public partial class MainWindow
         {
             var label=record.SharedEvent is{} shared?"registered by "+(shared.SubscriberBehavior.Split('.','+').Last() is{Length:>0} subscriber?subscriber:"untracked source"):record.Behavior.Split('.','+').Last();
             var details=record.SharedEvent is{} binding?$"\nReceiver #{binding.ReceiverActorId} · subscriber #{binding.SubscriberActorId} · registration call #{binding.SubscriptionCallbackSequence}\n{binding.Handler}":"";
+            if(record.Transition is{} decision){label+=" · "+(decision.Matched?"matched → "+decision.Target:"not matched");details+=$"\nSelected index: {decision.SelectedIndex} · entered phase: {decision.EnteredPhase}";}
             var button=new Button{Content=new TextBlock{Text=$"{record.Ms/1000d:0.000}s · {record.Stage} · {label}",TextWrapping=TextWrapping.Wrap},Tag=record,Style=(Style)FindResource("QuietButton"),HorizontalContentAlignment=HorizontalAlignment.Left,Margin=new(record.ParentSequence is{} parent&&selected.Contains(parent)?10:0,2,0,2),IsEnabled=record.Origin!=null,ToolTip=$"Actor #{record.ActorId} · call #{record.Sequence} · parent #{record.ParentSequence} · {record.Outcome}"+details};
             button.Click+=(_,_)=>NavigateRuntimeSource(new(record.Ms,"callback",record.Stage+" · "+record.Behavior,record.Origin?.NodeId,record.ActorId,PhaseOrigin:record.Origin));callbackRows.Children.Add(button);
+            if(record.Transition is{Matched:true,TargetOrigin:{} target})
+            {
+                var destination=new Button{Content="Open selected target · "+record.Transition.Target,Tag=record.Transition,Style=(Style)FindResource("QuietButton"),HorizontalContentAlignment=HorizontalAlignment.Left,Margin=new(10,0,0,3)};
+                destination.Click+=(_,_)=>NavigateRuntimeSource(new(record.Ms,"transition-target",record.Transition.Target??"",target.NodeId,record.ActorId,PhaseOrigin:target));callbackRows.Children.Add(destination);
+            }
         }
     }
 }

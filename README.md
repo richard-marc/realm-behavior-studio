@@ -153,6 +153,8 @@ Select **Timed** or **Prioritize** to inspect **Native cycle** and follow its ch
 
 **Observed callbacks** also shows actual shared removal handlers. Rows distinguish the receiving actor from the controller that registered a handler and link the original registration call. Select a row or its cleanup effect to open that controller's accepted source. Reused delegates retain their own captured values; the registration link does not claim where their closure was created. Untracked registrations remain visible boundaries.
 
+Transition rows show whether the game actually matched each predicate. A matched row records its selected target and the leaf entered by the native state hierarchy. Select the row to edit the tested transition, or use **Open selected target** to open the actual destination construction. Timed transition counters appear in Live native state with milliseconds. These are observations from Play; the graph still treats conditional reachability as a possibility rather than a prediction.
+
 Select adjacent actions or phases to extract them together into a reusable child-array helper. Their source order, native hierarchy and identities remain intact, including captured storage used by following actions.
 
 Extraction also supports matching file-scoped namespaces. Destination imports stay unchanged, and the native compiler checks actual helper binding before accepting the edit.

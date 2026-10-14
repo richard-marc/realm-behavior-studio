@@ -11,7 +11,7 @@ using Studio.Core;
 namespace Studio.Raple;
 
 public record ExportVerification(bool Accepted, string[] Errors, int SourceFiles);
-public record NativeSourceStamp(string SourceHash, string EditedSourceHash, string ReferenceHash, string EmbeddedResourceHash, int SourceFiles,bool StateOriginInstrumentation=false,bool CallbackInstrumentation=false,bool PacketInstrumentation=false,bool SharedEventInstrumentation=false);
+public record NativeSourceStamp(string SourceHash, string EditedSourceHash, string ReferenceHash, string EmbeddedResourceHash, int SourceFiles,bool StateOriginInstrumentation=false,bool CallbackInstrumentation=false,bool PacketInstrumentation=false,bool SharedEventInstrumentation=false,bool TransitionInstrumentation=false);
 public record NativeCompilation(ExportVerification Verification, byte[] Assembly, byte[] Symbols, NativeSourceStamp Stamp)
 {
     internal CSharpCompilation? Compiler { get; init; }
@@ -84,7 +84,7 @@ public static class SourceVerification
         var emitted = executable.Emit(output, symbols, manifestResources: resources.Select(r => new ResourceDescription(r.Name, () => new MemoryStream(r.Data, false), true)),
             options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb, pdbFilePath: "TKR.WorldServer.pdb"), cancellationToken: cancellation);
         var errors = emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToString()).ToArray();
-        return new(new(errors.Length == 0, errors, paths.Length), emitted.Success ? output.ToArray() : [], emitted.Success ? symbols.ToArray() : [], stamp with{StateOriginInstrumentation=captureStateOrigins,CallbackInstrumentation=captureStateOrigins,PacketInstrumentation=captureStateOrigins,SharedEventInstrumentation=captureStateOrigins}) { Compiler = compilation };
+        return new(new(errors.Length == 0, errors, paths.Length), emitted.Success ? output.ToArray() : [], emitted.Success ? symbols.ToArray() : [], stamp with{StateOriginInstrumentation=captureStateOrigins,CallbackInstrumentation=captureStateOrigins,PacketInstrumentation=captureStateOrigins,SharedEventInstrumentation=captureStateOrigins,TransitionInstrumentation=captureStateOrigins}) { Compiler = compilation };
     }
     public static string Hash(IEnumerable<(string Name, byte[] Data)> entries)
     {

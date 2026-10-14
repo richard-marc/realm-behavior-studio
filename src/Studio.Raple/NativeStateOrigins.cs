@@ -65,8 +65,8 @@ namespace TKR.WorldServer.logic {
         {
             if(model.GetSymbolInfo(original).Symbol is not IMethodSymbol method)return changed;
             var state=method.ContainingType.ToDisplayString()==typeof(State).FullName;
-            var behavior=false;for(var type=method.ContainingType;type!=null;type=type.BaseType)if(type.ToDisplayString()==typeof(Behavior).FullName)behavior=true;
-            if(!state&&!behavior)return changed;
+            var behavior=false;var transition=false;for(var type=method.ContainingType;type!=null;type=type.BaseType){if(type.ToDisplayString()==typeof(Behavior).FullName)behavior=true;if(type.ToDisplayString()==typeof(Transition).FullName)transition=true;}
+            if(!state&&!behavior&&!transition)return changed;
             // Expression-tree consumers can inspect constructor syntax; retain their original trees.
             if(original.Ancestors().OfType<AnonymousFunctionExpressionSyntax>().Any(lambda=>model.GetTypeInfo(lambda).ConvertedType is INamedTypeSymbol type&&type.OriginalDefinition.ToDisplayString()=="System.Linq.Expressions.Expression<TDelegate>"))return changed;
             // Wrapping an argument changes the text that CallerArgumentExpression observes.
@@ -76,7 +76,7 @@ namespace TKR.WorldServer.logic {
                     .WithNewKeyword(SyntaxFactory.Token(SyntaxKind.NewKeyword).WithTrailingTrivia(SyntaxFactory.Space)):changed;
             static string Literal(string text)=>SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression,SyntaxFactory.Literal(text)).ToFullString();
             var id=ids.TryGetValue(original.ToString(),out var known)?known.ToString():"";
-            var expression=$"global::{RegistryName}.{(state?"Track":"TrackBehavior")}({creation.WithoutTrivia().ToFullString()},{Literal(file)},{original.SpanStart},{original.Span.Length},{Literal(hash)},{Literal(id)})";
+            var expression=$"global::{RegistryName}.{(state?"Track":transition?"TrackTransition":"TrackBehavior")}({creation.WithoutTrivia().ToFullString()},{Literal(file)},{original.SpanStart},{original.Span.Length},{Literal(hash)},{Literal(id)})";
             return SyntaxFactory.ParseExpression(expression).WithTriviaFrom(original);
         }
     }

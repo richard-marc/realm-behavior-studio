@@ -90,6 +90,9 @@ try {
     & dotnet run --project tests/SharedEvent.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/shared-event-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/shared-event-checks.log' -Tail 25; throw 'Native shared callback checks failed.' }
     Get-Content '.artifacts/shared-event-checks.log' -Tail 1
+    & dotnet run --project tests/TransitionCallback.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/transition-callback-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/transition-callback-checks.log' -Tail 25; throw 'Native transition callback checks failed.' }
+    Get-Content '.artifacts/transition-callback-checks.log' -Tail 1
     & dotnet run --project tests/IndexedEntry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/indexed-entry-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/indexed-entry-checks.log' -Tail 25; throw 'Native indexed initializer checks failed.' }
     Get-Content '.artifacts/indexed-entry-checks.log' -Tail 1
