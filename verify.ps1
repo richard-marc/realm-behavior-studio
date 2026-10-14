@@ -138,6 +138,9 @@ try {
     & dotnet run --project tests/SharedEntry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/shared-entry-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/shared-entry-checks.log' -Tail 25; throw 'Shared keyed entry workspace checks failed.' }
     Get-Content '.artifacts/shared-entry-checks.log' -Tail 1
+    & dotnet run --project tests/Dash.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/dash-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/dash-checks.log' -Tail 25; throw 'Native dash-controller checks failed.' }
+    Get-Content '.artifacts/dash-checks.log' -Tail 1
     & dotnet run --project tests/SequentialSweep.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/sequential-sweep-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/sequential-sweep-checks.log' -Tail 25; throw 'Native sequential sweep checks failed.' }
     Get-Content '.artifacts/sequential-sweep-checks.log' -Tail 1

@@ -130,7 +130,8 @@ public partial class MainWindow
             if (replace) Changed(document.ReplaceChild(owner.Id, constructorPreview.Text, ValidateAuthoring));
             else { document.AddChild(owner.Id, constructorPreview.Text, ValidateAuthoring); Changed(document.Find(owner.Id).Children.Last().Id); }
         });
-        constructorChoices.SelectedIndex = primitive.Name == "State" ? overloads.ToList().FindIndex(o => o.Parameters.Any(p => p.Name == "name")) : 0;
+        constructorChoices.SelectedIndex = primitive.Name == "State" ? overloads.ToList().FindIndex(o => o.Parameters.Any(p => p.Name == "name")) :
+            primitive.Name == "Dash" ? overloads.ToList().FindIndex(o => o.Parameters.All(p => p.Default != "required")) : 0;
     }
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {

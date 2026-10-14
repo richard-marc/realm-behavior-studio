@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "NewFollow", "NewCharge", "NewWander", "NewStayAbove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "TrailLedger", "TrailRecount", "SkyStrike", "GroundTransform", "TerrainWave", "OwnedLaneEmitters", "TimedRandomTransition",
-        "Protect", "BackAndForth", "PatrolCircle", "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
+        "Dash", "DashFlankVolley", "Protect", "BackAndForth", "PatrolCircle", "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -75,8 +75,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name is "ScaleHP" or "ScaleHP2" or "ScaleDefense" or "ConditionEffectBehavior" or "RemoveConditionalEffect" or "GiveTemporaryDefense" or "HealSelf" ? "Defense" : t.Name == "State" ? "Phases" :
-                t.Name is "NewFollow" or "NewCharge" or "NewWander" or "NewStayAbove" or "Protect" or "BackAndForth" or "PatrolCircle" or "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "TrailLedger" or "TrailRecount" or "SkyStrike" or "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
+                t.Name is "Dash" or "NewFollow" or "NewCharge" or "NewWander" or "NewStayAbove" or "Protect" or "BackAndForth" or "PatrolCircle" or "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "DashFlankVolley" or "TrailLedger" or "TrailRecount" or "SkyStrike" or "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,12 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "movement" when kind=="Dash"=>"Original child movement runs only between dashes. Dash forwards entry/exit callbacks to this same child.",
+        "fullDistance" when kind=="Dash"=>"Locks the target heading and travels the configured distance instead of stopping at the target's starting position. Native walls can end either mode early.",
+        "cooldownAfterEndMs" when kind=="Dash"=>"-1 keeps start-to-start scheduling. Zero or greater waits this many milliseconds after movement ends, including wall stops; target acquisition retries each tick when no target is found.",
+        "dodgeChance" when kind=="Dash"=>"Chance from 0 to 1 on actual offensive-ability events. Failed rolls also consume dodge cooldown; player ability lifecycle support remains incomplete in the prototype.",
+        "dash" when kind=="DashFlankVolley"=>"The exact Dash object executed by the same actor. A separate new Dash does not drive this volley. Select its phase to add a volley using an existing shared Dash reference.",
+        "spreadDeg" when kind=="DashFlankVolley"=>"Degrees between neighboring rays. The original Fans helper centers one fan on each side of the Dash's locked heading.",
         "duration" when kind=="NewFollow"=>"Seconds using native DeltaTime. Zero keeps following; expiry switches to cooldown and returns false. OrderedBehavior does not forward the controller's exit reset.",
         "cooldown" when kind is "NewFollow" or "NewCharge"=>"Seconds using native DeltaTime. False during cooldown allows the next ordered child. OrderedBehavior does not forward child exit/death callbacks.",
         "predictive" when kind=="NewFollow"=>"Adds four times the target's current-minus-previous position. This uses original native PrevX/PrevY, not a separate editor trajectory predictor.",
@@ -253,6 +259,9 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "Dash" or "DashFlankVolley" when name.EndsWith("Ms",StringComparison.Ordinal)=>"ms",
+        "Dash" when name is "distance" or "dodgeDistance" or "targetRange"=>"tiles",
+        "DashFlankVolley" when name is "spreadDeg" or "sideAngleDeg"=>"degrees",
         "NewFollow" when name is "duration" or "cooldown"=>"seconds",
         "NewCharge" when name=="cooldown"=>"seconds",
         "NewFollow" when name is "acquireRange" or "range"=>"tiles",
@@ -345,6 +354,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     {
         foreach (var diagnostic in document.SourceDiagnostics()) yield return diagnostic;
         foreach (var diagnostic in ValidateOwnedEmitters(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateDashControllers(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSequentialSweeps(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateRingPatterns(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateDelayedHazards(document,entityId)) yield return diagnostic;

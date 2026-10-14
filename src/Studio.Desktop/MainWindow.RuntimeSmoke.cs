@@ -77,6 +77,7 @@ public partial class MainWindow
         await RunOwnedActorsUiSmoke(source, root, helpers, output, check);
         await RunCombatUiSmoke(source, root, output, check);
         await RunCombatPathUiSmoke(output,check);
+        await RunDashUiSmoke(output,check);
         await RunFragmentUiSmoke(source, root, output, check);
         await RunTimelineUiSmoke(source, root, output, check);
         await RunArenaUiSmoke(source,root,output,check);

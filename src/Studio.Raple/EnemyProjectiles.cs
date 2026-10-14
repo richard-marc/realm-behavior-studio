@@ -33,7 +33,7 @@ public static class EnemyProjectiles
 public sealed partial class RapleAdapter
 {
     public bool IsNativeShoot(BehaviorDocument document, BehaviorNode node) => node.Kind == "Shoot" && NativeKind(document, node) == "Shoot";
-    public string? ProjectileParameter(BehaviorDocument document,BehaviorNode node)=>node.Kind==NativeKind(document,node)?node.Kind switch { "ConvergingSnare" or "EchoSnare" or "Shoot" or "DelayedOriginHazards" or "EdgeCrossCut" or "CorridorPulse"=>"projectileIndex", "TrailLedger" or "TrailRecount"=>"shardIndex", "SkyStrike"=>"coreIndex", "SequentialAimedSweep" or "GordoSpiral" or "GapRing"=>"projectile", _=>null }:null;
+    public string? ProjectileParameter(BehaviorDocument document,BehaviorNode node)=>node.Kind==NativeKind(document,node)?node.Kind switch { "DashFlankVolley" or "ConvergingSnare" or "EchoSnare" or "Shoot" or "DelayedOriginHazards" or "EdgeCrossCut" or "CorridorPulse"=>"projectileIndex", "TrailLedger" or "TrailRecount"=>"shardIndex", "SkyStrike"=>"coreIndex", "SequentialAimedSweep" or "GordoSpiral" or "GapRing"=>"projectile", _=>null }:null;
     public int? ReadProjectileIndex(BehaviorDocument document, BehaviorNode node) => ProjectileParameter(document,node) is {} parameter && ReadNumericParameter(document, node, parameter, parameter=="projectileIndex"?0:null, out var value) && value is >= 0 and <= int.MaxValue && value == Math.Truncate(value.Value) ? (int)value.Value : null;
     string? NativeKind(BehaviorDocument document, BehaviorNode node)
     {
@@ -45,6 +45,6 @@ public sealed partial class RapleAdapter
         var root = document.Entities.SingleOrDefault(entity => entity.EntityId == entityId)?.Root;
         if (root == null || !root.Descendants().Any(child => child.Id == node.Id) || ProjectileParameter(document,node)==null) return false;
         return root.Descendants().Where(parent => node.Path.StartsWith(parent.Path + "/", StringComparison.Ordinal))
-            .All(parent => parent.Kind == "ArgumentGroup" || NativeKind(document, parent) is "State" or "Prioritize" or "Timed" or "OnDeathBehavior");
+            .All(parent => parent.Kind == "ArgumentGroup" || NativeKind(document, parent) is "State" or "Prioritize" or "Timed" or "OnDeathBehavior" or "Dash");
     }
 }
