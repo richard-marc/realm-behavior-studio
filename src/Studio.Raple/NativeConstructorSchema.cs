@@ -183,7 +183,7 @@ public sealed class NativeConstructorSchema
         var token = symbol.GetAttributes().FirstOrDefault(a => a.AttributeClass?.Name == "NativeCtorAttribute")?.ConstructorArguments.FirstOrDefault().Value;
         var constructor = token is int metadataToken ? runtime.GetConstructors().Single(c => c.MetadataToken == metadataToken) : null;
         if (constructor == null) return new(null, [], [], [], runtime.Name == "Cooldown" && original.ArgumentList?.Arguments.Count == 0 ? [] : ["Native constructor identity is unavailable."]);
-        var parameters = constructor.GetParameters(); var arguments = original.ArgumentList!.Arguments; var mirroredArguments = call.ArgumentList!.Arguments;
+        var parameters = constructor.GetParameters(); var arguments = original.ArgumentList?.Arguments ?? default; var mirroredArguments = call.ArgumentList?.Arguments ?? default;
         var slots = new string[arguments.Count]; var indices = new int[arguments.Count]; var expanded = new bool[arguments.Count];
         for (var i = 0; i < arguments.Count; i++)
         {

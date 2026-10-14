@@ -145,6 +145,8 @@ Add **SequentialAimedSweep** from Actions for the game's tracked burst controlle
 
 Native State **Behaviors** and **Transitions** member initializers now appear as typed lists. Edit, reorder, duplicate or drag their inputs while preserving constructor inputs and the original initializer code. Member-region locks and Undo/Redo cover the whole edit.
 
+Native action/transition properties and fields also expose their initialized children. Scalar members offer **Replace child**; deleting the child keeps an explicit null assignment. Assigned arrays and collection constructors retain their original syntax and arguments, while getter-filled lists retain existing runtime contents. Play executes the original setters and getters. Phase-valued members, generated collection values and complex member initializers still open in Source.
+
 Select adjacent actions or phases to extract them together into a reusable child-array helper. Their source order, native hierarchy and identities remain intact, including captured storage used by following actions.
 
 Extraction also supports matching file-scoped namespaces. Destination imports stay unchanged, and the native compiler checks actual helper binding before accepting the edit.

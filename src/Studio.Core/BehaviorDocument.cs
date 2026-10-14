@@ -251,8 +251,8 @@ public sealed partial class BehaviorDocument
                         {
                             var member=memberLists.FirstOrDefault(m=>input.Span.Contains(new Microsoft.CodeAnalysis.Text.TextSpan(m.Start,m.Length)));
                             if(member==null){members.Add(Opaque(input,wrapperPath+"/"+members.Count));continue;}
-                            var list=(InitializerExpressionSyntax)((AssignmentExpressionSyntax)input).Right;var listPath=wrapperPath+"/"+members.Count;var oldList=identities.FirstOrDefault(i=>i.Path==listPath&&i.Kind=="ArgumentGroup"&&!usedIdentities.Contains(i.Id));if(oldList!=null)usedIdentities.Add(oldList.Id);
-                            var elements=(ListItems(list)??[]).Select((item,i)=>ReadItem(item,listPath+"/"+i)).ToArray();
+                            var list=((AssignmentExpressionSyntax)input).Right;var listPath=wrapperPath+"/"+members.Count;var oldList=identities.FirstOrDefault(i=>i.Path==listPath&&i.Kind=="ArgumentGroup"&&!usedIdentities.Contains(i.Id));if(oldList!=null)usedIdentities.Add(oldList.Id);
+                            var elements=(member.Argument.IsCollection?(ListItems(list)??[]):list.IsKind(SyntaxKind.NullLiteralExpression)?[]:new SyntaxNode[]{list}).Select((item,i)=>ReadItem(item,listPath+"/"+i)).ToArray();
                             members.Add(new(oldList?.Id??Guid.NewGuid(),listPath,"ArgumentGroup",member.Argument.Name+" · "+ChildListCount(elements),list.SpanStart,list.Span.Length,[],elements){Argument=member.Argument});
                         }
                         children.Add(new(oldWrapper?.Id??Guid.NewGuid(),wrapperPath,"ArgumentGroup","Member initializer",initialization.SpanStart,initialization.Span.Length,[],members){ArgumentRequiresSource=true,IsMemberInitializer=true});
