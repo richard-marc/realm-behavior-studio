@@ -42,6 +42,7 @@ public sealed class ReplayJournal
             timers = session.InspectTimers(), eventsHash, shotsHash, playerShotsHash, movementHash,arenaHash,effectsHash
         }));
         if(callbacks>0)signature=Hash(signature+"|callbacks:"+callbacksHash);
+        var nativeState=session.NativeState;if(nativeState.Count>0)signature=Hash(signature+"|native-state:"+JsonSerializer.Serialize(nativeState));
         return new(session.Ms, signature, events, shots, playerShots,movements,effects,callbacks);
     }
     public ReplayPoint ObserveCurrent(IEncounterSession session) { lock (gate) return Observe(session); }

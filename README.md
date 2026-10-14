@@ -149,6 +149,8 @@ Native action/transition properties and fields also expose their initialized chi
 
 Keyed member collections also support **New entry**, including getter-filled Add entries and index assignments. Enter the complete key and child value together; copy, duplicate and reorder retain each complete entry. Empty member lists discover their original Add/setter contract without a prototype. Play preserves existing getter-created contents and original setter behavior. Phase hierarchy and generated member contents remain Source boundaries.
 
+Select **Timed** or **Prioritize** to inspect **Native cycle** and follow its child actions. **Live native state → Play with live state** starts fresh compiled playback and shows stored values for each actor in the selected source region. Select a row to open its original construction site. Timed counters show milliseconds; Prioritize shows its selected child index. Custom fields retain their source names and units. Traces export the bounded observations, and replay checks them at recorded boundaries. Getters, custom formatting and reference/array contents are outside this field view.
+
 Select adjacent actions or phases to extract them together into a reusable child-array helper. Their source order, native hierarchy and identities remain intact, including captured storage used by following actions.
 
 Extraction also supports matching file-scoped namespaces. Destination imports stay unchanged, and the native compiler checks actual helper binding before accepting the edit.

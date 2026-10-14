@@ -35,7 +35,7 @@ namespace TKR.WorldServer.logic {
 }
 """;
     static readonly Func<object,string[]?>? lookup=typeof(State).Assembly.GetType(RegistryName)?.GetMethod("Find")?.CreateDelegate<Func<object,string[]?>>();
-    internal static NativeStateOrigin? Find(State? state)
+    internal static NativeStateOrigin? Find(object? state)
     {
         if(state==null||lookup?.Invoke(state) is not {Length:5} data)return null;
         return new(data[0],int.Parse(data[1],System.Globalization.CultureInfo.InvariantCulture),int.Parse(data[2],System.Globalization.CultureInfo.InvariantCulture),data[3],Guid.TryParse(data[4],out var id)?id:null);

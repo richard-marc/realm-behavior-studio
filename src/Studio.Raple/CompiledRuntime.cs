@@ -28,6 +28,7 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     volatile ImmutableList<Emission> shots = ImmutableList<Emission>.Empty, playerShots = ImmutableList<Emission>.Empty;
     volatile ImmutableList<ReplayInput> inputs = ImmutableList<ReplayInput>.Empty;
     public IReadOnlyList<EncounterEvent> Events => events;
+    public IReadOnlyList<NativeStateSlot> NativeState=>Frame.NativeState??[];
     public IReadOnlyList<Emission> Shots => shots;
     public IReadOnlyList<Emission> PlayerShots => playerShots;
     volatile ImmutableList<NativeEffect> effects=ImmutableList<NativeEffect>.Empty;
@@ -261,5 +262,5 @@ public sealed class CompiledRuntime : IEncounterSession, IAsyncDisposable
     }
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
     public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { runtime = Stamp, seed = Frame.Seed,
-        entity = Project.EntityId, player = Project.Player, tickMs = 100, sampleMs = EncounterSession.SampleMs, durationMs = Frame.Ms, coverage = Frame.Coverage, actors = Entities, events = Events, callbacks=Callbacks, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
+        entity = Project.EntityId, player = Project.Player, tickMs = 100, sampleMs = EncounterSession.SampleMs, durationMs = Frame.Ms, coverage = Frame.Coverage, actors = Entities, events = Events, callbacks=Callbacks, nativeState=NativeState, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
 }

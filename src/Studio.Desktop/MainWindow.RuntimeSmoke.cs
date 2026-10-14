@@ -45,6 +45,7 @@ public partial class MainWindow
         await RunOrderedControllerUiSmoke(output,check);
         await RunFirstEntryUiSmoke(output,check);
         await RunCallbackUiSmoke(output,check);
+        await RunNativeStateUiSmoke(output,check);
         await RunPacketOriginUiSmoke(output,check);
         await RunConstructedCollectionUiSmoke(output,check);
         await RunExtensionEntryUiSmoke(output,check);

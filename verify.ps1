@@ -84,6 +84,9 @@ try {
     & dotnet run --project tests/MemberEntry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/member-entry-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/member-entry-checks.log' -Tail 25; throw 'Native member initializer entry checks failed.' }
     Get-Content '.artifacts/member-entry-checks.log' -Tail 1
+    & dotnet run --project tests/NativeState.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/native-state-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/native-state-checks.log' -Tail 25; throw 'Native stored-state and loop checks failed.' }
+    Get-Content '.artifacts/native-state-checks.log' -Tail 1
     & dotnet run --project tests/IndexedEntry.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/indexed-entry-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/indexed-entry-checks.log' -Tail 25; throw 'Native indexed initializer checks failed.' }
     Get-Content '.artifacts/indexed-entry-checks.log' -Tail 1

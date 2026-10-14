@@ -61,6 +61,7 @@ public sealed class EncounterSession : IEncounterSession
     public double StartMs { get; }
     public List<EncounterEvent> Events { get; } = [];
     public List<NativeCallbackRecord> Callbacks { get; } = [];
+    public IReadOnlyList<NativeStateSlot> NativeState=>NativeRuntimeState.Capture(engine.World.Enemies.Values);
     IReadOnlyList<NativeCallbackRecord> IEncounterSession.Callbacks => Callbacks;
     internal void CaptureCallbacks()=>Callbacks.AddRange(NativeCallbacks.Drain());
     public List<ReplayInput> Inputs { get; } = [];
@@ -364,7 +365,7 @@ public sealed class EncounterSession : IEncounterSession
         var matches = phase.StateChildren.Where(n => n.Kind is "Shoot" or "SequentialAimedSweep" or "GordoSpiral" or "GapRing" && (n.Parameters.FirstOrDefault(p => p.Name == (n.Kind=="Shoot"?"projectileIndex":"projectile"))?.Expression ?? "0") == index.ToString()).ToArray();
         return matches.Length == 1 && matches[0].Kind=="Shoot" ? matches[0].Id : null; // The shared packet does not identify its controller callback.
     }
-    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities,objects=WorldObjects, events = Events, callbacks=Callbacks, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
+    public void ExportTrace(string path) => File.WriteAllText(path, JsonSerializer.Serialize(new { seed, entityId, sourceRevision = document.Revision, tickMs = 100, sampleMs = SampleMs, durationMs = Ms, player = preset, coverage = Coverage, actors = Entities,objects=WorldObjects, events = Events, callbacks=Callbacks, nativeState=NativeState, shots = Shots, playerShots = PlayerShots, effects=Effects, inputs = Inputs }, BehaviorDocument.JsonOptions));
     public string InspectTimers() => BossActive?string.Join("\n", boss.StateStorage.Select(p => p.Key.GetType().Name + ": " + (p.Value is int n ? n + " ms / scalar" : p.Value?.GetType().Name ?? "null"))):"Original encounter actor is no longer active. Live replacements appear in Actors.";
     public void Dispose() => packetCapture.Dispose();
 }

@@ -14,6 +14,7 @@ public interface IEncounterSession : IDisposable
     double StartMs { get; }
     IReadOnlyList<EncounterEvent> Events { get; }
     IReadOnlyList<NativeCallbackRecord> Callbacks => [];
+    IReadOnlyList<NativeStateSlot> NativeState => [];
     IReadOnlyList<Emission> Shots { get; }
     IReadOnlyList<Emission> PlayerShots { get; }
     IReadOnlyList<NativeEffect> Effects { get; }
