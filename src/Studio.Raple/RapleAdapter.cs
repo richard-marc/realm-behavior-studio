@@ -47,7 +47,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     public string CreationTypeName(string name) => "global::" + string.Join(".", RuntimeType(name).FullName!.Replace('+', '.').Split('.').Select(part => SyntaxFacts.GetKeywordKind(part) == SyntaxKind.None ? part : "@" + part));
     // Explicit scope, independent of the reflection catalog. Constructors outside this list remain opaque.
     static readonly HashSet<string> Supported = ["State", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit",
-        "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityNotExistsTransition",
+        "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "NoPlayerWithinTransition", "AnyEntityWithinTransition", "NoEntityWithinTransition", "EntityWithinTransition", "EntitiesNotExistsTransition", "OnGroundTransition", "NotMovingTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
@@ -87,6 +87,13 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "dist" when kind is "AnyEntityWithinTransition" or "NoEntityWithinTransition"=>"Integer tiles with strict distance < dist. Queries other enemies and players that are not Hidden; Invisible players still count. This host and static objects are excluded. This is proximity, not minion ownership.",
+        "dist" when kind=="NoPlayerWithinTransition"=>"Strict native nearest-player distance. Hidden and Invisible players are excluded by IsVisibleToEnemy. This uses a different visibility rule from AnyEntityWithinTransition.",
+        "entity" when kind=="EntityWithinTransition"=>"Case-insensitive XML IdName substring in the enemy/static collision index. A matching host counts. Display-name overrides are ignored; null matches any descriptor name.",
+        "dist" when kind is "EntityWithinTransition" or "EntitiesNotExistsTransition"=>"Strict native distance < dist in the enemy/static collision index. Matching hosts and queryable static objects count. There is no parent/owned-minion filter.",
+        "targets" when kind=="EntitiesNotExistsTransition"=>"Exact XML IDs resolved to object types. Every selected type must be absent in range. Order and duplicates remain in source; an empty list always returns false. Unknown IDs use the native Pirate fallback; null IDs fail construction.",
+        "ground" when kind=="OnGroundTransition"=>"Exact ground XML ID, resolved lazily on the first tick. Reads the host's current map cell using integer X/Y coordinates. Missing IDs fail native lookup.",
+        "delay" when kind=="NotMovingTransition"=>"Milliseconds between sampled position comparisons. First tick captures position and returns false; countdown ticks subtract elapsed time, with comparison on a later tick. Exact Vector2 equality triggers. Movement between checks can return to the same position and still match; this is not continuous motion tracking.",
         "projectileIndex" when kind is "ConvergingSnare" or "EchoSnare"=>"Owned straight constant-speed XML projectile. Its lifetime must reach the ring anchor; radius / (XML speed / 10000) gives travel time in milliseconds.",
         "radius" when kind is "ConvergingSnare" or "EchoSnare"=>"Ring radius in tiles. Each visible, passable origin fires inward. Target/clamped anchor distance plus radius must fit the native 14-tile envelope.",
         "count" when kind is "ConvergingSnare" or "EchoSnare"=>"Three to thirty-two evenly spaced slots. Each surviving origin emits one independent shot; gapSlots removes a contiguous run.",
@@ -207,6 +214,9 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "NotMovingTransition" when name=="delay"=>"ms",
+        "EntitiesNotExistsTransition" when name=="targets"=>"XML IDs",
+        "OnGroundTransition" when name=="ground"=>"ground XML ID",
         "ConvergingSnare" or "EchoSnare" when name is "intervalMs" or "startupMs" or "lagMs"=>"ms",
         "ConvergingSnare" or "EchoSnare" when name=="projectileIndex"=>"XML index",
         "ConvergingSnare" or "EchoSnare" when name is "radius" or "targetRange" or "clampRange" or "acquireRange" or "markerRadius" or "markRadius"=>"tiles",
@@ -285,6 +295,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateCrossCuts(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSweepControllers(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSnares(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidatePresenceConditions(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

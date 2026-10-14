@@ -10,6 +10,7 @@ public record PhaseTransition(BehaviorNode Node, Guid OwnerId, int Priority, str
 {
     public IReadOnlyList<PhaseDestination> Destinations {get;init;}=[];
     public bool TargetsKnown {get;init;}
+    public bool CanMatch {get;init;}=true;
 }
 public record PhaseCycle(IReadOnlyList<Guid> PhaseIds,IReadOnlyList<Guid> TransitionIds,IReadOnlyList<Guid> ExitTransitionIds,bool Reachable);
 public record PhaseAnalysis(IReadOnlyList<PhaseTransition> Transitions, IReadOnlyList<DocumentDiagnostic> Diagnostics)
@@ -21,7 +22,7 @@ public record PhaseAnalysis(IReadOnlyList<PhaseTransition> Transitions, IReadOnl
 public static partial class BehaviorAnalysis
 {
     static readonly HashSet<string> Known = ["State", "ArgumentGroup", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit", "Prioritize",
-        "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "EntityExistsTransition", "EntityNotExistsTransition",
+        "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "NoPlayerWithinTransition", "AnyEntityWithinTransition", "NoEntityWithinTransition", "EntityWithinTransition", "EntitiesNotExistsTransition", "OnGroundTransition", "NotMovingTransition", "EntityExistsTransition", "EntityNotExistsTransition",
         "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior", "TimedRandomTransition",
         "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "SizeTransform", "ChangeSize", "SetAltTexture", "SizeTransformComplete", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
     public static string? Expression(BehaviorNode node, string parameter) => node.Parameters.FirstOrDefault(p => p.Name == parameter)?.Expression;
@@ -49,22 +50,42 @@ public static partial class BehaviorAnalysis
         "GroupNotExistTransition"=>$"No group {Value(node,"group")} within {Value(node,"dist")} tiles",
         "EntityHpLessTransition"=>$"Nearest name {Value(node,"entity")} · HP < "+(Number(node,"threshold") is {} entityHp?$"{entityHp*100:0.##}%":Value(node,"threshold")),
         "PlayerWithinTransition" => $"Player within {Value(node, "dist")} tiles" + (Value(node, "seeInvis", "false") == "true" ? " · sees invisible" : ""),
+        "NoPlayerWithinTransition"=>$"No visible player within {Value(node,"dist")} tiles",
+        "AnyEntityWithinTransition"=>$"Another enemy or non-hidden player within {Value(node,"dist")} tiles",
+        "NoEntityWithinTransition"=>$"No other enemy or non-hidden player within {Value(node,"dist")} tiles",
+        "EntityWithinTransition"=>$"XML name {Value(node,"entity")} within {Value(node,"dist")} tiles",
+        "EntitiesNotExistsTransition"=>CanMatch(node)?$"All selected types absent within {Value(node,"dist")} tiles":"Empty target list · never matches",
+        "OnGroundTransition"=>$"On ground {Value(node,"ground")}",
+        "NotMovingTransition"=>$"Position unchanged at {Value(node,"delay","250")} ms checks",
         "EntityExistsTransition" => $"{Resource(node)} within {Value(node, "dist")} tiles",
         "EntityNotExistsTransition" => Value(node, "checkAttackTarget", "false") == "true" ? "Attack target absent" : $"No {(Value(node, "target") == "null" ? "player" : Resource(node))} within {Value(node, "dist")} tiles",
         _ => node.Kind
     };
     static bool Covers(BehaviorNode earlier, BehaviorNode later)
     {
+        if(!CanMatch(earlier)||!CanMatch(later))return false;
         // Timers are stateful and later timers are not ticked after an earlier match. Do not compare their durations.
         if (earlier.Kind == "TimedTransition" && Number(earlier, "time") == 0 && Value(earlier, "randomized", "false") == "false") return true;
         if(earlier.Kind=="TimedRandomTransition"&&Number(earlier,"time")==0&&ChoiceTargets(earlier) is {Count:>0})return true;
         if (earlier.Kind != later.Kind) return false;
+        if(earlier.Kind=="NoPlayerWithinTransition")return Number(earlier,"dist") is{} a&&Number(later,"dist") is{} b&&a<=b;
+        // Native Any*Nearby squares an int radius. Do not infer monotonicity
+        // across negative radii or overflowing integer squares.
+        if(earlier.Kind is "AnyEntityWithinTransition" or "NoEntityWithinTransition")return Number(earlier,"dist") is >=0 and <=46340 and var a&&Number(later,"dist") is >=0 and <=46340 and var b&&(earlier.Kind=="AnyEntityWithinTransition"?a>=b:a<=b);
+        if(earlier.Kind=="OnGroundTransition")return BehaviorDocument.LiteralString(Value(earlier,"ground")) is{} ground&&ground==BehaviorDocument.LiteralString(Value(later,"ground"));
+        if(earlier.Kind=="EntityWithinTransition")return BehaviorDocument.LiteralString(Value(earlier,"entity")) is{} name&&name==BehaviorDocument.LiteralString(Value(later,"entity"))&&Number(earlier,"dist") is{} a&&Number(later,"dist") is{} b&&a>=b;
         if (earlier.Kind == "HpLessTransition") return Number(earlier, "threshold") is { } a && Number(later, "threshold") is { } b && a >= b;
         if(earlier.Kind=="DamageTakenTransition")return Number(earlier,"damage") is {} a&&Number(later,"damage") is {} b&&a<=b;
         if(earlier.Kind=="EntityHpLessTransition")return BehaviorDocument.LiteralString(Value(earlier,"entity")) is {} aName&&BehaviorDocument.LiteralString(Value(later,"entity")) is {} bName&&string.Equals(aName,bName,StringComparison.OrdinalIgnoreCase)&&Number(earlier,"dist") is {} distance&&distance==Number(later,"dist")&&Number(earlier,"threshold") is {} a&&Number(later,"threshold") is {} b&&a>=b;
         if (earlier.Kind == "PlayerWithinTransition") return Number(earlier, "dist") is { } a && Number(later, "dist") is { } b && a >= b &&
             Value(earlier, "seeInvis", "false") == Value(later, "seeInvis", "false");
         return false;
+    }
+    static bool CanMatch(BehaviorNode node)
+    {
+        if(node.Kind!="EntitiesNotExistsTransition")return true;
+        var lists=node.Parameters.Where(p=>p.Name.Split('[')[0]=="targets").Select(p=>BehaviorDocument.PhaseLiterals(p.Expression)).ToArray();
+        return lists.Any(l=>l==null)||lists.Sum(l=>l!.Count)>0;
     }
     static IReadOnlyList<string>? ChoiceTargets(BehaviorNode node)
     {
@@ -88,7 +109,7 @@ public static partial class BehaviorAnalysis
                 var destinations=values?.GroupBy(v=>v).Select(g=>new PhaseDestination(g.Key,names.TryGetValue(g.Key,out var matches)&&matches.Length==1?matches[0].Id:null,g.Count())).ToArray()??[];
                 var targetName=destinations.Length==0?null:string.Join(" · ",destinations.Select(d=>d.Name+(d.Slots>1?" ×"+d.Slots:"")));
                 var targetId=destinations.Length==1?destinations[0].Id:null;
-                edges.Add(new(node, state.Id, i + 1, Condition(node), targetName, targetId){Destinations=destinations,TargetsKnown=values!=null});
+                edges.Add(new(node, state.Id, i + 1, Condition(node), targetName, targetId){Destinations=destinations,TargetsKnown=values!=null,CanMatch=CanMatch(node)});
                 var shadow = transitions.Take(i).FirstOrDefault(earlier => Covers(earlier, node));
                 if (shadow != null) diagnostics.Add(new($"Priority conflict: transition {i + 1} in {state.Label} is shadowed by transition {Array.IndexOf(transitions, shadow) + 1}. The first matching transition wins.", node.Id, false));
                 if (destinations.Any(d=>d.Id == state.Id)) diagnostics.Add(new($"Self transition in {state.Label}: stays in this branch or enters its first nested phase. Common-ancestor entry callbacks are not rerun.", node.Id, false));
@@ -114,12 +135,12 @@ public static partial class BehaviorAnalysis
                 for (BehaviorNode? state = leaf; state != null; state = parent.GetValueOrDefault(state.Id))
                 {
                     reachable.Add(state.Id);
-                    foreach (var target in edges.Where(e => e.OwnerId == state.Id).SelectMany(e=>e.Destinations).Where(d=>d.Id!=null)) Enter(states.Single(s => s.Id == target.Id));
+                    foreach (var target in edges.Where(e => e.OwnerId == state.Id&&e.CanMatch).SelectMany(e=>e.Destinations).Where(d=>d.Id!=null)) Enter(states.Single(s => s.Id == target.Id));
                 }
             }
             foreach (var state in states.Where(s => !reachable.Contains(s.Id))) diagnostics.Add(new($"Unreachable phase: {state.Label}. No literal transition or first-child entry reaches this phase.", state.Id, false));
         }
-        var cycles=incomplete||edges.Any(e=>e.Destinations.Any(d=>d.Id==null))?[]:FindCycles(root,states,edges);
+        var cycles=incomplete||edges.Any(e=>e.Destinations.Any(d=>d.Id==null))?[]:FindCycles(root,states,edges.Where(e=>e.CanMatch).ToArray());
         foreach(var cycle in cycles.Where(c=>c.PhaseIds.Count>1))
         {
             var labels=cycle.PhaseIds.Select(id=>states.Single(s=>s.Id==id).Label).ToArray();var title=string.Join(" · ",labels.Take(4))+(labels.Length>4?$" · {labels.Length} phases":"");

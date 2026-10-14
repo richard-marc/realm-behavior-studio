@@ -45,6 +45,7 @@ public partial class MainWindow
         UpdateSnareControls();
         if(ownedLaneAxes!=null)ownedLaneAxes.IsEnabled=editable;
         UpdatePhaseChoiceControls();
+        UpdatePresenceControls();
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;
         if (deleteStructureButton != null) deleteStructureButton.IsEnabled = editable;

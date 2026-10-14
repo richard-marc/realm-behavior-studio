@@ -90,7 +90,7 @@ public sealed class StateGraph : FrameworkElement
         {
             var row = selectedRow; var from = locations[selected.OwnerId];
             var start = new Point(from.Right, row.Top + 15); var end = new Point(targetRect.Right, targetRect.Top + 40); var route = locations.Values.Max(r => r.Right) + 24;
-            var pen = new Pen(EncounterViewport.Brush("#98B4C3"), 1);
+            var pen = new Pen(EncounterViewport.Brush(selected.CanMatch?"#98B4C3":"#626C68"), 1);if(!selected.CanMatch)pen.DashStyle=DashStyles.Dash;
             dc.DrawLine(pen, start, new(route, start.Y)); dc.DrawLine(pen, new(route, start.Y), new(route, end.Y)); dc.DrawLine(pen, new(route, end.Y), end);
             dc.DrawLine(pen, end, end + new Vector(6, -4)); dc.DrawLine(pen, end, end + new Vector(6, 4));
         }
@@ -114,7 +114,7 @@ public sealed class StateGraph : FrameworkElement
                 var row = transitionRows[edge.Node.Id];
                 dc.DrawRoundedRectangle(EncounterViewport.Brush(selection.Contains(edge.Node.Id) ? "#304738" : edge.Node.Id == highlight ? "#303F44" : "#272A2F"), null, row, 5, 5);
                 Text(dc, edge.Priority.ToString(), new(row.Left + 7, row.Top + 7), 10, "#858B95", 22);
-                Text(dc, edge.Condition, new(row.Left + 30, row.Top + 6), 11, "#CFD3DB", 156);
+                Text(dc, edge.Condition, new(row.Left + 30, row.Top + 6), 11, edge.CanMatch?"#CFD3DB":"#858E89", 156);
                 Text(dc, "→ " + (edge.TargetName ?? "dynamic"), new(row.Left + 194, row.Top + 6), 11, edge.Destinations.Count==0||edge.Destinations.Any(d=>d.Id==null) ? "#DAAE84" : "#91A69D", 102);
             }
             if (activeState) dc.DrawEllipse(EncounterViewport.Brush("#98E8CB"), null, new(rect.Right - 10, rect.Top + 42), 3, 3);

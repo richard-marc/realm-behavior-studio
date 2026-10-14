@@ -23,26 +23,35 @@ public sealed partial class BehaviorDocument
     public IReadOnlyList<string>? PhaseChoices(Guid id)
     {
         var node=Find(id);if(node.Kind!="TimedRandomTransition")return null;
-        var fields=node.Parameters.Where(p=>p.Name.Split('[')[0]=="states").ToArray();
+        return LiteralStringChoices(id,"states");
+    }
+    public IReadOnlyList<string>? LiteralStringChoices(Guid id,string parameter)
+    {
+        var node=Find(id);var fields=node.Parameters.Where(p=>p.Name.Split('[')[0]==parameter).ToArray();
         var values=fields.Select(p=>PhaseLiterals(p.Expression)).ToArray();
         return values.Any(v=>v==null)?null:values.SelectMany(v=>v!).Select(v=>v.Name).ToArray();
     }
     public void EditPhaseChoice(Guid id,long expectedRevision,PhaseChoiceEdit edit,int index,string? name=null,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate=null)
     {
-        if(expectedRevision!=Revision)throw new InvalidOperationException("This phase choice edit is stale.");
-        var node=Find(id);if(PhaseChoices(id)==null)throw new ArgumentException("Phase choices come from unresolved source. Edit them in Source.");Editable(node);
+        var node=Find(id);if(PhaseChoices(id)==null)throw new ArgumentException("Phase choices come from unresolved source. Edit them in Source.");
         var owner=OwningEntity(id);
         if(ReferencesEntityPhase(node,new("states","",0,0),owner)!=true)throw new ArgumentException("This is not a known native phase-choice parameter.");
+        EditLiteralStringChoice(id,expectedRevision,"states",1,edit,index,name,validate);
+    }
+    public void EditLiteralStringChoice(Guid id,long expectedRevision,string parameter,int minimum,PhaseChoiceEdit edit,int index,string? name=null,Func<BehaviorDocument,IEnumerable<DocumentDiagnostic>>? validate=null)
+    {
+        if(expectedRevision!=Revision)throw new InvalidOperationException("This string choice edit is stale.");
+        var node=Find(id);if(LiteralStringChoices(id,parameter)==null)throw new ArgumentException("These choices use source values. Edit them in Source.");Editable(node);
         var call=SyntaxFactory.ParseExpression(Expression(node));var arguments=CallArguments(call);var slots=SchemaAt(node)?.ConstructorParameterNames(Expression(node))??names(node.Kind);
-        var indices=Enumerable.Range(0,arguments.Arguments.Count).Where(i=>slots[i].Split('[')[0]=="states").ToArray();
-        var whole=indices.Length==1&&slots[indices[0]]=="states";var array=whole?arguments.Arguments[indices[0]].Expression:null;
+        var indices=Enumerable.Range(0,arguments.Arguments.Count).Where(i=>slots[i].Split('[')[0]==parameter).ToArray();
+        var whole=indices.Length==1&&slots[indices[0]]==parameter;var array=whole?arguments.Arguments[indices[0]].Expression:null;
         SeparatedSyntaxList<ExpressionSyntax> original=array switch {ArrayCreationExpressionSyntax a=>a.Initializer!.Expressions,ImplicitArrayCreationExpressionSyntax a=>a.Initializer.Expressions,_=>default};
         var callValues=arguments.Arguments.ToList();var callSeparators=arguments.Arguments.GetSeparators().ToArray();
         for(var i=0;i<callSeparators.Length;i++)callValues[i]=callValues[i].WithTrailingTrivia(callValues[i].GetTrailingTrivia().AddRange(callSeparators[i].LeadingTrivia).AddRange(callSeparators[i].TrailingTrivia));
         var elements=whole?(array is CollectionExpressionSyntax collection?collection.Elements.Cast<ExpressionElementSyntax>().Select(e=>e.Expression).ToList():original.ToList()):indices.Select(i=>callValues[i].Expression.WithTriviaFrom(callValues[i])).ToList();
         var separators=whole?(array is CollectionExpressionSyntax separatorCollection?separatorCollection.Elements.GetSeparators():original.GetSeparators()).ToArray():[];
         for(var i=0;i<Math.Min(elements.Count,separators.Length);i++)elements[i]=elements[i].WithTrailingTrivia(elements[i].GetTrailingTrivia().AddRange(separators[i].LeadingTrivia).AddRange(separators[i].TrailingTrivia));
-        if(edit is PhaseChoiceEdit.Add or PhaseChoiceEdit.Replace&&string.IsNullOrWhiteSpace(name))throw new ArgumentException("Choose a non-empty phase name.");
+        if(edit is PhaseChoiceEdit.Add or PhaseChoiceEdit.Replace&&string.IsNullOrWhiteSpace(name))throw new ArgumentException("Choose a non-empty string value.");
         if(edit!=PhaseChoiceEdit.Add&&(index<0||index>=elements.Count))throw new ArgumentOutOfRangeException(nameof(index));
         var literal=SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression,SyntaxFactory.Literal(name??""));
         switch(edit)
@@ -54,19 +63,21 @@ public sealed partial class BehaviorDocument
                 var to=index+(edit==PhaseChoiceEdit.Up?-1:1);if(to<0||to>=elements.Count)return;(elements[index],elements[to])=(elements[to],elements[index]);break;
             default:throw new ArgumentOutOfRangeException(nameof(edit));
         }
-        if(elements.Count==0)throw new ArgumentException("A native random transition needs at least one phase choice.");
-        var list=SyntaxFactory.SeparatedList(elements,Enumerable.Repeat(SyntaxFactory.Token(SyntaxKind.CommaToken).WithTrailingTrivia(SyntaxFactory.Space),elements.Count-1));
+        if(elements.Count<minimum)throw new ArgumentException("This native list needs at least "+minimum+" choice(s).");
+        var list=SyntaxFactory.SeparatedList(elements,Enumerable.Repeat(SyntaxFactory.Token(SyntaxKind.CommaToken).WithTrailingTrivia(SyntaxFactory.Space),Math.Max(0,elements.Count-1)));
         ExpressionSyntax replacement=array switch {
             ArrayCreationExpressionSyntax a=>a.WithInitializer(a.Initializer!.WithExpressions(list)),
-            ImplicitArrayCreationExpressionSyntax a=>a.WithInitializer(a.Initializer.WithExpressions(list)),
+            ImplicitArrayCreationExpressionSyntax a when elements.Count>0=>a.WithInitializer(a.Initializer.WithExpressions(list)),
+            ImplicitArrayCreationExpressionSyntax a=>((ArrayCreationExpressionSyntax)SyntaxFactory.ParseExpression("new string[] {}" )).WithInitializer(a.Initializer.WithExpressions(list)).WithTriviaFrom(a),
             CollectionExpressionSyntax c=>c.WithElements(SyntaxFactory.SeparatedList(elements.Select(e=>(CollectionElementSyntax)SyntaxFactory.ExpressionElement(e)),list.GetSeparators())),
+            _ when elements.Count==0=>SyntaxFactory.ParseExpression("new string[] {}").WithTriviaFrom(array??SyntaxFactory.ParseExpression("new string[] {}")),
             _=>SyntaxFactory.ImplicitArrayCreationExpression(SyntaxFactory.InitializerExpression(SyntaxKind.ArrayInitializerExpression,list))};
         var updated=callValues;
         if(whole)updated[indices[0]]=updated[indices[0]].WithExpression(replacement);
         else
         {
             var position=indices.FirstOrDefault(updated.Count);foreach(var i in indices.Reverse())updated.RemoveAt(i);
-            updated.Insert(position,SyntaxFactory.Argument(replacement).WithNameColon(SyntaxFactory.NameColon("states")).WithLeadingTrivia(SyntaxFactory.Space));
+            updated.Insert(position,SyntaxFactory.Argument(replacement).WithNameColon(SyntaxFactory.NameColon(parameter)).WithLeadingTrivia(SyntaxFactory.Space));
         }
         var rewritten=call.ReplaceNode(arguments,arguments.WithArguments(SyntaxFactory.SeparatedList(updated)));
         Commit(Source.Remove(node.Start,node.Length).Insert(node.Start,rewritten.ToFullString()),Identities,validate);

@@ -112,6 +112,7 @@ public partial class MainWindow
                 constructorInputs.Add(parameter.Name, input); fields.Children.Add(input); input.TextChanged += (_, _) => Preview();
                 if (RapleAdapter.EntityParameterFor(primitive.Name) is { } entityParameter && entityParameter.Name == parameter.Name)
                     fields.Children.Add(CreateEntityInputPicker(entityParameter, input));
+                if(primitive.Name=="OnGroundTransition"&&parameter.Name=="ground")fields.Children.Add(CreateGroundConditionInputPicker(input));
                 if(primitive.Name is "SpawnGroup" or "ReproduceGroup" or "GroupNotExistTransition"&&parameter.Name=="group")fields.Children.Add(CreateGroupInputPicker(input));
             }
             Preview();
@@ -126,6 +127,10 @@ public partial class MainWindow
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
         if(kind=="Charge")return "";
+        if(kind=="OnGroundTransition"&&parameter.Name=="ground")return PhaseLiteral(arenaPreset.GroundId);
+        if(kind=="EntityWithinTransition"&&parameter.Name=="entity")return PhaseLiteral(EntityResources.Catalog(EntityResourceScope.Queryable).First(e=>e.Id==selectedEntity!.Id).SpriteId);
+        if(kind=="EntitiesNotExistsTransition"&&parameter.Name=="targets")return "new string[] {}";
+        if(kind is "NoPlayerWithinTransition" or "AnyEntityWithinTransition" or "NoEntityWithinTransition" or "EntityWithinTransition" or "EntitiesNotExistsTransition"&&parameter.Name=="dist")return "8";
         if(kind is "ConvergingSnare" or "EchoSnare"&&parameter.Name=="projectileIndex")return adapter.SnareProjectiles(selectedEntity!.Id,kind=="EchoSnare"?5.5:6).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";
         if(kind is "ClockSweep" or "CorridorPulse" or "OrientationEcho"&&parameter.Name=="sweep")return adapter.SweepGeometrySeed(selectedEntity!.Id)??"";
         if(kind=="CorridorPulse"&&parameter.Name=="projectileIndex")return EnemyProjectiles.ForEntity(selectedEntity!.Id).FirstOrDefault()?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)??"";

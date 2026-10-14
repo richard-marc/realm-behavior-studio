@@ -93,6 +93,9 @@ try {
     & dotnet run --project tests/DefinitionRemoval.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/definition-removal-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/definition-removal-checks.log' -Tail 25; throw 'Unused definition removal checks failed.' }
     Get-Content '.artifacts/definition-removal-checks.log' -Tail 1
+    & dotnet run --project tests/Presence.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/presence-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/presence-checks.log' -Tail 25; throw 'Native presence condition checks failed.' }
+    Get-Content '.artifacts/presence-checks.log' -Tail 1
     & dotnet run --project tests/Snare.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/snare-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/snare-checks.log' -Tail 25; throw 'Native snare checks failed.' }
     Get-Content '.artifacts/snare-checks.log' -Tail 1

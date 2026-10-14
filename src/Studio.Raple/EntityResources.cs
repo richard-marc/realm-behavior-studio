@@ -54,6 +54,7 @@ public sealed partial class RapleAdapter
         "OrderOnDeath" => new("target", "Ordered entity", EntityResourceScope.Queryable, false),
         "Follow" or "Orbit" => new("target", "Target entity", EntityResourceScope.Queryable, true),
         "EntityExistsTransition" => new("target", "Required entity", EntityResourceScope.Queryable, false),
+        "EntityWithinTransition"=>new("entity","Nearby XML name",EntityResourceScope.Queryable,true,NameFragment:true,NullTitle:"Any XML name",NullSummary:"Null matches any descriptor in the native enemy/static collision index, including this host; it does not select a player."),
         "EntityHpLessTransition"=>new("entity","Nearest enemy name",EntityResourceScope.Enemy,false,NameFragment:true),
         "StayBack"=>new("entity","Retreat target name",EntityResourceScope.Enemy,true,NameFragment:true),
         "EntityNotExistsTransition" => new("target", "Absent entity", EntityResourceScope.Queryable, true),
