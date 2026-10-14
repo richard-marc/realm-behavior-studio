@@ -112,7 +112,7 @@ public partial class MainWindow
                 constructorInputs.Add(parameter.Name, input); fields.Children.Add(input); input.TextChanged += (_, _) => Preview();
                 if (RapleAdapter.EntityParameterFor(primitive.Name) is { } entityParameter && entityParameter.Name == parameter.Name)
                     fields.Children.Add(CreateEntityInputPicker(entityParameter, input));
-                if(primitive.Name=="OnGroundTransition"&&parameter.Name=="ground")fields.Children.Add(CreateGroundConditionInputPicker(input));
+                if(primitive.Name=="TerrainWave"&&parameter.Name=="to"||primitive.Name=="OnGroundTransition"&&parameter.Name=="ground")fields.Children.Add(CreateGroundConditionInputPicker(input));
                 if(primitive.Name is "SpawnGroup" or "ReproduceGroup" or "GroupNotExistTransition"&&parameter.Name=="group")fields.Children.Add(CreateGroupInputPicker(input));
             }
             Preview();
@@ -126,6 +126,11 @@ public partial class MainWindow
     }
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
+        if(kind=="TerrainWave")
+        {
+            var ground=NativeArena.GroundType(arenaPreset.GroundId);var sourceGround=NativeArena.Grounds().First(g=>g.Type==ground).Id;
+            return parameter.Name switch{"to"=>PhaseLiteral(NativeArena.Grounds().First(g=>g.CompletePlayerSupport&&!g.NoWalk&&g.Type!=ground&&!g.Id.StartsWith("Arena",StringComparison.Ordinal)&&sprites.GetGround(g.Type)!=null).Id),"from"=>"new[] { "+PhaseLiteral(sourceGround)+" }","startRadius"=>"0","endRadius"=>"6","durationMs"=>"2000","allowBossLab"=>"true",_=>""};
+        }
         if(kind=="Charge")return "";
         if(kind=="Protect"&&parameter.Name=="protectee")return PhaseLiteral(selectedEntity!.Id);
         if(kind is "ConditionEffectBehavior" or "RemoveConditionalEffect"&&parameter.Name=="effect")return "global::TKR.Shared.resources.ConditionEffectIndex.Invulnerable";

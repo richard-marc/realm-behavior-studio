@@ -50,7 +50,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "NoPlayerWithinTransition", "AnyEntityWithinTransition", "NoEntityWithinTransition", "EntityWithinTransition", "EntitiesNotExistsTransition", "OnGroundTransition", "NotMovingTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
-        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "OwnedLaneEmitters", "TimedRandomTransition",
+        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "TerrainWave", "OwnedLaneEmitters", "TimedRandomTransition",
         "Protect", "BackAndForth", "PatrolCircle", "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
@@ -87,6 +87,12 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "startRadius" when kind=="TerrainWave"=>"Initial tile-center radius around original Enemy.SpawnPoint. The ordering of start/end radii determines direction; moving the host does not move the anchor.",
+        "endRadius" when kind=="TerrainWave"=>"Final radius of the moving front. Crossed tile centers with selected source grounds change; other grounds remain intact.",
+        "durationMs" when kind=="TerrainWave"=>"At least 100 ms. Total elapsed age interpolates linearly after delay; coarse ticks convert the complete crossed band.",
+        "delayMs" when kind=="TerrainWave"=>"Nonnegative integer delay before mutation. Entry resolves every ground XML ID even while delayed or excluded from Boss Lab.",
+        "restoreOnExit" when kind=="TerrainWave"=>"Native exit/death restores recorded original grounds in reverse order, overwriting later edits and incrementing tile updates. Wrapper callbacks determine dispatch.",
+        "allowBossLab" when kind=="TerrainWave"=>"Native default false excludes Boss Lab. Enable explicitly for this prototype; full ground-hazard player mechanics retain their existing prerequisites.",
         "protectee" when kind=="Protect"=>"Exact XML type looked up anew each tick in the enemy/static collision index. A matching host can select itself. This movement does not add defense or assign ownership.",
         "reprotectRange" when kind=="Protect"=>"Arrival distance while approaching: movement continues when distance is greater than this value. The native fixed step can overshoot and is not clamped to the remaining distance.",
         "protectionRange" when kind=="Protect"=>"Once arrived, movement restarts only when the nearest matching entity is farther than this value. The native constructor does not require it to be greater than reprotectRange.",
@@ -233,6 +239,9 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "TerrainWave" when name is "startRadius" or "endRadius"=>"tiles",
+        "TerrainWave" when name is "durationMs" or "delayMs"=>"ms",
+        "TerrainWave" when name is "from" or "to"=>"ground XML ID",
         "Protect" when name is "acquireRange" or "protectionRange" or "reprotectRange"=>"tiles",
         "BackAndForth" when name=="distance"=>"signed tiles",
         "ScaleHP" when name is "amountPerPlayer" or "maxAdditional"=>"HP",
@@ -321,6 +330,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateSnares(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidatePresenceConditions(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateCustomMovement(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateTerrainWaves(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

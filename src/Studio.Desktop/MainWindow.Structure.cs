@@ -46,6 +46,7 @@ public partial class MainWindow
         if(ownedLaneAxes!=null)ownedLaneAxes.IsEnabled=editable;
         UpdatePhaseChoiceControls();
         UpdatePresenceControls();
+        UpdateTerrainControls();
         UpdateDefenseControls();
         UpdateCustomMoveControls();
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;

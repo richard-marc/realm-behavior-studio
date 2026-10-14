@@ -137,3 +137,6 @@ Codex is a local child process over stdio. The app supplies ACCESS_TOKEN, uses t
 Tools are namespaced application functions, matching the generated Codex 0.160.1 experimental protocol schema. Tools inspect selected context, search constructors, propose parameter patches, run bounded current/proposed simulations and inspect traces. Mutations remain proposals until user Apply. Core validation and atomic undo apply to manual and AI operations equally.
 
 Live authentication/inference is unverified. The offline protocol peer is explicitly test-only. No mocked response is displayed as live AI. The UI permits editing, save, export and Play independently of AI availability.
+
+
+TerrainWave is instantiated through the original native constructor and dispatch. Ground choices validate against exact IdToTileType keys; source list edits reuse literal-array transactions with minimum cardinality one. Preview calls the original FrontRadius helper and keeps age separate from world time. The native map observer transmits changed ground content through existing scene deltas; it does not replace the wave algorithm. Exit/death restoration remains subject to actual wrapper dispatch and world validity. Native tile update counts are tested separately from presentation revision counts. Full integer timing sums use a double slider range to avoid editor overflow.
