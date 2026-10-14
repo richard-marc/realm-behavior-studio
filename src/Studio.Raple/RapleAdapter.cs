@@ -50,7 +50,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "NoPlayerWithinTransition", "AnyEntityWithinTransition", "NoEntityWithinTransition", "EntityWithinTransition", "EntitiesNotExistsTransition", "OnGroundTransition", "NotMovingTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "OrderedBehavior",
-        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "GroundTransform", "TerrainWave", "OwnedLaneEmitters", "TimedRandomTransition",
+        "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "SkyStrike", "GroundTransform", "TerrainWave", "OwnedLaneEmitters", "TimedRandomTransition",
         "Protect", "BackAndForth", "PatrolCircle", "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
@@ -76,7 +76,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name is "ScaleHP" or "ScaleHP2" or "ScaleDefense" or "ConditionEffectBehavior" or "RemoveConditionalEffect" or "GiveTemporaryDefense" or "HealSelf" ? "Defense" : t.Name == "State" ? "Phases" :
                 t.Name is "Protect" or "BackAndForth" or "PatrolCircle" or "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "SkyStrike" or "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,11 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "coreIndex" when kind=="SkyStrike"=>"Actual owner XML projectile at impact. Any negative value disables it when area radius is positive. XML motion is retained; moving core projectiles are not converted to stationary shots.",
+        "aoeRadius" when kind=="SkyStrike"=>"Positive enables server-side area hits using current player positions strictly inside the radius at impact. The native warning ring uses this same radius.",
+        "aoeDamage" when kind=="SkyStrike"=>"Positive raw area damage, then native Boss Lab scaling and original player defense/status formula. Native conditions apply separately from HP damage.",
+        "stepMs" when kind=="SkyStrike"=>"Nonnegative grid-row or chain-point delay after the initial fuse. Pending glyphs are resolved in reverse insertion order on each native tick.",
+        "maxRange" when kind=="SkyStrike"=>"Origin distance limit at placement, up to 14 tiles. Marks also retain the native live-host 14-tile envelope at impact and map passability checks.",
         "startRadius" when kind=="TerrainWave"=>"Initial tile-center radius around original Enemy.SpawnPoint. The ordering of start/end radii determines direction; moving the host does not move the anchor.",
         "endRadius" when kind=="TerrainWave"=>"Final radius of the moving front. Crossed tile centers with selected source grounds change; other grounds remain intact.",
         "durationMs" when kind=="TerrainWave"=>"At least 100 ms. Total elapsed age interpolates linearly after delay; coarse ticks convert the complete crossed band.",
@@ -239,6 +244,9 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "SkyStrike" when name.EndsWith("Ms",StringComparison.Ordinal)=>"ms",
+        "SkyStrike" when name is "radius" or "spacing" or "offsetRadius" or "rowSpacing" or "halfLength" or "maxRange" or "markRadius" or "aoeRadius"=>"tiles",
+        "SkyStrike" when name.EndsWith("Deg",StringComparison.Ordinal)=>"degrees",
         "TerrainWave" when name is "startRadius" or "endRadius"=>"tiles",
         "TerrainWave" when name is "durationMs" or "delayMs"=>"ms",
         "TerrainWave" when name is "from" or "to"=>"ground XML ID",
@@ -331,6 +339,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidatePresenceConditions(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateCustomMovement(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateTerrainWaves(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateSkyStrikes(document,entityId)) yield return diagnostic;
         foreach (var entity in document.Entities.Where(e => entityId == null || e.EntityId == entityId).Concat(document.Definitions.Where(d=>entityId==null||d.Definition!.Encounters.Contains(entityId))))
         {
             var nodes = entity.Root.Descendants().ToArray();

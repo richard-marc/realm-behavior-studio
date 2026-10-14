@@ -126,6 +126,7 @@ public partial class MainWindow
     }
     string CreationSeed(string kind, PrimitiveParameter parameter, BehaviorNode owner)
     {
+        if(kind=="SkyStrike")return parameter.Name switch{"coreIndex"=>"-1","layout"=>"global::TKR.WorldServer.logic.behaviors.StrikeLayout.Targets","aoeRadius"=>"1","aoeDamage"=>"100",_=>""};
         if(kind=="TerrainWave")
         {
             var ground=NativeArena.GroundType(arenaPreset.GroundId);var sourceGround=NativeArena.Grounds().First(g=>g.Type==ground).Id;

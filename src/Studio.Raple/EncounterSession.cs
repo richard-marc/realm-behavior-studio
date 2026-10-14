@@ -119,6 +119,11 @@ public sealed class EncounterSession : IEncounterSession
         playerConditions = new ConditionEffectManager(engine.Actor);
         typeof(Entity).GetField("ConditionEffectManager", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(engine.Actor, playerConditions);
         weapon = new GameWeapon(engine.Actor, player, seed);
+        // Native Player.Damage runs with the original stats and HP. The offline actor
+        // has no database character; suppress only Player.Death's DB/client teardown.
+        // This private guard is used exclusively by that teardown in the supplied source.
+        typeof(Player).GetField("_dead",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(engine.Actor,true);
+        if(player.Invulnerable||player.Spectator)engine.Actor.ApplyConditionEffect(new ConditionEffect(ConditionEffectIndex.Invulnerable,-1));
         NativeArena.Apply(engine,arena,arenaSize);
         arenaObserver=new(engine,arena.GroundId);
         NativeArena.ValidateSpawn(engine,arena.BossX,arena.BossY,"Primary enemy",true);
@@ -240,7 +245,10 @@ public sealed class EncounterSession : IEncounterSession
             {
                 var beforeTick = engine.World.Enemies.Values.ToDictionary(e => e.Id, e => (e.X, e.Y));
                 var dying = engine.World.Enemies.Values.Where(e => e.HP == 0 && !e.Dead).ToArray();
-                engine.Actor.HP = Math.Max(1, PlayerHp); engine.Tick(Ms);
+                var previousHp=PlayerHp;engine.Actor.HP = PlayerHp;engine.Tick(Ms);
+                PlayerHp=Math.Max(0,engine.Actor.HP);
+                if(PlayerHp<previousHp)Add("hit",$"Player −{previousHp-PlayerHp} HP from native server damage",actor:engine.Actor.Id);
+                if(previousHp>0&&Dead){SimEngine.Set(engine.Actor,"Dead",true);Add("death","Test player died from native server damage. Restart to respawn.",actor:engine.Actor.Id);}
                 CaptureEffects();
                 motions.Clear();
                 foreach (var dead in dying.Where(e => e.Dead)) Add("death", dead.ObjectDesc.IdName + " killed by weapon; native death callbacks executed.", actor: dead.Id, parent: dead.ParentEntity?.Id);
@@ -296,7 +304,7 @@ public sealed class EncounterSession : IEncounterSession
                     var damage = preset.Invulnerable ? 0 : StatsManager.DamageWithDefense(engine.Actor, b.Damage, b.Desc.ArmorPiercing, weapon.Stats[3]);
                     PlayerHp = Math.Max(0, PlayerHp - damage); Add("hit", $"Player −{damage} HP from projectile #{b.Index}", b.Node, Ms);
                     foreach (var effect in b.Desc.Effects) engine.Actor.ApplyConditionEffect(effect);
-                    if (Dead) Add("death", "Test player died. Restart to respawn.");
+                    if (Dead) {SimEngine.Set(engine.Actor,"Dead",true);Add("death", "Test player died. Restart to respawn.");}
                 }
             }
             CaptureEffects(); ObserveActorRemovals(); Ms += SampleMs;

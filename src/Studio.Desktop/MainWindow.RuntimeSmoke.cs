@@ -37,6 +37,7 @@ public partial class MainWindow
         await RunOptionalInitializerUiSmoke(output,check);
         await RunCollectionEntryUiSmoke(output,check);
         await RunTerrainWaveUiSmoke(output,check);
+        await RunSkyStrikeUiSmoke(output,check);
         await RunSharedEntryUiSmoke(output,check);
         await RunSequentialSweepUiSmoke(output,check);
         await RunCycleUiSmoke(output,check);
