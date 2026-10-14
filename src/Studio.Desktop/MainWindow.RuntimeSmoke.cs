@@ -40,6 +40,7 @@ public partial class MainWindow
         await RunSkyStrikeUiSmoke(output,check);
         await RunTrailLedgerUiSmoke(output,check);
         await RunParamsEntryUiSmoke(output,check);
+        await RunOrderedControllerUiSmoke(output,check);
         await RunSharedEntryUiSmoke(output,check);
         await RunSequentialSweepUiSmoke(output,check);
         await RunCycleUiSmoke(output,check);
