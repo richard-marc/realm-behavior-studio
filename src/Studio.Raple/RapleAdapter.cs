@@ -51,7 +51,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "NewFollow", "NewCharge", "NewWander", "NewStayAbove", "OrderedBehavior",
         "InstantSpawnRing", "Order", "OrderOnce", "OrderOnDeath", "TrailLedger", "TrailRecount", "SkyStrike", "GroundTransform", "TerrainWave", "OwnedLaneEmitters", "TimedRandomTransition",
-        "Dash", "DashFlankVolley", "Protect", "BackAndForth", "PatrolCircle", "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
+        "Swirl", "JumpToRandomOffset", "Dash", "DashFlankVolley", "Protect", "BackAndForth", "PatrolCircle", "RemoveConditionalEffect", "ScaleHP", "ScaleHP2", "ScaleDefense", "TransferDamageOnDeath", "DamageTakenTransition", "EntityHpLessTransition", "HealSelf", "GiveTemporaryDefense", "ChangeSize", "SizeTransform", "SizeTransformComplete", "SetAltTexture", "Transform", "TransformOnDeath", "SequentialAimedSweep", "GordoSpiral", "GapRing", "GordoRotation", "ReturnToSpawn", "StayBack", "Charge", "FollowDistance", "LockedFollowDistance", "DelayedOriginHazards", "FollowDistanceCompleteTransition", "LockedFollowDistanceCompleteTransition", "SpawnGroup", "Reproduce", "ReproduceGroup", "GroupNotExistTransition", "EdgeCrossCut", "ClockSweep", "CorridorPulse", "OrientationEcho", "ConvergingSnare", "EchoSnare"];
     public IReadOnlyList<Primitive> Primitives { get; }
     public RapleAdapter(string root):this(root,null,false){}
     RapleAdapter(string root,IReadOnlyDictionary<string,string>? sources,bool additional,SourceSchemaCache? shared=null)
@@ -75,7 +75,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         Primitives = EngineAssembly.GetTypes().Where(t => typeof(IStateChildren).IsAssignableFrom(t) && !t.IsAbstract && t.GetConstructors().Length > 0)
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name is "ScaleHP" or "ScaleHP2" or "ScaleDefense" or "ConditionEffectBehavior" or "RemoveConditionalEffect" or "GiveTemporaryDefense" or "HealSelf" ? "Defense" : t.Name == "State" ? "Phases" :
-                t.Name is "Dash" or "NewFollow" or "NewCharge" or "NewWander" or "NewStayAbove" or "Protect" or "BackAndForth" or "PatrolCircle" or "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
+                t.Name is "Swirl" or "JumpToRandomOffset" or "Dash" or "NewFollow" or "NewCharge" or "NewWander" or "NewStayAbove" or "Protect" or "BackAndForth" or "PatrolCircle" or "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
                 t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "DashFlankVolley" or "TrailLedger" or "TrailRecount" or "SkyStrike" or "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
@@ -87,6 +87,11 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "targeted" when kind=="Swirl"=>"True acquires a visible player to construct a circle center. Both coordinates must differ from the host. False fixes the center at the host's entry position. The center stays fixed while acquired.",
+        "radius" when kind=="Swirl"=>"Native signed radius in tiles; this is steering toward a circle, not a forced circular path. Zero divides during movement. Original fields use single precision.",
+        "acquireRange" when kind=="Swirl"=>"Nearest-player acquisition range. Acquisition requires both X and Y to differ. Missing targets leave slow steering around the retained center; they do not stop movement.",
+        "minX" or "minY" when kind=="JumpToRandomOffset"=>"Inclusive integer offset from the host's current entry position. Applied immediately using native Move, including during paralysis; it bypasses movement collision validation.",
+        "maxX" or "maxY" when kind=="JumpToRandomOffset"=>"Exclusive integer upper bound. Equal minimum and maximum produce that fixed offset. The jump occurs once on state entry, including re-entry; ordinary ticks do nothing.",
         "movement" when kind=="Dash"=>"Original child movement runs only between dashes. Dash forwards entry/exit callbacks to this same child.",
         "fullDistance" when kind=="Dash"=>"Locks the target heading and travels the configured distance instead of stopping at the target's starting position. Native walls can end either mode early.",
         "cooldownAfterEndMs" when kind=="Dash"=>"-1 keeps start-to-start scheduling. Zero or greater waits this many milliseconds after movement ends, including wall stops; target acquisition retries each tick when no target is found.",
@@ -259,6 +264,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "JumpToRandomOffset" when name is "minX" or "maxX" or "minY" or "maxY"=>"integer tile offset",
         "Dash" or "DashFlankVolley" when name.EndsWith("Ms",StringComparison.Ordinal)=>"ms",
         "Dash" when name is "distance" or "dodgeDistance" or "targetRange"=>"tiles",
         "DashFlankVolley" when name is "spreadDeg" or "sideAngleDeg"=>"degrees",
@@ -364,6 +370,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
         foreach (var diagnostic in ValidateSnares(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidatePresenceConditions(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateCustomMovement(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateRandomMovement(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateTerrainWaves(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSkyStrikes(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateTrailLedgers(document,entityId)) yield return diagnostic;
@@ -423,7 +430,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
                     if (double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
                     {
                         if (!double.IsFinite(value) || p.Name == "count" && (value < 1 || value > 255 || value != Math.Truncate(value)) ||
-                            p.Name == "threshold" && (value < 0 || value > 1) || p.Name == "speed" && value < 0 || p.Name == "radius" && n.Kind!="SpawnGroup" && value < 0 ||
+                            p.Name == "threshold" && (value < 0 || value > 1) || p.Name == "speed" && n.Kind != "Swirl" && value < 0 || p.Name == "radius" && n.Kind is not ("SpawnGroup" or "Swirl") && value < 0 ||
                             p.Name == "maxChildren" && (value < 0 || value > 128) || n.Kind == "InstantSpawnRing" && p.Name == "count" && value > 12)
                             yield return new("Invalid value for " + p.Name + ": " + p.Expression, n.Id);
                         if (p.Name == "projectileIndex" && SimEngine.Data.IdToObjectType.TryGetValue(entity.EntityId, out var type) && !SimEngine.Data.ObjectDescs[type].Projectiles.ContainsKey((int)value))

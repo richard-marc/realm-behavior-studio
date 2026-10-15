@@ -303,6 +303,8 @@ public sealed partial class BehaviorDocument
             RenameState(rename.NodeId, name, validate); return;
         }
         var edits = new List<(int Start, int Length, string Text)>();
+        var appendedArguments = new HashSet<int>();
+        var appendedParameters = new Dictionary<(int Position, string Parameter), string>();
         if (patch.Operations.GroupBy(o => (o.NodeId, o.Parameter)).Any(g => g.Count() > 1)) throw new ArgumentException("A proposal edits the same parameter twice.");
         foreach (var operation in patch.Operations)
         {
@@ -320,8 +322,16 @@ public sealed partial class BehaviorDocument
                 if (!(metadata?.Parameters.Select(p => p.Name) ?? names(n.Kind)).Contains(operation.Parameter)) throw new ArgumentException("Unknown parameter: " + operation.Parameter);
                 var arguments = CallArguments(SyntaxFactory.ParseExpression(Expression(n)));
                 var position = n.Start + arguments.CloseParenToken.SpanStart;
+                var key = (position, operation.Parameter);
+                if (appendedParameters.TryGetValue(key, out var previous))
+                {
+                    if (previous != operation.Expression) throw new ArgumentException("Conflicting values for a shared source parameter.");
+                    continue;
+                }
+                appendedParameters.Add(key, operation.Expression);
                 var parameterName = SyntaxFacts.GetKeywordKind(operation.Parameter) == SyntaxKind.None ? operation.Parameter : "@" + operation.Parameter;
-                edits.Add((position, 0, (arguments.Arguments.Count == 0 ? "" : ", ") + parameterName + ": " + operation.Expression));
+                var firstAppend = appendedArguments.Add(position);
+                edits.Add((position, 0, (arguments.Arguments.Count == 0 && firstAppend ? "" : ", ") + parameterName + ": " + operation.Expression));
             }
         }
         var changed = Source;

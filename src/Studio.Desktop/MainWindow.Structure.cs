@@ -51,6 +51,7 @@ public partial class MainWindow
         UpdateTrailControls();
         UpdateDefenseControls();
         UpdateCustomMoveControls();
+        if (swirlTargeting != null && selectedNode != null) swirlTargeting.IsEnabled = RegionEditable(selectedNode);
         if (renamePhaseButton != null) renamePhaseButton.IsEnabled = editable;
         if (duplicateStructureButton != null) duplicateStructureButton.IsEnabled = editable;
         if (deleteStructureButton != null) deleteStructureButton.IsEnabled = editable;
