@@ -46,7 +46,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     internal static string? NativeTypeName(string name) => EngineAssembly.GetTypes().Where(t => t.Name == name && typeof(IStateChildren).IsAssignableFrom(t)).Select(t => t.FullName?.Replace('+', '.')).SingleOrDefault();
     public string CreationTypeName(string name) => "global::" + string.Join(".", RuntimeType(name).FullName!.Replace('+', '.').Split('.').Select(part => SyntaxFacts.GetKeywordKind(part) == SyntaxKind.None ? part : "@" + part));
     // Explicit scope, independent of the reflection catalog. Constructors outside this list remain opaque.
-    static readonly HashSet<string> Supported = ["State", "Shoot", "Wander", "Follow", "StayCloseToSpawn", "Orbit",
+    static readonly HashSet<string> Supported = ["State", "Shoot", "Grenade", "Wander", "Follow", "StayCloseToSpawn", "Orbit",
         "Prioritize", "HpLessTransition", "TimedTransition", "PlayerWithinTransition", "NoPlayerWithinTransition", "AnyEntityWithinTransition", "NoEntityWithinTransition", "EntityWithinTransition", "EntitiesNotExistsTransition", "OnGroundTransition", "NotMovingTransition", "EntityNotExistsTransition",
         "EntityExistsTransition", "Spawn", "ConditionEffectBehavior", "Taunt", "Cooldown", "Timed", "OnDeathBehavior",
         "MoveTo", "MoveTo2", "MoveTo3", "SpawnRelativeMove", "MoveLine", "NewMove", "NewFollow", "NewCharge", "NewWander", "NewStayAbove", "OrderedBehavior",
@@ -76,7 +76,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
             .OrderBy(t => t.Name).Select(t => new Primitive(t.Name,
                 typeof(Transition).IsAssignableFrom(t) ? "Transitions" : t.Name is "ScaleHP" or "ScaleHP2" or "ScaleDefense" or "ConditionEffectBehavior" or "RemoveConditionalEffect" or "GiveTemporaryDefense" or "HealSelf" ? "Defense" : t.Name == "State" ? "Phases" :
                 t.Name is "Swirl" or "JumpToRandomOffset" or "Dash" or "NewFollow" or "NewCharge" or "NewWander" or "NewStayAbove" or "Protect" or "BackAndForth" or "PatrolCircle" or "FollowDistance" or "LockedFollowDistance" or "ReturnToSpawn" or "StayBack" or "Charge" or "Wander" or "Follow" or "Orbit" or "StayCloseToSpawn" ? "Movement" : t.Name.Contains("Spawn") || t.Name is "Reproduce" or "ReproduceGroup" ? "Spawning" :
-                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "DashFlankVolley" or "TrailLedger" or "TrailRecount" or "SkyStrike" or "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
+                t.Name.Contains("Shoot") || t.Name.Contains("Ring") || t.Name.Contains("Attack") || t.Name is "Grenade" or "DashFlankVolley" or "TrailLedger" or "TrailRecount" or "SkyStrike" or "ConvergingSnare" or "EchoSnare" or "ClockSweep" or "CorridorPulse" or "OrientationEcho" or "EdgeCrossCut" or "DelayedOriginHazards" or "OwnedLaneEmitters" or "SequentialAimedSweep" or "GordoSpiral" or "GordoRotation" ? "Attacks" : "Actions",
                 Constructor(t).GetParameters().Select(p => new PrimitiveParameter(p.Name!, p.ParameterType.Name,
                     p.HasDefaultValue ? FormatDefault(p) : "required", Unit(p.Name!, t.Name), Explain(p.Name!,t.Name))).ToArray(), Supported.Contains(t.Name))).ToArray();
     }
@@ -87,6 +87,12 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     static string DefaultUnit(string name, string? kind = null) => kind=="GiveTemporaryDefense"&&name=="amount"?"defense points":kind=="HealSelf"&&name=="amount"?"HP / percent of current HP":kind=="DamageTakenTransition"&&name=="damage"?"credited damage":kind=="OwnedLaneEmitters"&&name is "intervalMs" or "startupMs" ? "ms" : kind == "NewMove" && name == "cooldown" ? "seconds" : IsPathKind(kind) && name is "x" or "y" or "X" or "Y" or "offsetX" or "offsetY" or "distance" ? "tiles" : IsPathKind(kind) && name == "direction" ? "degrees" : name.Contains("Angle", StringComparison.OrdinalIgnoreCase) ? "degrees" : name.Contains("coolDown", StringComparison.OrdinalIgnoreCase) || name is "time" or "duration" ? "ms" : name.Contains("Range", StringComparison.OrdinalIgnoreCase) || name is "radius" or "dist" or "range" ? "tiles" : name == "threshold" ? "fraction of max HP" : name == "speed" ? "runtime speed coefficient" : "";
     static string Explain(string name,string? kind=null) => name switch
     {
+        "count" when kind=="Grenade"=>"Separate throws per activation. Aimed throws all use the same captured player position. Fixed bearings use successive spacing without centering. Default spacing uses native integer division 360 / count.",
+        "range" when kind=="Grenade"=>"Player acquisition range, or signed throw distance with a fixed bearing. An explicit AttackTarget bypasses acquisition. Landing position is captured when thrown; it does not track later movement.",
+        "rotateAngle" when kind=="Grenade"=>"Degrees added for each successful activation. Its rotation counter belongs to the behavior object, survives phase re-entry and is shared when the same object serves multiple actors.",
+        "coolDownOffset" when kind=="Grenade"=>"Initial native launch countdown. Decrement and expiry launch happen on separate ticks; stun blocks a ready launch without resetting its countdown.",
+        "effectDuration" when kind=="Grenade"=>"Milliseconds applied by the native server after area damage, unless the victim is Invincible or in Stasis. The native area packet carries its own condition fields, which may differ.",
+        "fixedAngle" when kind=="Grenade"=>"Degrees. Null aims at a current player; a value throws without needing a player. Angle offset and per-activation rotation affect fixed throws. Aimed throws all retain the player's captured position.",
         "targeted" when kind=="Swirl"=>"True acquires a visible player to construct a circle center. Both coordinates must differ from the host. False fixes the center at the host's entry position. The center stays fixed while acquired.",
         "radius" when kind=="Swirl"=>"Native signed radius in tiles; this is steering toward a circle, not a forced circular path. Zero divides during movement. Original fields use single precision.",
         "acquireRange" when kind=="Swirl"=>"Nearest-player acquisition range. Acquisition requires both X and Y to differ. Missing targets leave slow steering around the retained center; they do not stop movement.",
@@ -264,6 +270,8 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     };
     static string Unit(string name,string? kind=null)=>kind switch
     {
+        "Grenade" when name is "fixedAngle" or "rotateAngle" or "shootAngle" or "angleOffset"=>"degrees",
+        "Grenade" when name is "effectDuration" or "coolDownOffset"=>"ms",
         "JumpToRandomOffset" when name is "minX" or "maxX" or "minY" or "maxY"=>"integer tile offset",
         "Dash" or "DashFlankVolley" when name.EndsWith("Ms",StringComparison.Ordinal)=>"ms",
         "Dash" when name is "distance" or "dodgeDistance" or "targetRange"=>"tiles",
@@ -360,6 +368,7 @@ public sealed partial class RapleAdapter : IBehaviorSchema
     {
         foreach (var diagnostic in document.SourceDiagnostics()) yield return diagnostic;
         foreach (var diagnostic in ValidateOwnedEmitters(document,entityId)) yield return diagnostic;
+        foreach (var diagnostic in ValidateGrenades(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateDashControllers(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateSequentialSweeps(document,entityId)) yield return diagnostic;
         foreach (var diagnostic in ValidateRingPatterns(document,entityId)) yield return diagnostic;

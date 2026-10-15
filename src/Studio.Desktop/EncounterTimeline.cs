@@ -16,7 +16,7 @@ public sealed class EncounterTimeline : FrameworkElement
     EncounterReplay? plotReplay;
     double plotWidth, plotHeight, plotDpi;
     static readonly string[] lanes = ["Phases", "Attacks", "Movement", "Health/tests", "Actors"];
-    static int Lane(EncounterEvent e) => e.Kind switch { "transition" or "forced-phase" => 0, "attack" or "player-attack" => 1, "movement" => 2, "hit" or "weapon-hit" or "override" => 3, _ => 4 };
+    static int Lane(EncounterEvent e) => e.Kind switch { "transition" or "forced-phase" => 0, "attack" or "player-attack" or "area" => 1, "movement" => 2, "hit" or "weapon-hit" or "override" => 3, _ => 4 };
     static Brush Color(int lane) => new SolidColorBrush(lane switch { 0 => System.Windows.Media.Color.FromRgb(119, 197, 172), 1 => System.Windows.Media.Color.FromRgb(175, 157, 218), 3 => System.Windows.Media.Color.FromRgb(216, 171, 112), _ => System.Windows.Media.Color.FromRgb(123, 153, 184) });
     public static long EventSeekMs(EncounterEvent e, long duration) => Math.Min(duration, e.Ms + (e.Kind is "start" or "forced-phase" or "override" ? 0 : EncounterSession.SampleMs));
     double Width => Math.Max(1, ActualWidth - 104);

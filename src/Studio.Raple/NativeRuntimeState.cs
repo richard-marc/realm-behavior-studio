@@ -52,6 +52,7 @@ internal static class NativeRuntimeState
                 }
                 var owner=pair.Key.GetType();var meaning=owner.FullName switch
                 {
+                    "TKR.WorldServer.logic.behaviors.Grenade" when value is int=>"Remaining launch cooldown � milliseconds; rotation counter belongs to the shared behavior object",
                     "TKR.WorldServer.logic.behaviors.Timed" when value is int=>"Remaining loop counter · milliseconds",
                     "TKR.WorldServer.logic.behaviors.Prioritize" when value is int=>"Selected child index · -1 selects again",
                     "TKR.WorldServer.logic.transitions.TimedTransition" or "TKR.WorldServer.logic.transitions.TimedRandomTransition" when value is int=>"Remaining transition counter · milliseconds",

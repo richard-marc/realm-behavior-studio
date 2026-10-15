@@ -20,7 +20,7 @@ public sealed partial class EncounterViewport
             var fill=new SolidColorBrush(Color.FromArgb(35,color.R,color.G,color.B));fill.Freeze();
             var backing=new Pen(Brush("#19080D"),4);var pen=new Pen(rim,1.5);
             if(mark.Shape==TelegraphShape.Dot)
-            {dc.DrawEllipse(rim,backing,point,Math.Max(mark.Opening?3:2,radius),Math.Max(mark.Opening?3:2,radius));continue;}
+            {dc.DrawEllipse(rim,new Pen(Brush("#19080D"),1.5),point,Math.Max(mark.Opening?3:2,radius),Math.Max(mark.Opening?3:2,radius));continue;}
             if(mark.Shape==TelegraphShape.Boundary){pen.DashStyle=DashStyles.Dash;backing.DashStyle=DashStyles.Dash;}
             if(mark.Shape==TelegraphShape.Diamond)
             {

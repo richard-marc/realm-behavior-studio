@@ -13,6 +13,7 @@ public static class TelegraphGeometry
         foreach(var e in effects)
         {
             if(e.Ms>ms)continue;
+            if(e.Area!=null){if(ms-e.Ms<200)active.Add(e);continue;}
             if(e.Kind==22&&e.DurationMs<=0){active.RemoveAll(p=>p.Kind==22&&p.TargetObjectId==e.TargetObjectId);continue;}
             if(ms-e.Ms<Math.Max(1,e.DurationMs))active.Add(e);
         }
@@ -21,6 +22,19 @@ public static class TelegraphGeometry
         {
             if(!float.IsFinite(e.X)||!float.IsFinite(e.Y)||!float.IsFinite(e.X2)||!float.IsFinite(e.Y2))continue;
             var elapsed=ms-e.Ms;var progress=Math.Clamp(elapsed/Math.Max(1,e.DurationMs),0,1);
+            if(e.Area is{} area)
+            {
+                if(float.IsFinite(area.Radius)&&area.Radius>=0)
+                {
+                    var points=Math.Clamp((int)(4+area.Radius*2),0,256);var travel=area.Radius*Math.Clamp(elapsed/200,0,1);
+                    for(var i=0;i<points;i++)
+                    {
+                        var x=e.X+travel*Math.Cos(i*Math.Tau/points);var y=e.Y+travel*Math.Sin(i*Math.Tau/points);
+                        if(x>=0&&y>=0&&x<mapWidth&&y<mapHeight)marks.Add(new(x,y,.08,Math.Clamp(elapsed/200,0,1),e.Color&0xffffff,TelegraphShape.Dot));
+                    }
+                }
+                continue;
+            }
             var fuse=Math.Round(progress*30,MidpointRounding.AwayFromZero)/30;
             void At(double radius,double angle,uint color,bool opening=false)
             {

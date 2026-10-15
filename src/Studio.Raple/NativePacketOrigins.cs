@@ -57,7 +57,7 @@ namespace TKR.WorldServer.logic {
                 {
                     if(statement.Expression is not InvocationExpressionSyntax {Expression:MemberAccessExpressionSyntax member} call||member.Name.Identifier.ValueText!="Enqueue"||model.GetSymbolInfo(member.Expression).Symbol is not IFieldSymbol field)continue;
                     if(ack&&field.Name=="PendingShootAcknowlegements"){targets.Add(statement,$"{call.ArgumentList.Arguments.Single().Expression}.StudioPacketOrigin=global::{Registry}.CurrentPacketOrigin();");shots++;}
-                    if(effect&&field.Name=="Pending"&&call.ArgumentList.Arguments.SingleOrDefault()?.Expression is IdentifierNameSyntax id&&id.Identifier.ValueText==symbol.Parameters[0].Name){targets.Add(statement,$"if({symbol.Parameters[0].Name} is global::TKR.WorldServer.networking.packets.outgoing.ShowEffect)global::{Registry}.RecordPacketOrigin({symbol.Parameters[0].Name},Client);");effects++;}
+                    if(effect&&field.Name=="Pending"&&call.ArgumentList.Arguments.SingleOrDefault()?.Expression is IdentifierNameSyntax id&&id.Identifier.ValueText==symbol.Parameters[0].Name){targets.Add(statement,$"if({symbol.Parameters[0].Name} is global::TKR.WorldServer.networking.packets.outgoing.ShowEffect or global::TKR.WorldServer.networking.packets.outgoing.AoeMessage)global::{Registry}.RecordPacketOrigin({symbol.Parameters[0].Name},Client);");effects++;}
                 }
             }
             var acknowledgements=tree.GetRoot().DescendantNodes().OfType<StructDeclarationSyntax>().Where(s=>model.GetDeclaredSymbol(s)?.ToDisplayString()=="TKR.WorldServer.core.objects.Player.ShootAcknowledgement").ToArray();
