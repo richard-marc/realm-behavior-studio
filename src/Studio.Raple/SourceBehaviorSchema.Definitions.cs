@@ -97,6 +97,11 @@ internal sealed partial class SourceBehaviorSchema
                 }
                 foreign|=reference!=null&&reference.SyntaxTree!=tree;
                 var key="$definition/"+symbol.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+                if(symbol is IMethodSymbol {MethodKind:MethodKind.AnonymousFunction})
+                {
+                    var scope=ScopeOf(declared[0]);var siblings=(scope??syntax).DescendantNodes().OfType<AnonymousFunctionExpressionSyntax>().Where(n=>ScopeOf(n)==scope).ToArray();
+                    key="$definition/"+ScopeKey(declared[0])+"/inline-factory:"+Array.FindIndex(siblings,n=>n.Span==declared[0].Span);
+                }
                 if(symbol is IMethodSymbol {MethodKind:MethodKind.LocalFunction})key="$definition/"+ScopeKey(declared[0])+"/function:"+symbol.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
                 if(symbol is ILocalSymbol local)
                 {
@@ -111,7 +116,7 @@ internal sealed partial class SourceBehaviorSchema
                     var id=key+"/body"+index;
                     ChildArgument? collection=Collection(type)?new("elements",Element(type).Name,type is IArrayTypeSymbol,false)
                         {CollectionType=type is IArrayTypeSymbol?null:type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}:null;
-                    if(!definitions.TryGetValue(id,out var definition))definitions.Add(id,definition=new(id,symbol.Name+(bodies.Length==1?"":" · branch "+(index+1)),body,collection,symbol));
+                    if(!definitions.TryGetValue(id,out var definition))definitions.Add(id,definition=new(id,(symbol is IMethodSymbol {MethodKind:MethodKind.AnonymousFunction}?"Inline factory":symbol.Name)+(bodies.Length==1?"":" · branch "+(index+1)),body,collection,symbol));
                     if(reference?.SyntaxTree==tree)definition.Uses.Add(new(reference.SpanStart,reference.Span.Length));
                     if(entity.Length>0)definition.Encounters.Add(entity);
                     if(origin.Length>0){definition.CompleteContexts&=complete;definition.ForeignContexts|=foreign;definition.CallerFiles.Add(origin);}
@@ -137,6 +142,11 @@ internal sealed partial class SourceBehaviorSchema
             var referenceModel=compilation.GetSemanticModel(pending.Expression.SyntaxTree);
             foreach(var reference in pending.Expression.DescendantNodesAndSelf().OfType<ExpressionSyntax>())
             {
+                if(reference is InvocationExpressionSyntax direct&&ImmediateLambda(direct.Expression) is{} lambda)
+                {
+                    AddDefinition(referenceModel.GetSymbolInfo(lambda).Symbol,reference,pending.Entity,pending.Complete,pending.Origin,pending.Foreign);
+                    continue;
+                }
                 if(reference is not (InvocationExpressionSyntax or IdentifierNameSyntax or MemberAccessExpressionSyntax)||
                     reference.Parent is InvocationExpressionSyntax invocation&&invocation.Expression==reference||
                     reference.Parent is MemberAccessExpressionSyntax member&&member.Name==reference)continue;
@@ -154,6 +164,10 @@ internal sealed partial class SourceBehaviorSchema
         return definitions.Values.OrderBy(d=>d.Body.Expression.SpanStart).Select(d=>d.Finish()).ToArray();
     }
     static string? ReferenceName(ExpressionSyntax expression)=>expression switch{IdentifierNameSyntax name=>name.Identifier.ValueText,GenericNameSyntax name=>name.Identifier.ValueText,MemberAccessExpressionSyntax member=>member.Name.Identifier.ValueText,MemberBindingExpressionSyntax member=>member.Name.Identifier.ValueText,InvocationExpressionSyntax call=>ReferenceName(call.Expression),_=>null};
+    static AnonymousFunctionExpressionSyntax? ImmediateLambda(ExpressionSyntax expression)=>expression switch
+    {
+        ParenthesizedExpressionSyntax parent=>ImmediateLambda(parent.Expression),CastExpressionSyntax cast=>ImmediateLambda(cast.Expression),AnonymousFunctionExpressionSyntax lambda=>lambda,_=>null
+    };
     static IEnumerable<DefinitionBody> ExpandBranches(DefinitionBody body)
     {
         if(body.Expression is ConditionalExpressionSyntax conditional)
@@ -168,6 +182,11 @@ internal sealed partial class SourceBehaviorSchema
     {
         switch(declaration)
         {
+            case AnonymousFunctionExpressionSyntax {Body:ExpressionSyntax expression}:
+                yield return new(expression,true);break;
+            case AnonymousFunctionExpressionSyntax {Body:BlockSyntax body}:
+                var complete=body.Statements.LastOrDefault() is ReturnStatementSyntax&&body.Statements.Take(body.Statements.Count-1).All(s=>s is LocalDeclarationStatementSyntax local&&local.Modifiers.Any(SyntaxKind.ConstKeyword));
+                foreach(var result in Returns(body))yield return new(result,complete);break;
             case VariableDeclaratorSyntax {Initializer:{Value:var value}}:
                 yield return new(value,declaration.Parent?.Parent is FieldDeclarationSyntax);break;
             case MethodDeclarationSyntax {ExpressionBody:{Expression:var expression}}:

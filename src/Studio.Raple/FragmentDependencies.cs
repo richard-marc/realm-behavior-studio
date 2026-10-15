@@ -36,6 +36,7 @@ public static partial class FragmentDependencies
         var treeOrder = compiler.SyntaxTrees.Select((tree, index) => (tree, index)).ToDictionary(p => p.tree, p => p.index);
         var nativeMembers = typeof(TKR.WorldServer.logic.State).Assembly.GetType("TKR.WorldServer.logic.BehaviorDb")!.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance).Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
         var queue = new Queue<SyntaxNode>(expressions);
+        var lexicalConstants=new Dictionary<SyntaxNode,HashSet<ILocalSymbol>>();
         bool Covered(ISymbol symbol) => declarations.Keys.Any(s => s is INamedTypeSymbol && Within(symbol, s));
         void Add(ISymbol symbol)
         {
@@ -80,6 +81,13 @@ public static partial class FragmentDependencies
             while (top.ContainingType != null && top.ContainingType.Name != "BehaviorDb") top = top.ContainingType;
             return top.ContainingType?.Name == "BehaviorDb" || top.DeclaringSyntaxReferences.Any(r => accepted.Contains(Path.GetFullPath(r.SyntaxTree.FilePath))) ? top.OriginalDefinition : null;
         }
+        void ConstantTypes(ITypeSymbol type)
+        {
+            if(type is IArrayTypeSymbol array){ConstantTypes(array.ElementType);return;}
+            if(type is not INamedTypeSymbol named)return;
+            if(BundleType(named) is{} dependency)Add(dependency);
+            foreach(var argument in named.TypeArguments)ConstantTypes(argument);
+        }
         while (queue.TryDequeue(out var region))
         {
             var model = compiler.GetSemanticModel(region.SyntaxTree);
@@ -91,8 +99,14 @@ public static partial class FragmentDependencies
                 {
                     if (symbol.DeclaringSyntaxReferences.All(r => r.SyntaxTree != region.SyntaxTree || !region.Span.Contains(r.Span)) &&
                         !expressions.Any(e => e.SyntaxTree == region.SyntaxTree && e.Span.Contains(name.Span)) && !Covered(symbol)) continue;
-                    if (expressions.Any(e => e.SyntaxTree == name.SyntaxTree && e.Span.Contains(name.Span)) && symbol.DeclaringSyntaxReferences.All(r => !expressions.Any(e => e.SyntaxTree == r.SyntaxTree && e.Span.Contains(r.Span))))
-                        throw new ArgumentException("A fragment captures a local value. Extract its shared source ownership before bundling: " + symbol.Name);
+                    if (expressions.FirstOrDefault(e => e.SyntaxTree == name.SyntaxTree && e.Span.Contains(name.Span)) is{} expression && symbol.DeclaringSyntaxReferences.All(r => !expressions.Any(e => e.SyntaxTree == r.SyntaxTree && e.Span.Contains(r.Span))))
+                    {
+                        if(symbol is not ILocalSymbol {IsConst:true,HasConstantValue:true} constant)throw new ArgumentException("A fragment captures a local value. Extract its shared source ownership before bundling: " + symbol.Name);
+                        if(!lexicalConstants.TryGetValue(expression,out var captured))lexicalConstants[expression]=captured=new(SymbolEqualityComparer.Default);
+                        captured.Add(constant);
+                        if(captured.Count>1024)throw new ArgumentException("A fragment expression captures more than 1,024 local constants.");
+                        ConstantTypes(constant.Type);
+                    }
                     continue;
                 }
                 if (symbol is IMethodSymbol reduced && reduced.ReducedFrom != null) symbol = reduced.ReducedFrom;
@@ -140,6 +154,16 @@ public static partial class FragmentDependencies
             var root = tree.GetRoot(); var marked = root.ReplaceNodes(annotations[tree].Keys, (old, updated) => updated.WithAdditionalAnnotations(annotations[tree][old]));
             rewritten[tree] = new BundleRewriter(compiler.GetSemanticModel(tree), names).Visit(marked)!;
         }
+        foreach(var (expression,constants) in lexicalConstants)
+        {
+            var key="expression-"+Array.IndexOf(expressions,expression);
+            var root=rewritten[expression.SyntaxTree];var selected=root.GetAnnotatedNodes("rbs-fragment").Single(n=>n.GetAnnotations("rbs-fragment").Any(a=>a.Data==key));
+            var model=compiler.GetSemanticModel(expression.SyntaxTree);
+            var syntax=expression is SpreadElementSyntax spread?spread.Expression:expression as ExpressionSyntax;
+            if(syntax==null||model.GetTypeInfo(syntax).Type is not{} type||type.IsRefLikeType||type.TypeKind is TypeKind.Error or TypeKind.Pointer or TypeKind.FunctionPointer)throw new ArgumentException("A captured constant needs a complete native expression type.");
+            SyntaxNode wrapped=selected is SpreadElementSyntax selectedSpread?selectedSpread.WithExpression(WrapLexicalConstants(selectedSpread.Expression,constants,type,names,key)):WrapLexicalConstants((ExpressionSyntax)selected,constants,type,names,key);
+            rewritten[expression.SyntaxTree]=root.ReplaceNode(selected,wrapped);
+        }
         SyntaxNode Marked(SyntaxTree tree, string key) => rewritten[tree].GetAnnotatedNodes("rbs-fragment").Single(n => n.GetAnnotations("rbs-fragment").Any(a => a.Data == key));
         var output = expressions.Select((e, i) => Marked(e.SyntaxTree, "expression-" + i)).ToArray();
         var mappedValues = values.Select((v, i) =>
@@ -161,7 +185,19 @@ public static partial class FragmentDependencies
             return new FragmentDependency(names[d.Symbol], d.Symbol.Name, Namespace(d.Symbol), d.Host, first.Imports, first.Declaration, first.SourceSha256) { Parts = d.Parts.Select(Part).ToArray() };
         }).ToArray();
         var native = NativeReferences(scoped, compiler, expressions.Concat(allDeclarations.Select(d => d.Syntax)), fragment.OriginEntity);
-        var result = fragment with { Version = members.Any(m => m.Parts.Count > 0) ? 3 : 2, Contents = new(1, output.Select(n => n.ToString()).ToArray()), Parameters = fragment.Parameters.Select(p => p with { Value = Mapped(p.Value), DisplayExpression = p.Value.DefaultExpression }).ToArray(), References = fragment.References.Select(r => r with { Value = Mapped(r.Value), Kind = r.Kind == "phase-external" && native.Phases.Contains(r.Target) ? "phase-internal" : r.Kind }).ToArray(), Dependencies = new(members) { ExternalPhases = native.Targets.Except(native.Phases).Distinct().ToArray(), UnresolvedPhases = native.Unresolved, SelfOrders = native.SelfOrders, OrderOnlyExternalPhases = native.Targets.Except(native.Phases).Except(native.OrdinaryTargets).ToArray() } };
+        FragmentReference Reference(FragmentReference reference)
+        {
+            var target=reference.Target;var kind=reference.Kind;
+            if(kind=="unresolved-phase"&&!native.Unresolved)
+            {
+                var root=expressions[reference.Value.ExpressionIndex];var span=new Microsoft.CodeAnalysis.Text.TextSpan(root.SpanStart+reference.Value.Start,reference.Value.Length);
+                var value=root.DescendantNodesAndSelf().OfType<ExpressionSyntax>().FirstOrDefault(e=>e.Span==span);
+                if(value!=null&&compiler.GetSemanticModel(value.SyntaxTree).GetConstantValue(value) is{HasValue:true,Value:string phase}){target=phase;kind=native.Phases.Contains(phase)?"phase-internal":"phase-external";}
+            }
+            if(kind=="phase-external"&&native.Phases.Contains(target))kind="phase-internal";
+            return reference with{Value=Mapped(reference.Value),Kind=kind,Target=target};
+        }
+        var result = fragment with { Version = members.Any(m => m.Parts.Count > 0) ? 3 : 2, Contents = new(1, output.Select(n => n.ToString()).ToArray()), Parameters = fragment.Parameters.Select(p => p with { Value = Mapped(p.Value), DisplayExpression = p.Value.DefaultExpression }).ToArray(), References = fragment.References.Select(Reference).ToArray(), Dependencies = new(members) { ExternalPhases = native.Targets.Except(native.Phases).Distinct().ToArray(), UnresolvedPhases = native.Unresolved, SelfOrders = native.SelfOrders, OrderOnlyExternalPhases = native.Targets.Except(native.Phases).Except(native.OrdinaryTargets).ToArray() } };
         result.Validate(); return result;
     }
     static bool Within(ISymbol symbol, ISymbol owner)

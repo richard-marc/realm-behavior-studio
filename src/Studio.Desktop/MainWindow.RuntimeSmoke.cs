@@ -80,6 +80,7 @@ public partial class MainWindow
         await RunDashUiSmoke(output,check);
         await RunGrenadeUiSmoke(output,check);
         await RunHealingUiSmoke(output,check);
+        await RunConstantFragmentUiSmoke(output,check);
         await RunTimerUiSmoke(output,check);
         await RunRandomMovementUiSmoke(output,check);
         await RunFragmentDependencyUiSmoke(output,check);

@@ -219,6 +219,9 @@ try {
     & dotnet run --project tests/CombatPath.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/combat-path-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/combat-path-checks.log' -Tail 25; throw 'Moving/firing scenario checks failed.' }
     Get-Content '.artifacts/combat-path-checks.log' -Tail 1
+    & dotnet run --project tests/ConstantFragment.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/constant-fragment-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/constant-fragment-checks.log' -Tail 25; throw 'Lexical constant fragment checks failed.' }
+    Get-Content '.artifacts/constant-fragment-checks.log' -Tail 1
     & dotnet run --project tests/Healing.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/healing-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/healing-checks.log' -Tail 25; throw 'Healing checks failed.' }
     Get-Content '.artifacts/healing-checks.log' -Tail 1
