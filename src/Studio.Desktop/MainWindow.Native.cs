@@ -121,7 +121,7 @@ public partial class MainWindow
                 if (RapleAdapter.EntityParameterFor(primitive.Name) is { } entityParameter && entityParameter.Name == parameter.Name)
                     fields.Children.Add(CreateEntityInputPicker(entityParameter, input));
                 if(primitive.Name=="TerrainWave"&&parameter.Name=="to"||primitive.Name=="OnGroundTransition"&&parameter.Name=="ground")fields.Children.Add(CreateGroundConditionInputPicker(input));
-                if(primitive.Name is "SpawnGroup" or "ReproduceGroup" or "GroupNotExistTransition"&&parameter.Name=="group")fields.Children.Add(CreateGroupInputPicker(input));
+                if(primitive.Name is "SpawnGroup" or "ReproduceGroup" or "GroupNotExistTransition" or "HealGroup"&&parameter.Name=="group")fields.Children.Add(CreateGroupInputPicker(input));
             }
             Preview();
         };
@@ -172,6 +172,7 @@ public partial class MainWindow
         if(kind=="EntityHpLessTransition"&&parameter.Name=="entity")return PhaseLiteral(selectedEntity!.Id);
         if(kind=="DamageTakenTransition"&&parameter.Name=="damage")return "100";
         if(kind=="GiveTemporaryDefense"&&parameter.Name=="amount")return "20";
+        if(kind is "HealEntity" or "HealGroup"&&parameter.Name=="range")return "8";
         if(kind=="HealSelf"&&parameter.Name=="amount")return "50";
         if(kind=="SetAltTexture"&&parameter.Name=="minValue")return "0";
         if(kind=="ChangeSize"&&parameter.Name is "rate" or "target")return parameter.Name=="rate"?"10":"150";

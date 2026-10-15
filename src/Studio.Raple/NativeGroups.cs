@@ -19,7 +19,7 @@ public static partial class NativeGroups
 }
 public sealed partial class RapleAdapter
 {
-    public bool IsGroupPrimitive(BehaviorDocument document,BehaviorNode node)=>node.Kind is "SpawnGroup" or "ReproduceGroup" or "GroupNotExistTransition"&&NativeKind(document,node)==node.Kind;
+    public bool IsGroupPrimitive(BehaviorDocument document,BehaviorNode node)=>node.Kind is "SpawnGroup" or "ReproduceGroup" or "GroupNotExistTransition" or "HealGroup"&&NativeKind(document,node)==node.Kind;
     public GroupReference ReadGroupReference(BehaviorDocument document,BehaviorNode node)=>IsGroupPrimitive(document,node)&&ReadConstantParameter(document,node,"group",null,out var value)&&value is null or string?new(true,(string?)value):new(false,null);
     public void ApplyGroupReference(BehaviorDocument document,string entityId,Guid nodeId,long revision,string? group)
     {
@@ -32,7 +32,7 @@ public sealed partial class RapleAdapter
         foreach(var node in owner.Root.Descendants().Where(n=>IsGroupPrimitive(document,n)))
         {
             var group=ReadGroupReference(document,node);
-            if(group.Known&&node.Kind!="GroupNotExistTransition"&&!NativeGroups.Catalog().Any(g=>g.Name==group.Name))yield return new(node.Kind+": this exact XML group has no members for native random selection.",node.Id);
+            if(group.Known&&node.Kind is "SpawnGroup" or "ReproduceGroup"&&!NativeGroups.Catalog().Any(g=>g.Name==group.Name))yield return new(node.Kind+": this exact XML group has no members for native random selection.",node.Id);
             if(group.Known&&node.Kind=="GroupNotExistTransition"&&string.IsNullOrWhiteSpace(group.Name))yield return new("The native group-absence transition never matches a blank group.",node.Id,false);
             if(node.Kind=="ReproduceGroup"&&ReadConstantParameter(document,node,"region",0,out var region)&&region!=null&&Convert.ToInt32(region,System.Globalization.CultureInfo.InvariantCulture)!=0)
                 yield return new("ReproduceGroup preserves the source's region-list filter: it compares the host's fractional position, not each tile's distance. Region cache/world ownership needs runtime review.",node.Id,false);

@@ -46,6 +46,7 @@ public sealed partial class RapleAdapter
 {
     public static EntityParameter? EntityParameterFor(string nativeKind) => nativeKind switch
     {
+        "HealEntity"=>new("name","Healed enemy name",EntityResourceScope.Enemy,true,NameFragment:true,NullTitle:"All enemy names",NullSummary:"Null matches all nearby Enemy names, including this host. Players and static objects are never healed."),
         "Spawn" => new("children", "Spawn entity", EntityResourceScope.Enemy, false),
         "Reproduce"=>new("children","Reproduce entity",EntityResourceScope.Resolvable,true,NullTitle:"This host's XML type",NullSummary:"Native null children reproduces the host's object type; it does not select a player."),
         "InstantSpawnRing" => new("childName", "Ring helper", EntityResourceScope.Enemy, false),

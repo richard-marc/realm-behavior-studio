@@ -219,6 +219,9 @@ try {
     & dotnet run --project tests/CombatPath.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/combat-path-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/combat-path-checks.log' -Tail 25; throw 'Moving/firing scenario checks failed.' }
     Get-Content '.artifacts/combat-path-checks.log' -Tail 1
+    & dotnet run --project tests/Healing.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/healing-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/healing-checks.log' -Tail 25; throw 'Healing checks failed.' }
+    Get-Content '.artifacts/healing-checks.log' -Tail 1
     & dotnet run --project tests/Timer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/timer-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/timer-checks.log' -Tail 25; throw 'Native timer checks failed.' }
     Get-Content '.artifacts/timer-checks.log' -Tail 1
