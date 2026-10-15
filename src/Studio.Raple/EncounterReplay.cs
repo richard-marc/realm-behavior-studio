@@ -126,6 +126,8 @@ public sealed record EncounterReplay(int Version, StudioProject Project, string?
             Movements.Any(m=>m==null || m.Ms<0 || m.Ms>ms || m.DurationMs is not (5 or 100) || !float.IsFinite(m.FromX) || !float.IsFinite(m.FromY) || !float.IsFinite(m.ToX) || !float.IsFinite(m.ToY)) ||
             Shots.Concat(PlayerShots).Any(s=>s==null || s.Ms<0 || s.Ms>ms || !float.IsFinite(s.X) || !float.IsFinite(s.Y) || !float.IsFinite(s.Angle) || !float.IsFinite(s.AngleIncrement)))
             throw new ArgumentException("Recorded events and emissions do not match their witnesses.");
+        bool InvalidTimer(NativeTimerBinding? timer,long sequence)=>timer!=null&&(timer.TimerId<0||timer.Invocation<1||timer.Handler==null||timer.SchedulingBehavior==null||timer.SchedulingStage==null||timer.SchedulingCallbackSequence is{} scheduled&&(scheduled<=0||scheduled>=sequence));
+        if(Callbacks.Any(c=>InvalidTimer(c.Timer,c.Sequence))||Events.Any(e=>e.PacketOrigin is{} packet&&InvalidTimer(packet.Timer,packet.CallbackSequence)))throw new ArgumentException("Invalid native timer provenance.");
     }
     public void Save(string path)
     {

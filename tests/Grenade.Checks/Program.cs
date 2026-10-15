@@ -92,7 +92,7 @@ await using(var plain=await CompiledRuntime.StartAsync(adapter.ServerRoot,projec
     native.Recording=new(native);await AdvanceAsync(native,new(),1700);await AdvanceAsync(plain,new(),1700);
     Check(native.Effects.SequenceEqual(plain.Effects)&&native.PlayerHp==plain.PlayerHp&&native.PlayerHp==950,"Native callback/packet instrumentation preserves complete delayed area payloads and actual player damage");
     var grenadeId=sourceDoc.AllNodes.Single(n=>n.Kind=="Grenade").Id;
-    Check(native.Events.Single(e=>e.Kind=="effect").PacketOrigin?.Source?.NodeId==grenadeId&&native.Events.Single(e=>e.Kind=="area").PacketOrigin==null,"Compiled launch links its actual Grenade constructor while timer impact remains explicitly unattributed");
+    Check(native.Events.Single(e=>e.Kind=="effect").PacketOrigin?.Source?.NodeId==grenadeId&&native.Events.Single(e=>e.Kind=="area").PacketOrigin?.Timer?.SchedulingSource?.NodeId==grenadeId,"Compiled launch links its actual Grenade constructor and timer impact retains the distinct recorded scheduling source");
     var tape=EncounterReplay.Capture(project,null,EncounterReplay.Identify(adapter,project,native.Stamp.BuildId),native);var seek=await ReplayCursor.RestoreAsync(adapter,tape,1495);using var seekSession=seek.Session;
     Check(seek.Session.PlayerHp==1000&&seek.Session.Effects.All(e=>e.Area==null),"Pre-impact seek retains a genuine pending timer without advancing its damage");await seek.AdvanceToAsync(1505);
     Check(seek.Session.Effects.SequenceEqual(native.Effects)&&seek.Session.PlayerHp==950,"Partial replay reconstructs the original pending native timer and verifies its area impact prefix");

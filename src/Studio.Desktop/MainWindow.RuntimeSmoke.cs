@@ -79,6 +79,7 @@ public partial class MainWindow
         await RunCombatPathUiSmoke(output,check);
         await RunDashUiSmoke(output,check);
         await RunGrenadeUiSmoke(output,check);
+        await RunTimerUiSmoke(output,check);
         await RunRandomMovementUiSmoke(output,check);
         await RunFragmentDependencyUiSmoke(output,check);
         await RunPartialFragmentUiSmoke(output,check);

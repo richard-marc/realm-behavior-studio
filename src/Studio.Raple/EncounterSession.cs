@@ -186,7 +186,7 @@ public sealed class EncounterSession : IEncounterSession
             if(Effects.Count>=30000)throw new InvalidOperationException("Encounter exceeded the 30,000 native effect limit.");
             Effects.Add(effect);
             var origin=packetCapture.EffectOrigin;
-            if(effect.Area is{} area) Add("area",$"Area impact · {area.Radius:0.###} tiles · {area.Damage} packet damage",origin?.Source?.NodeId,actor:origin?.CallbackActorId,packetOrigin:origin,packetIndex:Effects.Count-1);
+            if(effect.Area is{} area) Add("area",$"Area impact · {area.Radius:0.###} tiles · {area.Damage} packet damage",origin?.Source?.NodeId,actor:origin?.Timer is{} timer?timer.OwnerActorId:origin?.CallbackActorId,packetOrigin:origin,packetIndex:Effects.Count-1);
             else Add("effect",((TKR.WorldServer.networking.packets.outgoing.EffectType)effect.Kind)+" · "+effect.DurationMs+" ms",origin?.Source?.NodeId,actor:effect.TargetObjectId,packetOrigin:origin,packetIndex:Effects.Count-1);
         }
     }

@@ -11,6 +11,8 @@ public sealed record NativeCallbackRecord(long Sequence,long? ParentSequence,lon
     public NativeSharedEventBinding? SharedEvent {get;init;}
     [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public NativeTransitionResult? Transition {get;init;}
+    [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public NativeTimerBinding? Timer {get;init;}
 }
 internal static class NativeCallbacks
 {
@@ -18,7 +20,7 @@ internal static class NativeCallbacks
     static readonly Func<string[][]>? drain=typeof(Behavior).Assembly.GetType(Registry)?.GetMethod("DrainCallbacks")?.CreateDelegate<Func<string[][]>>();
     static readonly Action? reset=typeof(Behavior).Assembly.GetType(Registry)?.GetMethod("ResetCallbacks")?.CreateDelegate<Action>();
     internal static void Reset()=>reset?.Invoke();
-    internal static NativeCallbackRecord[] Drain()=>(drain?.Invoke()??[]).Select(d=>new NativeCallbackRecord(long.Parse(d[0],CultureInfo.InvariantCulture),d[1]=="0"?null:long.Parse(d[1],CultureInfo.InvariantCulture),long.Parse(d[2],CultureInfo.InvariantCulture),int.Parse(d[3],CultureInfo.InvariantCulture),d[4],d[5],d[6],d[7],d[8]==""?null:new(d[8],int.Parse(d[9],CultureInfo.InvariantCulture),int.Parse(d[10],CultureInfo.InvariantCulture),d[11],Guid.TryParse(d[12],out var id)?id:null)){SharedEvent=NativeSharedEvents.FromData(d),Transition=NativeTransitionCallbacks.FromData(d)}).ToArray();
+    internal static NativeCallbackRecord[] Drain()=>(drain?.Invoke()??[]).Select(d=>new NativeCallbackRecord(long.Parse(d[0],CultureInfo.InvariantCulture),d[1]=="0"?null:long.Parse(d[1],CultureInfo.InvariantCulture),long.Parse(d[2],CultureInfo.InvariantCulture),int.Parse(d[3],CultureInfo.InvariantCulture),d[4],d[5],d[6],d[7],d[8]==""?null:new(d[8],int.Parse(d[9],CultureInfo.InvariantCulture),int.Parse(d[10],CultureInfo.InvariantCulture),d[11],Guid.TryParse(d[12],out var id)?id:null)){SharedEvent=NativeSharedEvents.FromData(d),Transition=NativeTransitionCallbacks.FromData(d),Timer=NativeTimers.FromData(d)}).ToArray();
     internal const string RegistrySource="""
 namespace TKR.WorldServer.logic {
     internal static partial class StudioNativeStateOrigins {
@@ -31,7 +33,7 @@ namespace TKR.WorldServer.logic {
         public static T TrackTransition<T>(T value,string file,int start,int length,string hash,string id) where T:Transition {
             Origins.Add(value,new[]{file,start.ToString(global::System.Globalization.CultureInfo.InvariantCulture),length.ToString(global::System.Globalization.CultureInfo.InvariantCulture),hash,id});return value;
         }
-        public static void ResetCallbacks(){CurrentCallback=null;CallbackSequence=0;CallbackRecords.Clear();}
+        public static void ResetCallbacks(){CurrentCallback=null;CallbackSequence=0;CallbackRecords.Clear();ResetTimers();}
         public static string[][] DrainCallbacks(){var data=CallbackRecords.ToArray();CallbackRecords.Clear();return data;}
         public static CallbackScope BeginCallback(object behavior,global::TKR.WorldServer.core.objects.Entity host,global::TKR.WorldServer.core.worlds.TickTime time,string stage){
             if(host==null||host.World==null&&behavior is Behavior)return new CallbackScope();
@@ -43,6 +45,7 @@ namespace TKR.WorldServer.logic {
             internal CallbackScope Parent;internal string[] Data;internal long Sequence;
             // Transition result members are inserted from the observer's source.
             public void Failed(){if(Data!=null)Data[7]="faulted";}
+            public void TimerReturned(bool result){if(Data!=null&&Data.Length>=43)Data[40]=result?"true":"false";}
             public void Dispose(){if(Data!=null)CurrentCallback=Parent;}
         }
     }
@@ -76,6 +79,6 @@ namespace TKR.WorldServer.logic {
             });result=result.ReplaceSyntaxTree(tree,tree.WithRootAndOptions(changed,tree.Options));
         }
         var registrySource=RegistrySource.Replace("// Transition result members are inserted from the observer's source.",NativeTransitionCallbacks.ScopeSource,StringComparison.Ordinal);
-        return NativeSharedEvents.Instrument(NativePacketOrigins.Instrument(result.AddSyntaxTrees(CSharpSyntaxTree.ParseText(Microsoft.CodeAnalysis.Text.SourceText.From(registrySource,System.Text.Encoding.UTF8),new CSharpParseOptions(LanguageVersion.CSharp12),"_Studio.NativeCallbacks.g.cs"))));
+        return NativeTimers.Instrument(NativeSharedEvents.Instrument(NativePacketOrigins.Instrument(result.AddSyntaxTrees(CSharpSyntaxTree.ParseText(Microsoft.CodeAnalysis.Text.SourceText.From(registrySource,System.Text.Encoding.UTF8),new CSharpParseOptions(LanguageVersion.CSharp12),"_Studio.NativeCallbacks.g.cs")))));
     }
 }

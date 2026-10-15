@@ -46,7 +46,7 @@ public partial class MainWindow
         }
         else Note("Source expressions define this grenade. The inspector does not execute getters or factories to predict its landing points.");
         Note("Native world timer: 1500 ms, then the original timer-expiry tick. Phase exit does not cancel a pending impact. Native Expunge/removal can leave the host world reference intact, so its pending impact still fires. A retired owner, whole-encounter cleanup or hostile-projectile clear invalidates the timer. Moving after launch can avoid the captured location.");
-        Note("Damage and condition effects run in the original server. Impact packets appear on the timeline with their actual fields. Delayed timer emissions have an explicit unavailable source link when no native callback context is present. The rotation counter is shared by the behavior object; its cooldown is stored per actor.");
+        Note("Damage and condition effects run in the original server. Impact packets appear on the timeline with their actual fields. Compiled callback recording links a timer impact to the action that scheduled it. The timer handler and entity owner remain separate; untracked registrations retain an unavailable source link. The rotation counter is shared by the behavior object; its cooldown is stored per actor.");
         grenadePanel=new(){Header="Grenade area attack",Content=body,Margin=new(0,10,0,6)};Inspector.Children.Add(grenadePanel);
     }
 }

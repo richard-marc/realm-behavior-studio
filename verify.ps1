@@ -219,6 +219,9 @@ try {
     & dotnet run --project tests/CombatPath.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/combat-path-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/combat-path-checks.log' -Tail 25; throw 'Moving/firing scenario checks failed.' }
     Get-Content '.artifacts/combat-path-checks.log' -Tail 1
+    & dotnet run --project tests/Timer.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/timer-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/timer-checks.log' -Tail 25; throw 'Native timer checks failed.' }
+    Get-Content '.artifacts/timer-checks.log' -Tail 1
     & dotnet run --project tests/Grenade.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/grenade-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/grenade-checks.log' -Tail 25; throw 'Native grenade checks failed.' }
     Get-Content '.artifacts/grenade-checks.log' -Tail 1

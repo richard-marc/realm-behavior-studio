@@ -39,7 +39,8 @@ public partial class MainWindow
         WorkspaceTabs.SelectedIndex=0;UpdateLayout();CaptureView(this,Path.Combine(output,"grenade-native-impact.png"));
         check(Viewport.NativeTelegraphCount==56,"Viewport projects the received native area particles with the original eight-point layout per blast");
         var impact=session.Events.First(e=>e.Kind=="area");SelectTimelineEvent(impact);
-        check(impact.PacketOrigin==null&&TimelineEventInfo.Text.Contains("source origin unavailable"),"Delayed impact selection explicitly reports missing callback provenance instead of navigating an unrelated action");
+        File.WriteAllText(Path.Combine(output,"timer-navigation-evidence.json"),JsonSerializer.Serialize(new{impact,nodeId=node.Id,selectedId=selectedNode?.Id,text=TimelineEventInfo.Text,status=Status.Text},BehaviorDocument.JsonOptions));
+        check(impact.PacketOrigin?.Timer?.SchedulingSource?.NodeId==node.Id&&TimelineEventInfo.Text.Contains("scheduled by Grenade")&&selectedNode?.Id==node.Id,"Delayed impact selection opens the recorded scheduling Grenade while labeling its separate timer dispatch");
         var launch=session.Events.First(e=>e.Kind=="effect");SelectTimelineEvent(launch);
         check(selectedNode?.Id==node.Id&&TimelineEventInfo.Text.Contains("emitted by Grenade"),"Launch timeline selection navigates its genuine compiled Grenade construction");
         var trace=Path.Combine(output,"grenade-trace.json");session.ExportTrace(trace);check(File.ReadAllText(trace).Contains("\"Area\""),"Desktop trace export retains the full discriminated native area payload");Stop(this,new());
