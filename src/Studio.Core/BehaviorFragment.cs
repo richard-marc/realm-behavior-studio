@@ -1,27 +1,71 @@
 using System.Text.Json;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Studio.Core;
 
 public record FragmentValue(int ExpressionIndex, int Start, int Length, string DefaultExpression);
-public record FragmentParameter(string Name, string Label, FragmentValue Value);
+public record FragmentParameter(string Name, string Label, FragmentValue Value)
+{
+    public string? DisplayExpression { get; init; }
+}
 public record FragmentReference(string Kind, string Target, FragmentValue Value);
 public record FragmentBinding(Guid NodeId, string Parameter, string Name);
 public record FragmentParameterCandidate(Guid NodeId, string Parameter, string Label, string Expression);
+public record FragmentDependency(string Token, string Name, string Namespace, string? Host, string Imports, string Declaration, string SourceSha256);
+public record FragmentDependencyBundle(IReadOnlyList<FragmentDependency> Members)
+{
+    public IReadOnlyList<string> ExternalPhases { get; init; } = [];
+    public bool UnresolvedPhases { get; init; }
+    public bool SelfOrders { get; init; }
+    public IReadOnlyList<string> OrderOnlyExternalPhases { get; init; } = [];
+}
 public sealed record BehaviorFragment(int Version, Guid Id, string Name, string Description, string OriginEntity, string SourceSha256,
     BehaviorClipboard Contents, IReadOnlyList<FragmentParameter> Parameters, IReadOnlyList<FragmentReference> References, bool RequiresSourceContext)
 {
+    public FragmentDependencyBundle? Dependencies { get; init; }
+    public bool IsSelfOrderReference(FragmentReference reference)
+    {
+        var syntax = SyntaxFactory.ParseExpression(Contents.Expressions[reference.Value.ExpressionIndex]);
+        return References.Where(r => r.Kind == "self-entity" && r.Value.ExpressionIndex == reference.Value.ExpressionIndex)
+            .Select(r => syntax.DescendantNodesAndSelf().OfType<BaseObjectCreationExpressionSyntax>().Where(n => n.SpanStart <= r.Value.Start && n.Span.End >= r.Value.Start + r.Value.Length).OrderBy(n => n.Span.Length).FirstOrDefault())
+            .Any(n => n != null && reference.Value.Start >= n.SpanStart && reference.Value.Start + reference.Value.Length <= n.Span.End);
+    }
+    public bool KeepOriginalPhase(string phase, string targetEntity, bool retargetSelfOrders) => !retargetSelfOrders && targetEntity != OriginEntity &&
+        (Dependencies?.OrderOnlyExternalPhases.Contains(phase) == true || Dependencies == null && References.Where(r => r.Kind == "phase-external" && r.Target == phase).Any() && References.Where(r => r.Kind == "phase-external" && r.Target == phase).All(IsSelfOrderReference));
     public void Validate()
     {
-        if (Version != 1 || Id == Guid.Empty || string.IsNullOrWhiteSpace(Name) || Name.Length > 256 || Description == null || Description.Length > 8192 || string.IsNullOrEmpty(OriginEntity) || OriginEntity.Length > 256 || SourceSha256 == null || SourceSha256.Length != 64 || Contents is not { Version: 1, Expressions: not null } || Contents.Expressions.Count is < 1 or > 256 || Contents.Expressions.Any(e => e == null) || Contents.Expressions.Sum(e => (long)e.Length) > 2_000_000 || Parameters == null || Parameters.Count > 1024 || References == null || References.Count > 4096)
+        if (Version is not (1 or 2) || Version == 1 && Dependencies != null || Id == Guid.Empty || string.IsNullOrWhiteSpace(Name) || Name.Length > 256 || Description == null || Description.Length > 8192 || string.IsNullOrEmpty(OriginEntity) || OriginEntity.Length > 256 || SourceSha256 == null || SourceSha256.Length != 64 || Contents is not { Version: 1, Expressions: not null } || Contents.Expressions.Count is < 1 or > 256 || Contents.Expressions.Any(e => e == null) || Contents.Expressions.Sum(e => (long)e.Length) > 2_000_000 || Parameters == null || Parameters.Count > 1024 || References == null || References.Count > 4096)
             throw new ArgumentException("Unsupported or oversized fragment.");
         foreach (var expression in Contents.Expressions)
         {
             var syntax = SyntaxFactory.ParseExpression(expression);
             if (syntax.ContainsDiagnostics || syntax.FullSpan.Length != expression.Length) throw new ArgumentException("A fragment contains invalid C# syntax.");
         }
+        if (Version == 2 && Dependencies is not { Members: not null } || Dependencies?.Members.Count is > 256 ||
+            Dependencies?.Members.Sum(m => (long)(m?.Declaration?.Length ?? 0) + (m?.Imports?.Length ?? 0)) > 2_000_000)
+            throw new ArgumentException("Invalid or oversized fragment dependencies.");
+        if (Dependencies is { } bundle)
+        {
+            if (bundle.ExternalPhases == null || bundle.ExternalPhases.Count > 4096 || bundle.ExternalPhases.Any(p => string.IsNullOrWhiteSpace(p) || p.Length > 1024)) throw new ArgumentException("Invalid dependency phase references.");
+            if (bundle.OrderOnlyExternalPhases == null || bundle.OrderOnlyExternalPhases.Any(p => !bundle.ExternalPhases.Contains(p))) throw new ArgumentException("Invalid self-order phase metadata.");
+            if (bundle.Members.Any(m => m == null || string.IsNullOrWhiteSpace(m.Token) || m.Token.Length > 128 ||
+                !SyntaxFacts.IsValidIdentifier(m.Token) || string.IsNullOrWhiteSpace(m.Name) || m.Name.Length > 512 || m.Namespace == null || m.Namespace.Length > 1024 ||
+                m.Host is not (null or "BehaviorDb") || m.Imports == null || m.Declaration == null || m.SourceSha256?.Length != 64 ||
+                SyntaxFactory.ParseMemberDeclaration(m.Declaration) is not { ContainsDiagnostics: false }) ||
+                bundle.Members.Select(m => m.Token).Distinct(StringComparer.Ordinal).Count() != bundle.Members.Count)
+                throw new ArgumentException("Invalid fragment dependency declarations.");
+            foreach (var member in bundle.Members)
+            {
+                if (member.Namespace.Length > 0 && (SyntaxFactory.ParseName(member.Namespace) is not { ContainsDiagnostics: false } parsed || parsed.ToString() != member.Namespace)) throw new ArgumentException("Invalid dependency namespace.");
+                var imports = SyntaxFactory.ParseCompilationUnit(member.Imports);
+                if (imports.ContainsDiagnostics || imports.Members.Count != 0 || imports.Externs.Count != 0) throw new ArgumentException("Dependency imports must contain only using directives.");
+                if (!member.SourceSha256.All(Uri.IsHexDigit)) throw new ArgumentException("Invalid dependency source fingerprint.");
+            }
+        }
         if (Parameters.Any(p => p == null || string.IsNullOrWhiteSpace(p.Name) || p.Name.Length > 128 || p.Label == null || p.Label.Length > 512) || Parameters.Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != Parameters.Count)
             throw new ArgumentException("Template inputs need unique, non-empty names.");
+        if (Parameters.Any(p => p.DisplayExpression?.Length > 2_000_000)) throw new ArgumentException("Template display values exceed supported bounds.");
         if (References.Any(r => r == null || r.Kind is not ("phase-internal" or "phase-external" or "self-entity" or "unresolved-phase") || r.Target == null || r.Target.Length > 1024)) throw new ArgumentException("Invalid fragment reference metadata.");
         var values = Parameters.Select(p => p.Value).Concat(References.Select(r => r.Value)).ToArray();
         foreach (var value in values)

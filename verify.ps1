@@ -219,6 +219,9 @@ try {
     & dotnet run --project tests/CombatPath.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/combat-path-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/combat-path-checks.log' -Tail 25; throw 'Moving/firing scenario checks failed.' }
     Get-Content '.artifacts/combat-path-checks.log' -Tail 1
+    & dotnet run --project tests/FragmentDependency.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/fragment-dependency-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/fragment-dependency-checks.log' -Tail 25; throw 'Portable fragment dependency checks failed.' }
+    Get-Content '.artifacts/fragment-dependency-checks.log' -Tail 1
     & dotnet run --project tests/Fragment.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/fragment-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/fragment-checks.log' -Tail 25; throw 'Reusable fragment checks failed.' }
     Get-Content '.artifacts/fragment-checks.log' -Tail 1
