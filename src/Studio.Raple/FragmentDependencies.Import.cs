@@ -98,9 +98,11 @@ public static partial class FragmentDependencies
         }
         var renamed = RenameTokens(fragment, names); var additions = new System.Text.StringBuilder();
         foreach (var member in fragment.Dependencies.Members)
+        foreach (var part in member.Declarations)
         {
-            var declaration = new TokenRenamer(names).Visit(SyntaxFactory.ParseMemberDeclaration(member.Declaration)!)!.ToString();
-            var body = member.Imports + "\n" + (member.Host == null ? declaration : "partial class BehaviorDb {\n" + declaration + "\n}");
+            var declaration = new TokenRenamer(names).Visit(SyntaxFactory.ParseMemberDeclaration(part.Declaration)!)!.ToString();
+            var imports = new TokenRenamer(names).Visit(SyntaxFactory.ParseCompilationUnit(part.Imports))!.ToFullString();
+            var body = imports + "\n" + (member.Host == null ? declaration : "partial class BehaviorDb {\n" + declaration + "\n}");
             additions.AppendLine().AppendLine(member.Namespace.Length == 0 ? body : "namespace " + member.Namespace + " {\n" + body + "\n}");
         }
         var addedSource = additions.ToString(); var probe = new BehaviorDocument(destination.Source + addedSource, scoped, destination.Identities, file); probe.LockedNodes.UnionWith(destination.LockedNodes);

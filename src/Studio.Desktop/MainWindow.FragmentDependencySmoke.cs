@@ -13,7 +13,7 @@ public partial class MainWindow
         var output=Path.GetFullPath(".artifacts/fragment-dependency-desktop");Directory.CreateDirectory(output);var checks=new List<string>();
         void Check(bool passed,string label){if(!passed)throw new InvalidOperationException("UI check failed: "+label);checks.Add(label);}
         var source=File.ReadAllText(selectedEntity!.SourceFile);var imported=new BehaviorDocument(source,adapter);var root=imported.Entities.Single(e=>e.EntityId==selectedEntity.Id).Root;
-        await RunFragmentUiSmoke(source,root,output,Check);await RunFragmentDependencyUiSmoke(output,Check);
+        await RunFragmentUiSmoke(source,root,output,Check);await RunFragmentDependencyUiSmoke(output,Check);await RunPartialFragmentUiSmoke(output,Check);
         File.WriteAllText(Path.Combine(output,"ui-checks.json"),JsonSerializer.Serialize(new{checks},BehaviorDocument.JsonOptions));Application.Current.Shutdown(0);
     });
     async Task RunFragmentDependencyUiSmoke(string output,Action<bool,string> check)

@@ -80,6 +80,7 @@ public partial class MainWindow
         await RunDashUiSmoke(output,check);
         await RunRandomMovementUiSmoke(output,check);
         await RunFragmentDependencyUiSmoke(output,check);
+        await RunPartialFragmentUiSmoke(output,check);
         await RunFragmentUiSmoke(source, root, output, check);
         await RunTimelineUiSmoke(source, root, output, check);
         await RunArenaUiSmoke(source,root,output,check);

@@ -222,6 +222,9 @@ try {
     & dotnet run --project tests/RandomMovement.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/random-movement-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/random-movement-checks.log'; throw 'Random movement checks failed.' }
     Get-Content '.artifacts/random-movement-checks.log' -Tail 1
+    & dotnet run --project tests/PartialFragment.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/partial-fragment-checks.log'
+    if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/partial-fragment-checks.log' -Tail 25; throw 'Partial fragment checks failed.' }
+    Get-Content '.artifacts/partial-fragment-checks.log' -Tail 1
     & dotnet run --project tests/FragmentDependency.Checks "-p:ServerRoot=$ServerRoot" -- $ServerRoot *> '.artifacts/fragment-dependency-checks.log'
     if ($LASTEXITCODE -ne 0) { Get-Content '.artifacts/fragment-dependency-checks.log' -Tail 25; throw 'Portable fragment dependency checks failed.' }
     Get-Content '.artifacts/fragment-dependency-checks.log' -Tail 1

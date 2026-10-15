@@ -8,7 +8,12 @@ namespace Studio.Raple;
 
 public static partial class FragmentDependencies
 {
-    sealed record Declaration(ISymbol Symbol, SyntaxNode Syntax, MemberDeclarationSyntax Member, string? Host);
+    sealed record Declaration(ISymbol Symbol, SyntaxNode Syntax, MemberDeclarationSyntax Member, string? Host)
+    {
+        public IReadOnlyList<Declaration> Parts { get; init; } = [];
+        public IEnumerable<Declaration> All => new[] { this }.Concat(Parts);
+    }
+    static ISymbol DependencySymbol(ISymbol symbol) => symbol is IMethodSymbol method ? (method.PartialDefinitionPart ?? method).OriginalDefinition : symbol.OriginalDefinition;
     static string SymbolName(ISymbol symbol) => symbol.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
     static string Namespace(ISymbol symbol) => symbol.ContainingNamespace.IsGlobalNamespace ? "" : symbol.ContainingNamespace.ToDisplayString();
     static string Imports(SyntaxNode node) => string.Join("\n", ((CompilationUnitSyntax)node.SyntaxTree.GetRoot()).Usings
@@ -28,19 +33,20 @@ public static partial class FragmentDependencies
         var expressions = nodes.Select(n => sourceTree.GetRoot().DescendantNodes().First(e => e is ExpressionSyntax or SpreadElementSyntax && e.SpanStart == n.Start && e.Span.Length == n.Length)).ToArray();
         var accepted = project.AdditionalSources.Select(s => Path.GetFullPath(s.SourceFile)).Append(Path.GetFullPath(project.SourceFile)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var declarations = new Dictionary<ISymbol, Declaration>(SymbolEqualityComparer.Default);
+        var treeOrder = compiler.SyntaxTrees.Select((tree, index) => (tree, index)).ToDictionary(p => p.tree, p => p.index);
         var nativeMembers = typeof(TKR.WorldServer.logic.State).Assembly.GetType("TKR.WorldServer.logic.BehaviorDb")!.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance).Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
         var queue = new Queue<SyntaxNode>(expressions);
         bool Covered(ISymbol symbol) => declarations.Keys.Any(s => s is INamedTypeSymbol && Within(symbol, s));
         void Add(ISymbol symbol)
         {
-            symbol = symbol.OriginalDefinition;
+            symbol = DependencySymbol(symbol);
             if (declarations.ContainsKey(symbol) || Covered(symbol)) return;
             var valueType = symbol switch { IFieldSymbol f => f.Type, IPropertySymbol p => p.Type, IMethodSymbol m => m.ReturnType, _ => null };
             if (valueType?.ToDisplayString() == "TKR.WorldServer.logic.BehaviorDb._") throw new ArgumentException("Encounter registrations need whole-source ownership before bundling: " + symbol.Name);
-            if (symbol.DeclaringSyntaxReferences.Length != 1) throw new ArgumentException("A dependency needs one complete declaration before it can be bundled: " + symbol.Name);
-            var syntax = symbol.DeclaringSyntaxReferences[0].GetSyntax();
+            var references = symbol.DeclaringSyntaxReferences.Concat(symbol is IMethodSymbol { PartialImplementationPart: { } implementation } ? implementation.DeclaringSyntaxReferences : []).ToArray();
+            if (references.Length == 0) throw new ArgumentException("A dependency needs source declarations before it can be bundled: " + symbol.Name);
             var host = symbol.ContainingType?.Name == "BehaviorDb" && symbol.ContainingType.ContainingType == null ? "BehaviorDb" : null;
-            MemberDeclarationSyntax member = syntax switch
+            MemberDeclarationSyntax Member(SyntaxNode syntax) => syntax switch
             {
                 MethodDeclarationSyntax m => m,
                 PropertyDeclarationSyntax p => p,
@@ -54,8 +60,17 @@ public static partial class FragmentDependencies
             {
                 foreach (var old in declarations.Keys.Where(s => Within(s, type)).ToArray()) declarations.Remove(old);
             }
-            declarations.Add(symbol, new(symbol, syntax, member, host)); queue.Enqueue(syntax);
-            if (symbol is IFieldSymbol && member is FieldDeclarationSyntax field) queue.Enqueue(field.Declaration.Type);
+            var parts = references.Select(r => r.GetSyntax()).OrderBy(n => treeOrder[n.SyntaxTree]).ThenBy(n => n.SpanStart)
+                .Select(syntax => new Declaration(symbol, syntax, Member(syntax), host)).ToArray();
+            if (parts.Length > 1 && (symbol is not INamedTypeSymbol && symbol is not IMethodSymbol { IsPartialDefinition: true } ||
+                parts.Any(p => p.Member is not TypeDeclarationSyntax && p.Member is not MethodDeclarationSyntax)))
+                throw new ArgumentException("A dependency needs complete partial type or method declarations: " + symbol.Name);
+            declarations.Add(symbol, parts[0] with { Parts = parts.Skip(1).ToArray() });
+            foreach (var part in parts)
+            {
+                queue.Enqueue(part.Syntax);
+                if (symbol is IFieldSymbol && part.Member is FieldDeclarationSyntax field) queue.Enqueue(field.Declaration.Type);
+            }
             if (declarations.Count > 256) throw new ArgumentException("Fragment dependencies exceed 256 declarations.");
         }
         INamedTypeSymbol? BundleType(INamedTypeSymbol? type)
@@ -91,14 +106,16 @@ public static partial class FragmentDependencies
                 }
             }
         }
-        var ordered = declarations.Values.OrderBy(d => d.Syntax.SyntaxTree.FilePath, StringComparer.OrdinalIgnoreCase).ThenBy(d => d.Syntax.SpanStart).ToArray();
+        var ordered = declarations.Values.OrderBy(d => treeOrder[d.Syntax.SyntaxTree]).ThenBy(d => d.Syntax.SpanStart).ToArray();
+        var allDeclarations = ordered.SelectMany(d => d.All).ToArray();
         var names = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
-        var reserved = ordered.Select(d => d.Syntax.SyntaxTree).Append(sourceTree).Distinct().SelectMany(t => t.GetRoot().DescendantTokens()).Where(t => t.IsKind(SyntaxKind.IdentifierToken)).Select(t => t.ValueText).ToHashSet(StringComparer.Ordinal);
+        var reserved = allDeclarations.Select(d => d.Syntax.SyntaxTree).Append(sourceTree).Distinct().SelectMany(t => t.GetRoot().DescendantTokens()).Where(t => t.IsKind(SyntaxKind.IdentifierToken)).Select(t => t.ValueText).ToHashSet(StringComparer.Ordinal);
         for (var i = 0; i < ordered.Length; i++)
         {
             var token = "__RbsDependency_" + fragment.Id.ToString("N") + "_" + i;
             while (!reserved.Add(token)) token += "_";
             names[ordered[i].Symbol] = token;
+            if (ordered[i].Symbol is IMethodSymbol { PartialImplementationPart: { } implementation }) names[implementation.OriginalDefinition] = token;
         }
         var annotations = new Dictionary<SyntaxTree, Dictionary<SyntaxNode, List<SyntaxAnnotation>>>();
         void Annotate(SyntaxNode node, string key)
@@ -116,7 +133,7 @@ public static partial class FragmentDependencies
                 ?? throw new ArgumentException("A template value needs its complete source expression.");
             Annotate(selected, "value-" + i);
         }
-        for (var i = 0; i < ordered.Length; i++) Annotate(ordered[i].Member, "member-" + i);
+        for (var i = 0; i < allDeclarations.Length; i++) Annotate(allDeclarations[i].Member, "member-" + i);
         var rewritten = new Dictionary<SyntaxTree, SyntaxNode>();
         foreach (var tree in annotations.Keys)
         {
@@ -131,14 +148,20 @@ public static partial class FragmentDependencies
             return new FragmentValue(v.ExpressionIndex, node.SpanStart - root.SpanStart, node.Span.Length, node.ToString());
         }).ToArray();
         FragmentValue Mapped(FragmentValue value) => mappedValues[Array.IndexOf(values, value)];
-        var members = ordered.Select((d, i) =>
+        FragmentDependencyPart Part(Declaration d)
         {
-            var member = (MemberDeclarationSyntax)Marked(d.Member.SyntaxTree, "member-" + i);
+            var index = Array.IndexOf(allDeclarations, d);
+            var member = (MemberDeclarationSyntax)Marked(d.Member.SyntaxTree, "member-" + index);
             if (d.Symbol is IFieldSymbol) member = ((FieldDeclarationSyntax)member).WithDeclaration(((FieldDeclarationSyntax)member).Declaration.WithVariables(SyntaxFactory.SingletonSeparatedList(((FieldDeclarationSyntax)member).Declaration.Variables.Single(v => v.Identifier.ValueText == names[d.Symbol]))));
-            return new FragmentDependency(names[d.Symbol], d.Symbol.Name, Namespace(d.Symbol), d.Host, Imports(d.Member), member.ToString(), StudioSourceDraft.Hash(d.Syntax.SyntaxTree.GetText().ToString()));
+            return new(Imports((MemberDeclarationSyntax)Marked(d.Member.SyntaxTree, "member-" + index)), member.ToString(), StudioSourceDraft.Hash(d.Syntax.SyntaxTree.GetText().ToString()));
+        }
+        var members = ordered.Select(d =>
+        {
+            var first = Part(d);
+            return new FragmentDependency(names[d.Symbol], d.Symbol.Name, Namespace(d.Symbol), d.Host, first.Imports, first.Declaration, first.SourceSha256) { Parts = d.Parts.Select(Part).ToArray() };
         }).ToArray();
-        var native = NativeReferences(scoped, compiler, expressions.Concat(ordered.Select(d => d.Syntax)), fragment.OriginEntity);
-        var result = fragment with { Version = 2, Contents = new(1, output.Select(n => n.ToString()).ToArray()), Parameters = fragment.Parameters.Select(p => p with { Value = Mapped(p.Value), DisplayExpression = p.Value.DefaultExpression }).ToArray(), References = fragment.References.Select(r => r with { Value = Mapped(r.Value), Kind = r.Kind == "phase-external" && native.Phases.Contains(r.Target) ? "phase-internal" : r.Kind }).ToArray(), Dependencies = new(members) { ExternalPhases = native.Targets.Except(native.Phases).Distinct().ToArray(), UnresolvedPhases = native.Unresolved, SelfOrders = native.SelfOrders, OrderOnlyExternalPhases = native.Targets.Except(native.Phases).Except(native.OrdinaryTargets).ToArray() } };
+        var native = NativeReferences(scoped, compiler, expressions.Concat(allDeclarations.Select(d => d.Syntax)), fragment.OriginEntity);
+        var result = fragment with { Version = members.Any(m => m.Parts.Count > 0) ? 3 : 2, Contents = new(1, output.Select(n => n.ToString()).ToArray()), Parameters = fragment.Parameters.Select(p => p with { Value = Mapped(p.Value), DisplayExpression = p.Value.DefaultExpression }).ToArray(), References = fragment.References.Select(r => r with { Value = Mapped(r.Value), Kind = r.Kind == "phase-external" && native.Phases.Contains(r.Target) ? "phase-internal" : r.Kind }).ToArray(), Dependencies = new(members) { ExternalPhases = native.Targets.Except(native.Phases).Distinct().ToArray(), UnresolvedPhases = native.Unresolved, SelfOrders = native.SelfOrders, OrderOnlyExternalPhases = native.Targets.Except(native.Phases).Except(native.OrdinaryTargets).ToArray() } };
         result.Validate(); return result;
     }
     static bool Within(ISymbol symbol, ISymbol owner)
@@ -197,5 +220,6 @@ public static partial class FragmentDependencies
         public override SyntaxNode? VisitEnumDeclaration(EnumDeclarationSyntax node) { var symbol = model.GetDeclaredSymbol(Original(node)); var result = (EnumDeclarationSyntax)base.VisitEnumDeclaration(node)!; return Renamed(symbol) is { } name ? result.WithIdentifier(SyntaxFactory.Identifier(name).WithTriviaFrom(result.Identifier)) : result; }
         public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node) { var symbol = model.GetDeclaredSymbol(Original(node)); var result = (DelegateDeclarationSyntax)base.VisitDelegateDeclaration(node)!; return Renamed(symbol) is { } name ? result.WithIdentifier(SyntaxFactory.Identifier(name).WithTriviaFrom(result.Identifier)) : result; }
         public override SyntaxNode? VisitConstructorDeclaration(ConstructorDeclarationSyntax node) { var symbol = model.GetDeclaredSymbol(Original(node)); var result = (ConstructorDeclarationSyntax)base.VisitConstructorDeclaration(node)!; return Renamed(symbol?.ContainingType) is { } name ? result.WithIdentifier(SyntaxFactory.Identifier(name).WithTriviaFrom(result.Identifier)) : result; }
+        public override SyntaxNode? VisitDestructorDeclaration(DestructorDeclarationSyntax node) { var symbol = model.GetDeclaredSymbol(Original(node)); var result = (DestructorDeclarationSyntax)base.VisitDestructorDeclaration(node)!; return Renamed(symbol?.ContainingType) is { } name ? result.WithIdentifier(SyntaxFactory.Identifier(name).WithTriviaFrom(result.Identifier)) : result; }
     }
 }
